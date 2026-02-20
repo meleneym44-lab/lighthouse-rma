@@ -30109,6 +30109,94 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
   );
 }
 
+// ============================================================
+// INSPECTION SHEET MODAL
+// ============================================================
+function InspectionSheetModal({ rental, company, items, initialItems, initialNotes, saving, onSave, onClose }) {
+  const [localItems, setLocalItems] = useState(initialItems);
+  const [localNotes, setLocalNotes] = useState(initialNotes);
+  const addRow = () => setLocalItems([...localItems, { description: '', qty: 1, unit_price: '' }]);
+  const removeRow = (i) => setLocalItems(localItems.filter((_, idx) => idx !== i));
+  const updateRow = (i, field, val) => { const n = [...localItems]; n[i] = { ...n[i], [field]: val }; setLocalItems(n); };
+  const total = localItems.reduce((s, i) => s + ((parseFloat(i.qty) || 0) * (parseFloat(i.unit_price) || 0)), 0);
+  const validItems = localItems.filter(i => i.description.trim() && (parseFloat(i.unit_price) || 0) > 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+          <div>
+            <h2 className="text-lg font-bold">📋 Fiche d'Inspection</h2>
+            <p className="text-gray-300 text-sm">{rental.rental_number} — {company.name}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div className="p-6 space-y-6">
+          <div className="bg-gray-50 rounded-lg p-3 border">
+            <p className="text-xs text-gray-500 uppercase font-medium mb-1">Équipement(s) inspecté(s)</p>
+            {items.map((item, i) => (
+              <p key={i} className="text-sm font-medium">{item.item_name}{item.serial_number ? ` (S/N: ${item.serial_number})` : ''}</p>
+            ))}
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">🔍 Observations / Dommages constatés</label>
+            <textarea value={localNotes} onChange={e => setLocalNotes(e.target.value)} rows={3}
+              className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:ring-2 focus:ring-[#3B7AB4]"
+              placeholder="Ex: Rayures sur le boîtier, capteur endommagé, pièce manquante..." />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">💰 Pièces et main-d'œuvre</label>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50">
+                  <th className="px-3 py-2 text-left text-xs text-gray-500 w-[45%]">Description</th>
+                  <th className="px-3 py-2 text-center text-xs text-gray-500 w-[12%]">Qté</th>
+                  <th className="px-3 py-2 text-right text-xs text-gray-500 w-[18%]">P.U. € HT</th>
+                  <th className="px-3 py-2 text-right text-xs text-gray-500 w-[18%]">Total €</th>
+                  <th className="px-3 py-2 w-[7%]"></th>
+                </tr></thead>
+                <tbody>
+                  {localItems.map((item, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-2 py-1.5"><input type="text" value={item.description} onChange={e => updateRow(i, 'description', e.target.value)} placeholder="Ex: Remplacement capteur, Main d'œuvre..." className="w-full px-2 py-1 border rounded text-sm" /></td>
+                      <td className="px-2 py-1.5"><input type="number" value={item.qty} onChange={e => updateRow(i, 'qty', e.target.value)} min="1" className="w-full px-2 py-1 border rounded text-sm text-center" /></td>
+                      <td className="px-2 py-1.5"><input type="number" value={item.unit_price} onChange={e => updateRow(i, 'unit_price', e.target.value)} step="0.01" min="0" placeholder="0.00" className="w-full px-2 py-1 border rounded text-sm text-right" /></td>
+                      <td className="px-2 py-1.5 text-right font-medium text-gray-700">{((parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}</td>
+                      <td className="px-1 py-1.5 text-center">{localItems.length > 1 && <button onClick={() => removeRow(i)} className="text-red-400 hover:text-red-600 text-lg">×</button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="flex justify-between items-center px-3 py-2 bg-gray-50 border-t">
+                <button onClick={addRow} className="text-sm text-[#3B7AB4] hover:text-[#2D5A7B] font-medium">+ Ajouter une ligne</button>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500">Total inspection</p>
+                  <p className="text-xl font-bold text-red-600">{total.toFixed(2)} € HT</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-amber-50 rounded-lg p-3 border border-amber-200 text-xs text-amber-700">
+            <p className="font-bold mb-1">ℹ️ Cette fiche est un document interne</p>
+            <p>Les coûts d'inspection seront ajoutés au total de la location lors de la facturation. Le client n'a pas besoin d'approuver ce document, mais il sera disponible comme justificatif en cas de litige.</p>
+          </div>
+          <div className="flex justify-end gap-3 pt-2 border-t">
+            <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Annuler</button>
+            <button onClick={() => onSave(validItems, localNotes, false)} disabled={saving}
+              className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
+              {saving ? '⏳...' : '💾 Enregistrer la fiche'}
+            </button>
+            <button onClick={() => onSave(validItems, localNotes, true)} disabled={saving}
+              className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
+              {saving ? '⏳...' : '🏁 Enregistrer et clôturer'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RentalFullPage({ rental, inventory = [], onBack, notify, reload, businessSettings, profile, onOpenQuoteEditor, lang = 'fr' }) {
   const isAdmin = !!onOpenQuoteEditor;
   const t = k => k;
@@ -30133,6 +30221,10 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   
   const [showBCReview, setShowBCReview] = useState(false);
   const [docUploading, setDocUploading] = useState(false);
+  const [showInspectionSheet, setShowInspectionSheet] = useState(false);
+  const [inspectionNotes, setInspectionNotes] = useState(qd.inspection_notes || '');
+  const [inspectionItems, setInspectionItems] = useState(qd.inspection_items || []);
+  const [savingInspection, setSavingInspection] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
   // Computed values from rental data
@@ -30230,7 +30322,34 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   };
   const startInspection = async () => { await updateStatus('inspection', { inspection_started_at: new Date().toISOString() }); };
   const completeInspectionOk = async () => { await updateStatus('completed', { completed_at: new Date().toISOString(), inspection_result: 'ok', inspection_completed_at: new Date().toISOString() }); };
-  const completeInspectionIssue = async () => { await updateStatus('inspection_issue', { inspection_result: 'damage', inspection_completed_at: new Date().toISOString() }); };
+  
+  const saveInspectionSheet = async (items, notes, markComplete = false) => {
+    setSavingInspection(true);
+    try {
+      const inspectionTotal = items.reduce((s, i) => s + ((parseFloat(i.qty) || 0) * (parseFloat(i.unit_price) || 0)), 0);
+      const updatedQD = {
+        ...qd,
+        inspection_items: items,
+        inspection_notes: notes,
+        inspection_total: inspectionTotal,
+        inspection_completed_at: new Date().toISOString(),
+        inspection_result: items.length > 0 ? 'damage' : 'ok'
+      };
+      const updateData = { 
+        quote_data: updatedQD,
+        status: markComplete ? 'completed' : (items.length > 0 ? 'inspection_issue' : 'completed')
+      };
+      if (markComplete) updateData.quote_data.completed_at = new Date().toISOString();
+      await supabase.from('rental_requests').update(updateData).eq('id', rental.id);
+      setInspectionItems(items);
+      setInspectionNotes(notes);
+      notify(markComplete ? '🏁 Location clôturée avec fiche d\'inspection' : '📋 Fiche d\'inspection enregistrée');
+      setShowInspectionSheet(false);
+      reload();
+    } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+    setSavingInspection(false);
+  };
+  
   const completeRental = async () => { await updateStatus('completed', { completed_at: new Date().toISOString() }); };
 
   // Document management (admin only)
@@ -30402,13 +30521,15 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               )}
               {status === 'inspection' && (
                 <>
-                  <button onClick={completeInspectionOk} disabled={saving} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Inspection OK</button>
-                  <button onClick={completeInspectionIssue} disabled={saving} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50">⚠️ Dommages constatés</button>
+                  <button onClick={completeInspectionOk} disabled={saving} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">✅ Inspection OK — Clôturer</button>
+                  <button onClick={() => setShowInspectionSheet(true)} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">📋 Fiche d'Inspection</button>
                 </>
               )}
               {status === 'inspection_issue' && (
-                <button onClick={() => onOpenQuoteEditor && onOpenQuoteEditor({ ...rental, _isDamageQuote: true })}
-                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium">💰 Créer Devis Réparation</button>
+                <>
+                  <button onClick={() => setShowInspectionSheet(true)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">📋 Modifier Fiche</button>
+                  <button onClick={completeRental} disabled={saving} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">🏁 Clôturer</button>
+                </>
               )}
             </div>
           </div>
@@ -30570,9 +30691,24 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                     <p className="text-sm text-blue-700">L'appareil est en cours d'inspection. Vérifiez l'état et les fonctionnalités avant de clôturer.</p>
                   )}
                   {status === 'inspection_issue' && (
-                    <div className="space-y-2">
-                      <p className="text-sm text-red-700">Des dommages ou problèmes ont été constatés lors de l'inspection. Un devis de réparation doit être envoyé au client.</p>
-                      {qd.inspection_notes && <p className="text-sm text-red-600 bg-red-100 rounded p-2">{qd.inspection_notes}</p>}
+                    <div className="space-y-3">
+                      {qd.inspection_notes && <p className="text-sm text-red-700 bg-red-100 rounded p-2">{qd.inspection_notes}</p>}
+                      {(qd.inspection_items || []).length > 0 && (
+                        <div className="bg-white rounded-lg border overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead><tr className="bg-gray-50 text-left"><th className="px-3 py-2 text-xs text-gray-500">Description</th><th className="px-3 py-2 text-xs text-gray-500 text-center">Qté</th><th className="px-3 py-2 text-xs text-gray-500 text-right">P.U. €</th><th className="px-3 py-2 text-xs text-gray-500 text-right">Total €</th></tr></thead>
+                            <tbody>
+                              {qd.inspection_items.map((item, i) => (
+                                <tr key={i} className="border-t"><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2 text-center">{item.qty}</td><td className="px-3 py-2 text-right">{parseFloat(item.unit_price || 0).toFixed(2)}</td><td className="px-3 py-2 text-right font-medium">{((parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0)).toFixed(2)}</td></tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="bg-gray-50 px-3 py-2 text-right font-bold border-t">
+                            Total: {(qd.inspection_total || 0).toFixed(2)} € HT
+                          </div>
+                        </div>
+                      )}
+                      <button onClick={() => setShowInspectionSheet(true)} className="text-sm text-red-600 hover:text-red-800 underline">📋 Modifier la fiche d'inspection</button>
                     </div>
                   )}
                 </div>
@@ -30586,7 +30722,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
             const activeAttachments = attachments.filter(a => !(a.category || '').startsWith('archived_') && !(a.category || '').startsWith('internal_archived') && !a.archived_at);
             const archivedAttachments = attachments.filter(a => (a.category || '').startsWith('archived_') || (a.category || '').startsWith('internal_archived') || a.archived_at);
             // Filter out system-category docs from "additional" list (they're shown as system docs above)
-            const systemCategories = ['bon_commande', 'signed_quote', 'devis_signe', 'bon_livraison', 'ups_label'];
+            const systemCategories = ['devis', 'bon_commande', 'signed_quote', 'devis_signe', 'bon_livraison', 'ups_label'];
             const additionalDocs = activeAttachments.filter(a => !systemCategories.includes(a.category) && !systemCategories.includes((a.category || '').replace('internal_', '')));
 
             return (
@@ -30923,6 +31059,20 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
           </div>
         </div>
       </div>
+      {/* ===== INSPECTION SHEET MODAL ===== */}
+      {showInspectionSheet && (
+        <InspectionSheetModal
+          rental={rental}
+          company={company}
+          items={items}
+          initialItems={inspectionItems.length > 0 ? inspectionItems : [{ description: '', qty: 1, unit_price: '' }]}
+          initialNotes={inspectionNotes}
+          saving={savingInspection}
+          onSave={(items, notes, complete) => saveInspectionSheet(items, notes, complete)}
+          onClose={() => setShowInspectionSheet(false)}
+        />
+      )}
+
       {showBCReview && <RentalBCReviewModal rental={rental} onClose={() => { setShowBCReview(false); reload(); }} notify={notify} reload={reload} lang={lang} />}
     </div>
   );
