@@ -30174,7 +30174,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
 // ============================================================
 // INSPECTION SHEET MODAL
 // ============================================================
-function InspectionSheetModal({ rental, company, items, initialItems, initialNotes, saving, onSave, onClose }) {
+function InspectionSheetModal({ rental, company, items, initialItems, initialNotes, initialChecklist, saving, onSave, onClose }) {
   const [localItems, setLocalItems] = useState(initialItems);
   const [localNotes, setLocalNotes] = useState(initialNotes);
   const addRow = () => setLocalItems([...localItems, { description: '', qty: 1, unit_price: '' }]);
@@ -30183,9 +30183,28 @@ function InspectionSheetModal({ rental, company, items, initialItems, initialNot
   const total = localItems.reduce((s, i) => s + ((parseFloat(i.qty) || 0) * (parseFloat(i.unit_price) || 0)), 0);
   const validItems = localItems.filter(i => i.description.trim() && (parseFloat(i.unit_price) || 0) > 0);
 
+  // Checklist
+  const defaultChecklist = [
+    { id: 'physical_condition', label: 'État physique (boîtier, écran, connecteurs)', result: 'ok' },
+    { id: 'power_on', label: 'Mise sous tension / Démarrage', result: 'ok' },
+    { id: 'pump_function', label: 'Fonctionnement de la pompe', result: 'ok' },
+    { id: 'particle_counts', label: 'Comptage de particules — pas de faux comptages', result: 'ok' },
+    { id: 'zero_count', label: 'Test zéro count — conforme', result: 'ok' },
+    { id: 'fault_alarms', label: 'Pas d\'alarmes de défaut', result: 'ok' },
+    { id: 'accessories', label: 'Accessoires retournés (câbles, tuyaux, adaptateurs)', result: 'ok' },
+    { id: 'packaging', label: 'Emballage / Valise de transport', result: 'ok' },
+  ];
+  const [checklist, setChecklist] = useState(initialChecklist || defaultChecklist);
+  const updateCheck = (i, result) => { const n = [...checklist]; n[i] = { ...n[i], result }; setChecklist(n); };
+  const failCount = checklist.filter(c => c.result === 'fail').length;
+  const naCount = checklist.filter(c => c.result === 'na').length;
+
+  const resultIcon = (r) => r === 'ok' ? '✅' : r === 'fail' ? '❌' : '➖';
+  const resultColor = (r) => r === 'ok' ? 'bg-green-50 border-green-200' : r === 'fail' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200';
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center sticky top-0 z-10">
           <div>
             <h2 className="text-lg font-bold">📋 Fiche d'Inspection</h2>
@@ -30194,20 +30213,51 @@ function InspectionSheetModal({ rental, company, items, initialItems, initialNot
           <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">&times;</button>
         </div>
         <div className="p-6 space-y-6">
+          {/* Equipment */}
           <div className="bg-gray-50 rounded-lg p-3 border">
             <p className="text-xs text-gray-500 uppercase font-medium mb-1">Équipement(s) inspecté(s)</p>
             {items.map((item, i) => (
               <p key={i} className="text-sm font-medium">{item.item_name}{item.serial_number ? ` (S/N: ${item.serial_number})` : ''}</p>
             ))}
           </div>
+
+          {/* ===== FUNCTIONAL CHECKLIST ===== */}
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">🔍 Observations / Dommages constatés</label>
+            <label className="block text-sm font-bold text-gray-700 mb-2">🔍 Vérification fonctionnelle</label>
+            <div className="border rounded-lg overflow-hidden">
+              {checklist.map((check, i) => (
+                <div key={check.id} className={`flex items-center justify-between px-4 py-2.5 border-b last:border-b-0 ${resultColor(check.result)}`}>
+                  <span className="text-sm flex-1">{check.label}</span>
+                  <div className="flex gap-1 shrink-0 ml-3">
+                    {['ok', 'fail', 'na'].map(r => (
+                      <button key={r} onClick={() => updateCheck(i, r)}
+                        className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${check.result === r
+                          ? (r === 'ok' ? 'bg-green-500 text-white' : r === 'fail' ? 'bg-red-500 text-white' : 'bg-gray-500 text-white')
+                          : 'bg-white border text-gray-400 hover:text-gray-600'
+                        }`}>
+                        {r === 'ok' ? '✅ OK' : r === 'fail' ? '❌ NOK' : '➖ N/A'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {failCount > 0 && (
+              <p className="text-xs text-red-600 mt-1 font-medium">⚠️ {failCount} point(s) non conforme(s)</p>
+            )}
+          </div>
+
+          {/* Observations */}
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">📝 Observations / Détails des dommages</label>
             <textarea value={localNotes} onChange={e => setLocalNotes(e.target.value)} rows={3}
               className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:ring-2 focus:ring-[#3B7AB4]"
               placeholder="Ex: Rayures sur le boîtier, capteur endommagé, pièce manquante..." />
           </div>
+
+          {/* Line items */}
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">💰 Pièces et main-d'œuvre</label>
+            <label className="block text-sm font-bold text-gray-700 mb-2">💰 Pièces et main-d'œuvre (si applicable)</label>
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead><tr className="bg-gray-50">
@@ -30232,23 +30282,27 @@ function InspectionSheetModal({ rental, company, items, initialItems, initialNot
               <div className="flex justify-between items-center px-3 py-2 bg-gray-50 border-t">
                 <button onClick={addRow} className="text-sm text-[#3B7AB4] hover:text-[#2D5A7B] font-medium">+ Ajouter une ligne</button>
                 <div className="text-right">
-                  <p className="text-xs text-gray-500">Total inspection</p>
+                  <p className="text-xs text-gray-500">Total supplémentaire</p>
                   <p className="text-xl font-bold text-red-600">{total.toFixed(2)} € HT</p>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Info */}
           <div className="bg-amber-50 rounded-lg p-3 border border-amber-200 text-xs text-amber-700">
-            <p className="font-bold mb-1">ℹ️ Cette fiche est un document interne</p>
-            <p>Les coûts d'inspection seront ajoutés au total de la location lors de la facturation. Le client n'a pas besoin d'approuver ce document, mais il sera disponible comme justificatif en cas de litige.</p>
+            <p className="font-bold mb-1">ℹ️ Document interne</p>
+            <p>Les coûts seront ajoutés au total de la location lors de la facturation. Disponible comme justificatif en cas de litige.</p>
           </div>
+
+          {/* Actions */}
           <div className="flex justify-end gap-3 pt-2 border-t">
             <button onClick={onClose} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Annuler</button>
-            <button onClick={() => onSave(validItems, localNotes, false)} disabled={saving}
+            <button onClick={() => onSave(validItems, localNotes, checklist, false)} disabled={saving}
               className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
-              {saving ? '⏳...' : '💾 Enregistrer la fiche'}
+              {saving ? '⏳...' : '💾 Enregistrer'}
             </button>
-            <button onClick={() => onSave(validItems, localNotes, true)} disabled={saving}
+            <button onClick={() => onSave(validItems, localNotes, checklist, true)} disabled={saving}
               className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
               {saving ? '⏳...' : '🏁 Enregistrer et clôturer'}
             </button>
@@ -30385,129 +30439,328 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const startInspection = async () => { await updateStatus('inspection', { inspection_started_at: new Date().toISOString() }); };
   const completeInspectionOk = async () => { await updateStatus('completed', { completed_at: new Date().toISOString(), inspection_result: 'ok', inspection_completed_at: new Date().toISOString() }); };
   
-  const saveInspectionSheet = async (items, notes, markComplete = false) => {
+  const saveInspectionSheet = async (items, notes, checklist, markComplete = false) => {
     setSavingInspection(true);
     try {
       const inspectionTotal = items.reduce((s, i) => s + ((parseFloat(i.qty) || 0) * (parseFloat(i.unit_price) || 0)), 0);
+      const failCount = (checklist || []).filter(c => c.result === 'fail').length;
+      const hasIssues = items.length > 0 || failCount > 0;
       const updatedQD = {
         ...qd,
         inspection_items: items,
         inspection_notes: notes,
+        inspection_checklist: checklist,
         inspection_total: inspectionTotal,
         inspection_completed_at: new Date().toISOString(),
-        inspection_result: items.length > 0 ? 'damage' : 'ok'
+        inspection_result: hasIssues ? 'damage' : 'ok'
       };
 
-      // Generate Inspection PDF
+      // ===== GENERATE PROFESSIONAL INSPECTION PDF =====
       let inspectionPdfUrl = null;
       try {
         const jsPDF = await loadJsPDF();
-        const doc = new jsPDF('p', 'mm', 'a4');
-        const pw = doc.internal.pageSize.getWidth();
-        let y = 15;
-        
-        // Header
-        doc.setFillColor(26, 26, 46);
-        doc.rect(0, 0, pw, 35, 'F');
-        doc.setTextColor(255);
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        doc.text("FICHE D'INSPECTION", 15, 15);
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`${rental.rental_number} — ${company.name}`, 15, 23);
-        doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, 30);
-        
-        y = 45;
-        doc.setTextColor(0);
-        
-        // Equipment
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.text('Équipement(s) inspecté(s)', 15, y); y += 7;
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        (qd.quoteItems || qd.items || rental.rental_request_items || []).forEach(item => {
-          doc.text(`• ${item.item_name || item.name || ''}${item.serial_number ? ' (S/N: ' + item.serial_number + ')' : ''}`, 18, y);
-          y += 5;
-        });
-        y += 5;
-        
-        // Observations
-        if (notes) {
-          doc.setFontSize(11);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Observations / Dommages constatés', 15, y); y += 7;
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(9);
-          const splitNotes = doc.splitTextToSize(notes, pw - 30);
-          doc.text(splitNotes, 18, y);
-          y += splitNotes.length * 4.5 + 5;
-        }
-        
-        // Line items table
-        if (items.length > 0) {
-          doc.setFontSize(11);
-          doc.setFont('helvetica', 'bold');
-          doc.text("Pièces et main-d'œuvre", 15, y); y += 7;
-          
-          // Table header
-          doc.setFillColor(240, 240, 240);
-          doc.rect(15, y - 4, pw - 30, 7, 'F');
-          doc.setFontSize(8);
-          doc.setFont('helvetica', 'bold');
-          doc.text('Description', 18, y);
-          doc.text('Qté', pw - 75, y, { align: 'center' });
-          doc.text('P.U. € HT', pw - 50, y, { align: 'right' });
-          doc.text('Total € HT', pw - 18, y, { align: 'right' });
-          y += 6;
-          
-          doc.setFont('helvetica', 'normal');
-          items.forEach(item => {
-            const lineTotal = (parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0);
-            doc.text(item.description || '', 18, y);
-            doc.text(String(item.qty || 1), pw - 75, y, { align: 'center' });
-            doc.text((parseFloat(item.unit_price) || 0).toFixed(2), pw - 50, y, { align: 'right' });
-            doc.text(lineTotal.toFixed(2), pw - 18, y, { align: 'right' });
-            y += 5;
-          });
-          
-          // Total
-          doc.setDrawColor(0);
-          doc.line(pw - 65, y, pw - 15, y);
-          y += 5;
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10);
-          doc.text('TOTAL INSPECTION:', pw - 65, y);
-          doc.text(`${inspectionTotal.toFixed(2)} € HT`, pw - 18, y, { align: 'right' });
-          y += 10;
-        }
-        
-        // Rental total summary
-        const rentalTotal = rental.quote_total_ht || qd.totalHT || 0;
-        if (rentalTotal > 0) {
-          doc.setFillColor(245, 245, 255);
-          doc.rect(15, y - 4, pw - 30, items.length > 0 ? 22 : 12, 'F');
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'normal');
-          doc.text(`Location HT: ${rentalTotal.toFixed(2)} €`, 18, y);
-          if (items.length > 0) {
-            y += 5;
-            doc.text(`Inspection HT: ${inspectionTotal.toFixed(2)} €`, 18, y);
-            y += 6;
-            doc.setFont('helvetica', 'bold');
-            doc.text(`TOTAL À FACTURER: ${(rentalTotal + inspectionTotal).toFixed(2)} € HT`, 18, y);
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const biz = businessSettings || {};
+        const pageWidth = 210, pageHeight = 297, margin = 15;
+        const contentWidth = pageWidth - (margin * 2);
+        const footerHeight = 16;
+        const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
+        let y = 8;
+
+        let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
+
+        const addFooter = () => {
+          pdf.setFillColor(...darkBlue);
+          pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+          pdf.setTextColor(...white);
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(180, 180, 180);
+          pdf.setFontSize(8);
+          pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+        };
+        const getUsableHeight = () => pageHeight - footerHeight - margin;
+        const checkPageBreak = (needed) => {
+          if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; return true; }
+          return false;
+        };
+
+        // ===== HEADER (matches quote/BL) =====
+        if (lighthouseLogo) {
+          try {
+            const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+            pdf.addImage(lighthouseLogo, format, margin, y - 5, 80, 20);
+          } catch (e) {
+            pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+            pdf.text('LIGHTHOUSE', margin, y + 8);
           }
+        } else {
+          pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+          pdf.text('LIGHTHOUSE', margin, y + 8);
         }
-        
-        // Footer
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(150);
-        doc.text('Document interne — Lighthouse France', 15, 285);
-        doc.text(`Généré le ${new Date().toLocaleString('fr-FR')}`, pw - 15, 285, { align: 'right' });
-        
-        const pdfBlob = doc.output('blob');
+
+        pdf.setFontSize(16);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...navy);
+        pdf.text("FICHE D'INSPECTION", pageWidth - margin, y + 4, { align: 'right' });
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...darkBlue);
+        pdf.text(rental.rental_number || '', pageWidth - margin, y + 10, { align: 'right' });
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...lightGray);
+        pdf.text('DOCUMENT INTERNE', pageWidth - margin, y + 15, { align: 'right' });
+
+        y += 17;
+        pdf.setDrawColor(...navy);
+        pdf.setLineWidth(1);
+        pdf.line(margin, y, pageWidth - margin, y);
+        y += 3;
+
+        // ===== INFO BAR =====
+        pdf.setFillColor(245, 245, 245);
+        pdf.rect(margin, y, contentWidth, 14, 'F');
+        pdf.setFontSize(7);
+        pdf.setTextColor(...lightGray);
+        pdf.text('DATE D\'INSPECTION', margin + 5, y + 4);
+        pdf.text('INSPECTEUR', margin + 55, y + 4);
+        pdf.text('RÉSULTAT', margin + 115, y + 4);
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...darkBlue);
+        pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 10);
+        pdf.text(profile?.full_name || profile?.email || 'Service France', margin + 55, y + 10);
+        if (hasIssues) {
+          pdf.setTextColor(200, 30, 30);
+          pdf.text('ANOMALIE(S) DETECTEE(S)', margin + 115, y + 10);
+        } else {
+          pdf.setTextColor(0, 150, 50);
+          pdf.text('CONFORME - RAS', margin + 115, y + 10);
+        }
+        y += 18;
+
+        // ===== CLIENT =====
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...lightGray);
+        pdf.text('CLIENT', margin, y); y += 4;
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...darkBlue);
+        pdf.text(company.name || 'Client', margin, y); y += 5;
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...gray);
+        if (company.address) { pdf.text(company.address, margin, y); y += 4; }
+        const cityLine = [company.postal_code, company.city].filter(Boolean).join(' ');
+        if (cityLine) { pdf.text(cityLine, margin, y); y += 4; }
+        y += 4;
+
+        // ===== EQUIPMENT TABLE =====
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...navy);
+        pdf.text('EQUIPEMENT(S) INSPECTE(S)', margin, y); y += 4;
+        pdf.setFillColor(45, 90, 123);
+        pdf.rect(margin, y, contentWidth, 6, 'F');
+        pdf.setTextColor(...white);
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Modèle', margin + 3, y + 4);
+        pdf.text('N° Série', margin + 80, y + 4);
+        y += 6;
+        pdf.setTextColor(...darkBlue);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(9);
+        const equipList = qd.quoteItems || qd.items || rental.rental_request_items || [];
+        equipList.forEach((item, i) => {
+          const rowY = y + (i * 6);
+          if (i % 2 === 0) { pdf.setFillColor(248, 248, 252); pdf.rect(margin, rowY, contentWidth, 6, 'F'); }
+          pdf.text(item.item_name || item.name || '', margin + 3, rowY + 4);
+          pdf.text(item.serial_number || '—', margin + 80, rowY + 4);
+        });
+        y += equipList.length * 6 + 6;
+
+        // ===== FUNCTIONAL CHECKLIST =====
+        checkPageBreak(60);
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...navy);
+        pdf.text('VERIFICATION FONCTIONNELLE', margin, y); y += 4;
+
+        pdf.setFillColor(45, 90, 123);
+        pdf.rect(margin, y, contentWidth, 6, 'F');
+        pdf.setTextColor(...white);
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Point de contrôle', margin + 3, y + 4);
+        pdf.text('OK', pageWidth - margin - 30, y + 4, { align: 'center' });
+        pdf.text('NOK', pageWidth - margin - 18, y + 4, { align: 'center' });
+        pdf.text('N/A', pageWidth - margin - 6, y + 4, { align: 'center' });
+        y += 6;
+
+        pdf.setFontSize(8);
+        (checklist || []).forEach((check, i) => {
+          checkPageBreak(7);
+          if (i % 2 === 0) { pdf.setFillColor(248, 248, 252); pdf.rect(margin, y, contentWidth, 6, 'F'); }
+          if (check.result === 'fail') { pdf.setFillColor(255, 235, 235); pdf.rect(margin, y, contentWidth, 6, 'F'); }
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(...darkBlue);
+          pdf.text(check.label, margin + 3, y + 4);
+          // Checkboxes
+          const drawBox = (x, cy, filled, color) => {
+            pdf.setDrawColor(150, 150, 150);
+            pdf.rect(x - 2, cy - 0.5, 4, 4);
+            if (filled) {
+              pdf.setFillColor(...color);
+              pdf.rect(x - 1.5, cy, 3, 3, 'F');
+            }
+          };
+          drawBox(pageWidth - margin - 30, y + 0.5, check.result === 'ok', [0, 150, 50]);
+          drawBox(pageWidth - margin - 18, y + 0.5, check.result === 'fail', [200, 30, 30]);
+          drawBox(pageWidth - margin - 6, y + 0.5, check.result === 'na', [130, 130, 130]);
+          y += 6;
+        });
+
+        // Checklist summary
+        y += 2;
+        const okCount = (checklist || []).filter(c => c.result === 'ok').length;
+        const failC = (checklist || []).filter(c => c.result === 'fail').length;
+        const naC = (checklist || []).filter(c => c.result === 'na').length;
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 150, 50);
+        pdf.text(`${okCount} OK`, margin + 3, y);
+        if (failC > 0) { pdf.setTextColor(200, 30, 30); pdf.text(`${failC} NON CONFORME`, margin + 25, y); }
+        if (naC > 0) { pdf.setTextColor(...lightGray); pdf.text(`${naC} N/A`, margin + 65, y); }
+        y += 8;
+
+        // ===== OBSERVATIONS =====
+        if (notes) {
+          checkPageBreak(20);
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(...navy);
+          pdf.text('OBSERVATIONS / DETAILS DES DOMMAGES', margin, y); y += 5;
+          pdf.setFillColor(255, 250, 240);
+          const splitNotes = pdf.splitTextToSize(notes, contentWidth - 10);
+          const notesH = splitNotes.length * 4 + 6;
+          pdf.rect(margin, y - 2, contentWidth, notesH, 'F');
+          pdf.setDrawColor(220, 180, 100);
+          pdf.rect(margin, y - 2, contentWidth, notesH, 'S');
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          pdf.setTextColor(...darkBlue);
+          pdf.text(splitNotes, margin + 5, y + 2);
+          y += notesH + 5;
+        }
+
+        // ===== PARTS & LABOR TABLE =====
+        if (items.length > 0) {
+          checkPageBreak(30);
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(...navy);
+          pdf.text("PIECES ET MAIN-D'OEUVRE", margin, y); y += 4;
+
+          // Table header
+          pdf.setFillColor(45, 90, 123);
+          pdf.rect(margin, y, contentWidth, 7, 'F');
+          pdf.setTextColor(...white);
+          pdf.setFontSize(7);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Description', margin + 3, y + 5);
+          pdf.text('Qté', pageWidth - margin - 55, y + 5, { align: 'center' });
+          pdf.text('P.U. HT', pageWidth - margin - 35, y + 5, { align: 'right' });
+          pdf.text('Total HT', pageWidth - margin - 3, y + 5, { align: 'right' });
+          y += 7;
+
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          items.forEach((item, i) => {
+            checkPageBreak(7);
+            const lineTotal = (parseFloat(item.qty) || 0) * (parseFloat(item.unit_price) || 0);
+            if (i % 2 === 0) { pdf.setFillColor(248, 248, 252); pdf.rect(margin, y, contentWidth, 6, 'F'); }
+            pdf.setTextColor(...darkBlue);
+            pdf.text(item.description || '', margin + 3, y + 4);
+            pdf.text(String(item.qty || 1), pageWidth - margin - 55, y + 4, { align: 'center' });
+            pdf.text((parseFloat(item.unit_price) || 0).toFixed(2) + ' \u20AC', pageWidth - margin - 35, y + 4, { align: 'right' });
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(lineTotal.toFixed(2) + ' \u20AC', pageWidth - margin - 3, y + 4, { align: 'right' });
+            pdf.setFont('helvetica', 'normal');
+            y += 6;
+          });
+
+          // Total row
+          pdf.setDrawColor(...navy);
+          pdf.setLineWidth(0.5);
+          pdf.line(pageWidth - margin - 60, y, pageWidth - margin, y);
+          y += 5;
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(10);
+          pdf.setTextColor(...darkBlue);
+          pdf.text('TOTAL SUPPLEMENTAIRE:', pageWidth - margin - 60, y);
+          pdf.text(inspectionTotal.toFixed(2) + ' \u20AC HT', pageWidth - margin - 3, y, { align: 'right' });
+          y += 8;
+        }
+
+        // ===== SUMMARY BOX =====
+        checkPageBreak(30);
+        const rentalTotal = rental.quote_total_ht || qd.totalHT || 0;
+        const grandTotal = rentalTotal + inspectionTotal;
+
+        pdf.setFillColor(240, 245, 255);
+        pdf.setDrawColor(...navy);
+        pdf.setLineWidth(0.3);
+        const summaryH = inspectionTotal > 0 ? 28 : 16;
+        pdf.rect(pageWidth - margin - 85, y, 85, summaryH, 'FD');
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...gray);
+        pdf.text('Location HT:', pageWidth - margin - 82, y + 6);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...darkBlue);
+        pdf.text(rentalTotal.toFixed(2) + ' \u20AC', pageWidth - margin - 5, y + 6, { align: 'right' });
+
+        if (inspectionTotal > 0) {
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(...gray);
+          pdf.text('Supplément inspection HT:', pageWidth - margin - 82, y + 12);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(200, 30, 30);
+          pdf.text(inspectionTotal.toFixed(2) + ' \u20AC', pageWidth - margin - 5, y + 12, { align: 'right' });
+
+          pdf.setDrawColor(...navy);
+          pdf.line(pageWidth - margin - 82, y + 16, pageWidth - margin - 5, y + 16);
+          pdf.setFontSize(11);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(...darkBlue);
+          pdf.text('TOTAL A FACTURER:', pageWidth - margin - 82, y + 23);
+          pdf.text(grandTotal.toFixed(2) + ' \u20AC HT', pageWidth - margin - 5, y + 23, { align: 'right' });
+        }
+
+        // ===== SIGNATURE LINE =====
+        y += summaryH + 15;
+        checkPageBreak(25);
+        pdf.setDrawColor(200, 200, 200);
+        pdf.setLineWidth(0.3);
+        // Left signature
+        pdf.line(margin, y + 15, margin + 70, y + 15);
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...lightGray);
+        pdf.text('Signature Technicien', margin, y + 19);
+        // Right signature
+        pdf.line(pageWidth - margin - 70, y + 15, pageWidth - margin, y + 15);
+        pdf.text('Date et Visa Responsable', pageWidth - margin - 70, y + 19);
+
+        // FOOTER
+        addFooter();
+
+        const pdfBlob = pdf.output('blob');
         const fileName = `Inspection_${rental.rental_number}_${Date.now()}.pdf`;
         inspectionPdfUrl = await uploadPDFToStorage(pdfBlob, `inspections/${rental.rental_number}`, fileName);
       } catch (pdfErr) {
@@ -30519,13 +30772,16 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
 
       const updateData = { 
         quote_data: updatedQD,
-        status: markComplete ? 'completed' : (items.length > 0 ? 'inspection_issue' : 'completed')
+        status: markComplete ? 'completed' : (hasIssues ? 'inspection_issue' : 'completed')
       };
       if (markComplete) updateData.quote_data.completed_at = new Date().toISOString();
       await supabase.from('rental_requests').update(updateData).eq('id', rental.id);
       
-      // Save as attachment on the rental
+      // Save as attachment on the rental (delete old first)
       if (inspectionPdfUrl) {
+        await supabase.from('request_attachments').delete()
+          .eq('rental_request_id', rental.id)
+          .eq('category', 'internal_inspection');
         await supabase.from('request_attachments').insert({
           rental_request_id: rental.id,
           file_name: `Inspection_${rental.rental_number}.pdf`,
@@ -30881,13 +31137,32 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               {['inspection', 'inspection_issue'].includes(status) && (
                 <div className={`rounded-lg p-4 border ${status === 'inspection_issue' ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'}`}>
                   <h3 className={`font-bold mb-2 ${status === 'inspection_issue' ? 'text-red-800' : 'text-blue-800'}`}>
-                    🔍 {status === 'inspection_issue' ? 'Dommages constatés' : 'Inspection en cours'}
+                    🔍 {status === 'inspection_issue' ? 'Anomalie(s) détectée(s)' : 'Inspection en cours'}
                   </h3>
                   {status === 'inspection' && (
                     <p className="text-sm text-blue-700">L'appareil est en cours d'inspection. Vérifiez l'état et les fonctionnalités avant de clôturer.</p>
                   )}
                   {status === 'inspection_issue' && (
                     <div className="space-y-3">
+                      {/* Checklist summary */}
+                      {(qd.inspection_checklist || []).length > 0 && (() => {
+                        const checks = qd.inspection_checklist;
+                        const okC = checks.filter(c => c.result === 'ok').length;
+                        const failC = checks.filter(c => c.result === 'fail').length;
+                        return (
+                          <div>
+                            <div className="flex gap-4 text-sm mb-1">
+                              <span className="text-green-700 font-medium">✅ {okC} OK</span>
+                              {failC > 0 && <span className="text-red-700 font-bold">❌ {failC} NON CONFORME</span>}
+                            </div>
+                            {failC > 0 && (
+                              <div className="bg-red-100 rounded p-2 text-sm text-red-800">
+                                {checks.filter(c => c.result === 'fail').map((c, i) => <p key={i}>❌ {c.label}</p>)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {qd.inspection_notes && <p className="text-sm text-red-700 bg-red-100 rounded p-2">{qd.inspection_notes}</p>}
                       {(qd.inspection_items || []).length > 0 && (
                         <div className="bg-white rounded-lg border overflow-hidden">
@@ -30900,7 +31175,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                             </tbody>
                           </table>
                           <div className="bg-gray-50 px-3 py-2 text-right font-bold border-t">
-                            Total: {(qd.inspection_total || 0).toFixed(2)} € HT
+                            Total supplémentaire: {(qd.inspection_total || 0).toFixed(2)} € HT
                           </div>
                         </div>
                       )}
@@ -31275,8 +31550,9 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
           items={items}
           initialItems={inspectionItems.length > 0 ? inspectionItems : [{ description: '', qty: 1, unit_price: '' }]}
           initialNotes={inspectionNotes}
+          initialChecklist={qd.inspection_checklist || null}
           saving={savingInspection}
-          onSave={(items, notes, complete) => saveInspectionSheet(items, notes, complete)}
+          onSave={(items, notes, checklist, complete) => saveInspectionSheet(items, notes, checklist, complete)}
           onClose={() => setShowInspectionSheet(false)}
         />
       )}
