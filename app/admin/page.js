@@ -30222,8 +30222,6 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const [showBCReview, setShowBCReview] = useState(false);
   const [docUploading, setDocUploading] = useState(false);
   const [showInspectionSheet, setShowInspectionSheet] = useState(false);
-  const [inspectionNotes, setInspectionNotes] = useState(qd.inspection_notes || '');
-  const [inspectionItems, setInspectionItems] = useState(qd.inspection_items || []);
   const [savingInspection, setSavingInspection] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
@@ -30232,6 +30230,8 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const items = rental.rental_request_items || [];
   const days = Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1;
   const qd = rental.quote_data || {};
+  const [inspectionNotes, setInspectionNotes] = useState(qd.inspection_notes || '');
+  const [inspectionItems, setInspectionItems] = useState(qd.inspection_items || []);
   const totalHT = rental.quote_total_ht || (qd.totalHT) || items.reduce((s, i) => s + (parseFloat(i.line_total) || 0), 0);
   const totalRetailValue = (qd.quoteItems || items).reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
 
