@@ -3413,6 +3413,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
   const [deviceSearch, setDeviceSearch] = useState('');
   const [rentalActions, setRentalActions] = useState([]);
+  const [rentalThreadData, setRentalThreadData] = useState([]);
 
   // Load messages + rental actions
   useEffect(() => {
@@ -3420,6 +3421,15 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       if (!profile?.company_id) return;
       
       const requestIds = requests.map(r => r.id);
+      
+      // Load rental messages for this company (always)
+      const { data: rentalMsgs } = await supabase
+        .from('messages')
+        .select('*, rental_requests!inner(company_id)')
+        .eq('rental_requests.company_id', profile.company_id)
+        .not('rental_request_id', 'is', null)
+        .order('created_at', { ascending: false });
+
       if (requestIds.length === 0) {
         // Still load rental actions even with no requests
         const { data: rentalData } = await supabase
@@ -3428,6 +3438,16 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           .eq('company_id', profile.company_id)
           .in('status', ['quote_sent']);
         if (rentalData) setRentalActions(rentalData);
+        // Load rental thread data
+        const { data: rentalAll } = await supabase
+          .from('rental_requests')
+          .select('id, rental_number, status, created_at, companies(name)')
+          .eq('company_id', profile.company_id)
+          .order('created_at', { ascending: false });
+        if (rentalAll) setRentalThreadData(rentalAll);
+        const allMessages = rentalMsgs || [];
+        setMessages(allMessages);
+        setUnreadCount(allMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length);
         return;
       }
       
@@ -3436,11 +3456,10 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
         .select('*')
         .in('request_id', requestIds)
         .order('created_at', { ascending: false });
-      
-      if (data) {
-        setMessages(data);
-        setUnreadCount(data.filter(m => !m.is_read && m.sender_id !== profile.id).length);
-      }
+
+      const allMessages = [...(data || []), ...(rentalMsgs || [])];
+      setMessages(allMessages);
+      setUnreadCount(allMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length);
       
       // Load rental actions
       const { data: rentalData } = await supabase
@@ -3449,6 +3468,14 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
         .eq('company_id', profile.company_id)
         .in('status', ['quote_sent']);
       if (rentalData) setRentalActions(rentalData);
+
+      // Load rental threads for messages tab
+      const { data: rentalAll } = await supabase
+        .from('rental_requests')
+        .select('id, rental_number, status, created_at, companies(name)')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (rentalAll) setRentalThreadData(rentalAll);
     };
     loadMessages();
   }, [profile, requests]);
@@ -4137,20 +4164,37 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Group messages by request
-  const messagesByRequest = requests.map(req => {
+  // Group messages by request (RMA + Parts)
+  const serviceThreads = requests.map(req => {
     const reqMessages = messages.filter(m => m.request_id === req.id);
     const unread = reqMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length;
     const lastMessage = reqMessages[0];
     return {
       request: req,
+      _type: req.request_type === 'parts' ? 'parts' : 'rma',
       messages: reqMessages,
       unreadCount: unread,
       lastMessage
     };
-  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed')
+  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed');
+
+  // Rental threads
+  const rentalThreads = rentalThreadData.map(rental => {
+    const rMsgs = messages.filter(m => m.rental_request_id === rental.id);
+    const unread = rMsgs.filter(m => !m.is_read && m.sender_id !== profile.id).length;
+    const lastMessage = rMsgs[0];
+    return {
+      request: { ...rental, request_number: rental.rental_number, id: rental.id },
+      _type: 'rental',
+      _rentalId: rental.id,
+      messages: rMsgs,
+      unreadCount: unread,
+      lastMessage
+    };
+  }).filter(t => t.messages.length > 0);
+
+  const messagesByRequest = [...serviceThreads, ...rentalThreads]
     .sort((a, b) => {
-      // Sort by unread first, then by last message date
       if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
       if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
       const dateA = a.lastMessage?.created_at || a.request.created_at;
@@ -4158,10 +4202,13 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
       return new Date(dateB) - new Date(dateA);
     });
 
-  const markAsRead = async (requestId) => {
-    const unreadMessages = messages.filter(m => 
-      m.request_id === requestId && !m.is_read && m.sender_id !== profile.id
-    );
+  const markAsRead = async (thread) => {
+    const threadId = thread._rentalId || thread.request?.id;
+    const isRental = thread._type === 'rental';
+    const unreadMessages = messages.filter(m => {
+      const matchesThread = isRental ? m.rental_request_id === threadId : m.request_id === threadId;
+      return matchesThread && !m.is_read && m.sender_id !== profile.id;
+    });
     
     if (unreadMessages.length === 0) return;
     
@@ -4187,15 +4234,21 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     
     setSending(true);
     try {
+      const insertData = {
+        sender_id: profile.id,
+        sender_type: 'customer',
+        sender_name: profile.full_name || 'Client',
+        content: newMessage.trim()
+      };
+      if (selectedThread._type === 'rental') {
+        insertData.rental_request_id = selectedThread._rentalId || selectedThread.request.id;
+      } else {
+        insertData.request_id = selectedThread.request.id;
+      }
+      
       const { data, error } = await supabase
         .from('messages')
-        .insert({
-          request_id: selectedThread.request.id,
-          sender_id: profile.id,
-          sender_type: 'customer',
-          sender_name: profile.full_name || 'Client',
-          content: newMessage.trim()
-        })
+        .insert(insertData)
         .select()
         .single();
       
@@ -4216,8 +4269,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
 
   const openThread = (thread) => {
     setSelectedThread(thread);
-    markAsRead(thread.request.id);
-    // Scroll to bottom when opening thread
+    markAsRead(thread);
     setTimeout(scrollToBottom, 100);
   };
 
@@ -4244,19 +4296,23 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {messagesByRequest.map(thread => (
+              {messagesByRequest.map(thread => {
+                const threadKey = `${thread._type || 'rma'}-${thread.request.id}`;
+                const selectedKey = selectedThread ? `${selectedThread._type || 'rma'}-${selectedThread.request.id}` : null;
+                const typeIcon = thread._type === 'rental' ? '📅' : thread._type === 'parts' ? '🔩' : '🔧';
+                return (
                 <div
-                  key={thread.request.id}
+                  key={threadKey}
                   onClick={() => openThread(thread)}
                   className={`p-4 cursor-pointer transition-colors ${
-                    selectedThread?.request.id === thread.request.id 
+                    selectedKey === threadKey
                       ? 'bg-[#E8F2F8]' 
                       : 'hover:bg-gray-50'
                   }`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-mono font-medium text-[#3B7AB4] text-sm">
-                      {thread.request.request_number}
+                      {typeIcon} {thread.request.request_number}
                     </span>
                     {thread.unreadCount > 0 && (
                       <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
@@ -4276,7 +4332,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                     }
                   </p>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </div>
@@ -4286,16 +4342,17 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
           {selectedThread ? (
             (() => {
               // Get current messages for selected thread from state (not from cached selectedThread)
-              const currentMessages = messages.filter(m => m.request_id === selectedThread.request.id);
+              const currentMessages = selectedThread._type === 'rental'
+                ? messages.filter(m => m.rental_request_id === (selectedThread._rentalId || selectedThread.request.id))
+                : messages.filter(m => m.request_id === selectedThread.request.id);
               return (
                 <>
                   {/* Thread Header */}
                   <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
                     <h3 className="font-bold text-[#1E3A5F]">
-                      Demande {selectedThread.request.request_number}
+                      {selectedThread._type === 'rental' ? '📅 Location' : selectedThread._type === 'parts' ? '🔩 Commande Pièces' : '🔧 Demande'} {selectedThread.request.request_number}
                     </h3>
                     <p className="text-sm text-gray-500">
-                      {selectedThread.request.request_devices?.length || 0} appareil(s) • 
                       {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
                     </p>
                   </div>
