@@ -21144,6 +21144,11 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     internal_notes: ''
   });
   
+  // Token contract devices
+  const [devices, setDevices] = useState([
+    { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }
+  ]);
+
   // Pricing contract state - category-based pricing
   const [pricingMode, setPricingMode] = useState('fixed'); // 'fixed' or 'discount'
   const [globalDiscount, setGlobalDiscount] = useState(0); // % discount applied to all
