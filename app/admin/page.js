@@ -21128,21 +21128,21 @@ function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-co
 
 function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' }) {
   const t = k => k;
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(1); // 1=Edit, 2=Preview
   const [saving, setSaving] = useState(false);
   const [contractType, setContractType] = useState('token'); // 'token' or 'pricing'
+  const [businessSettings, setBusinessSettings] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [pdfBlob, setPdfBlob] = useState(null);
   const [contractData, setContractData] = useState({
     company_id: '',
-    company_name: '', // For display when no company selected
+    company_name: '',
     contract_number: '',
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
     status: 'active',
-    internal_notes: '',
-    bc_url: ''
+    internal_notes: ''
   });
-  const [devices, setDevices] = useState([
-    { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }
   ]);
   
   // Pricing contract state - category-based pricing
@@ -21226,7 +21226,285 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     if (!contractData.contract_number) {
       setContractData(prev => ({ ...prev, contract_number: generateContractNumber() }));
     }
+    // Load business settings for PDF
+    const loadSettings = async () => {
+      const { data } = await supabase.from('business_settings').select('*').eq('id', 1).single();
+      if (data) setBusinessSettings(data);
+    };
+    loadSettings();
   }, []);
+
+  // Generate contract PDF for preview/save
+  const generateContractPDF = async () => {
+    const jsPDF = await loadJsPDF();
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const biz = businessSettings || {};
+    const clientName = contractData.company_id 
+      ? (clients.find(c => c.id === contractData.company_id)?.name || 'Client')
+      : (contractData.company_name || 'Client');
+    const clientObj = contractData.company_id ? clients.find(c => c.id === contractData.company_id) : null;
+    
+    const pageWidth = 210, pageHeight = 297, margin = 15;
+    const contentWidth = pageWidth - (margin * 2);
+    const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
+    let y = margin;
+
+    // Load logo
+    let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
+
+    const addFooter = () => {
+      pdf.setFillColor(...darkBlue);
+      pdf.rect(0, pageHeight - 16, pageWidth, 16, 'F');
+      pdf.setTextColor(...white);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - 10, { align: 'center' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(180, 180, 180);
+      pdf.setFontSize(8);
+      pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
+    };
+
+    const checkPageBreak = (needed) => {
+      if (y + needed > pageHeight - 16 - margin) {
+        addFooter();
+        pdf.addPage();
+        y = margin;
+        return true;
+      }
+      return false;
+    };
+
+    // ===== HEADER =====
+    if (lighthouseLogo) {
+      try {
+        const fmt = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+        pdf.addImage(lighthouseLogo, fmt, margin, y - 2, 85, 22);
+      } catch (e) {
+        pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+        pdf.text('LIGHTHOUSE', margin, y + 8);
+      }
+    }
+    
+    const isPricing = contractType === 'pricing';
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...navy);
+    pdf.text(isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ÉTALONNAGE", pageWidth - margin, y + 5, { align: 'right' });
+    
+    pdf.setFontSize(11);
+    pdf.setTextColor(...darkBlue);
+    pdf.text('N° ' + (contractData.contract_number || '—'), pageWidth - margin, y + 12, { align: 'right' });
+    
+    y += 20;
+    pdf.setDrawColor(...navy);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 7;
+
+    // ===== INFO BAR =====
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, 16, 'F');
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('DATE', margin + 5, y + 5);
+    pdf.text('DÉBUT', margin + 50, y + 5);
+    pdf.text('FIN', margin + 100, y + 5);
+    pdf.text('VALIDITÉ', margin + 145, y + 5);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 12);
+    pdf.text(new Date(contractData.start_date).toLocaleDateString('fr-FR'), margin + 50, y + 12);
+    pdf.text(new Date(contractData.end_date).toLocaleDateString('fr-FR'), margin + 100, y + 12);
+    pdf.text('30 jours', margin + 145, y + 12);
+    y += 22;
+
+    // ===== CLIENT =====
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...lightGray);
+    pdf.text('CLIENT', margin, y);
+    y += 5;
+    pdf.setFontSize(14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(clientName, margin, y);
+    y += 6;
+    if (clientObj) {
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...gray);
+      if (clientObj.billing_address || clientObj.address) { pdf.text(clientObj.billing_address || clientObj.address, margin, y); y += 5; }
+      const city = [clientObj.billing_postal_code || clientObj.postal_code, clientObj.billing_city || clientObj.city].filter(Boolean).join(' ');
+      if (city) { pdf.text(city, margin, y); y += 5; }
+    }
+    y += 8;
+
+    if (isPricing) {
+      // ===== PRICING CONTRACT - Categories =====
+      const enabledCats = pricingCategories.filter(c => c.enabled);
+      
+      for (const cat of enabledCats) {
+        const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
+        if (!catalog) continue;
+        
+        checkPageBreak(25);
+        
+        // Category header bar
+        pdf.setFillColor(...navy);
+        pdf.rect(margin, y, contentWidth, 8, 'F');
+        pdf.setTextColor(...white);
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`${catalog.icon} ${catalog.name}`, margin + 3, y + 6);
+        pdf.text(`${cat.categoryPrice.toFixed(2)} € / étalonnage`, pageWidth - margin - 3, y + 6, { align: 'right' });
+        y += 10;
+        
+        // Exceptions
+        const exceptions = cat.models.filter(m => m.isOverride && m.price !== null);
+        if (exceptions.length > 0) {
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'italic');
+          pdf.setTextColor(...gray);
+          pdf.text('Sauf les modèles suivants :', margin + 5, y + 4);
+          y += 6;
+          
+          for (const ex of exceptions) {
+            checkPageBreak(6);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setTextColor(...darkBlue);
+            pdf.setFontSize(9);
+            pdf.text(`• ${ex.name}`, margin + 10, y + 4);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(`${ex.price.toFixed(2)} €`, pageWidth - margin - 3, y + 4, { align: 'right' });
+            y += 5;
+          }
+        }
+        
+        // Model count
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...lightGray);
+        pdf.text(`${catalog.models.length} modèles inclus`, margin + 5, y + 4);
+        y += 8;
+      }
+    } else {
+      // ===== TOKEN CONTRACT - Device table =====
+      const validDevices = devices.filter(d => d.serial_number);
+      
+      // Table header
+      pdf.setFillColor(...navy);
+      pdf.rect(margin, y, contentWidth, 8, 'F');
+      pdf.setTextColor(...white);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('N° Série', margin + 3, y + 6);
+      pdf.text('Modèle', margin + 50, y + 6);
+      pdf.text('Tokens/an', margin + 115, y + 6);
+      pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
+      y += 10;
+      
+      validDevices.forEach((d, i) => {
+        checkPageBreak(7);
+        if (i % 2 === 0) {
+          pdf.setFillColor(248, 248, 248);
+          pdf.rect(margin, y - 1, contentWidth, 7, 'F');
+        }
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...darkBlue);
+        pdf.text(d.serial_number || '—', margin + 3, y + 4);
+        pdf.text(d.model_name || '—', margin + 50, y + 4);
+        pdf.text(String(d.tokens_total || 1), margin + 115, y + 4);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`${(parseFloat(d.unit_price) || 0).toFixed(2)} €`, pageWidth - margin - 3, y + 4, { align: 'right' });
+        y += 7;
+      });
+      
+      // Total
+      y += 3;
+      pdf.setDrawColor(...navy);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin + 100, y, pageWidth - margin, y);
+      y += 5;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text('TOTAL HT', margin + 100, y + 1);
+      pdf.text(`${totalPrice.toFixed(2)} €`, pageWidth - margin - 3, y + 1, { align: 'right' });
+      y += 3;
+    }
+
+    // ===== NOTES =====
+    if (contractData.internal_notes) {
+      checkPageBreak(20);
+      y += 5;
+      pdf.setFontSize(8);
+      pdf.setTextColor(...lightGray);
+      pdf.text('NOTES', margin, y);
+      y += 5;
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...gray);
+      const noteLines = pdf.splitTextToSize(contractData.internal_notes, contentWidth);
+      pdf.text(noteLines, margin, y);
+      y += noteLines.length * 4 + 5;
+    }
+
+    // ===== SIGNATURES =====
+    checkPageBreak(40);
+    y += 10;
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setLineWidth(0.3);
+    
+    // Left - Lighthouse
+    pdf.setFontSize(8);
+    pdf.setTextColor(...lightGray);
+    pdf.text('LIGHTHOUSE FRANCE', margin, y);
+    y += 3;
+    pdf.line(margin, y + 20, margin + 70, y + 20);
+    pdf.setFontSize(7);
+    pdf.text('Date et signature', margin, y + 24);
+    
+    // Right - Client
+    pdf.text('LE CLIENT', pageWidth - margin - 70, y - 3);
+    pdf.line(pageWidth - margin - 70, y + 20, pageWidth - margin, y + 20);
+    pdf.text('Date et signature', pageWidth - margin - 70, y + 24);
+
+    addFooter();
+    
+    return pdf;
+  };
+
+  // Show preview
+  const showPreview = async () => {
+    // Validate first
+    if (!contractData.company_id && !contractData.company_name) {
+      notify('Veuillez sélectionner un client ou entrer un nom', 'error');
+      return;
+    }
+    if (contractType === 'token' && !devices.some(d => d.serial_number)) {
+      notify('Veuillez ajouter au moins un appareil avec un numéro de série', 'error');
+      return;
+    }
+    if (contractType === 'pricing' && !pricingCategories.some(c => c.enabled)) {
+      notify("Veuillez activer au moins une catégorie d'appareils", 'error');
+      return;
+    }
+    
+    try {
+      const pdf = await generateContractPDF();
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
+      setPdfBlob(blob);
+      setStep(2);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      notify('Erreur lors de la génération du document: ' + err.message, 'error');
+    }
+  };
 
   const handleSubmit = async () => {
     // Validate
@@ -21238,8 +21516,8 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       notify(lang === 'en' ? 'Please add at least one device with a serial number' : 'Veuillez ajouter au moins un appareil avec un numéro de série', 'error');
       return;
     }
-    if (contractType === 'pricing' && (devices.length === 0 || !devices.some(d => d.model_name))) {
-      notify(lang === 'en' ? 'Please add at least one device model with a price' : 'Veuillez ajouter au moins un modèle avec un prix', 'error');
+    if (contractType === 'pricing' && !pricingCategories.some(c => c.enabled)) {
+      notify(lang === 'en' ? 'Please enable at least one device category' : 'Veuillez activer au moins une catégorie d\'appareils', 'error');
       return;
     }
 
@@ -21299,8 +21577,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           start_date: contractData.start_date,
           end_date: contractData.end_date,
           status: contractData.status,
-          internal_notes: contractData.internal_notes,
-          bc_url: contractData.bc_url || null
+          internal_notes: contractData.internal_notes
         })
         .select()
         .single();
@@ -21346,6 +21623,19 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
 
       if (devicesError) throw devicesError;
 
+      // Upload contract PDF if we have one
+      if (pdfBlob) {
+        try {
+          const fileName = `contracts/${contract.id}/${contractData.contract_number || 'contract'}.pdf`;
+          const contractDocUrl = await uploadPDFToStorage(pdfBlob, `contracts/${contract.id}`, `${contractData.contract_number || 'contract'}.pdf`);
+          if (contractDocUrl) {
+            await supabase.from('contracts').update({ signed_quote_url: contractDocUrl }).eq('id', contract.id);
+          }
+        } catch (pdfErr) {
+          console.error('PDF upload error (contract still created):', pdfErr);
+        }
+      }
+
       notify(lang === 'en' ? '✅ Contract created successfully!' : '✅ Contrat créé avec succès!');
       onCreated();
     } catch (err) {
@@ -21371,10 +21661,11 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 bg-[#1a1a2e] text-white">
-          <h2 className="text-xl font-bold">{contractType === 'pricing' ? (lang === 'en' ? "New Pricing Contract" : "Nouveau Contrat Tarification") : (lang === 'en' ? "New Calibration Contract" : "Nouveau Contrat d'Étalonnage")}</h2>
-          <p className="text-gray-300 text-sm">{lang === 'en' ? 'For existing contracts not created by client' : 'Pour les contrats existants non créés par le client'}</p>
+          <h2 className="text-xl font-bold">{step === 2 ? '📄 Aperçu du Contrat' : (contractType === 'pricing' ? "Nouveau Contrat Tarification" : "Nouveau Contrat d'Étalonnage")}</h2>
+          <p className="text-gray-300 text-sm">{step === 2 ? `${contractData.contract_number} • ${contractType === 'pricing' ? 'Tarification' : 'Étalonnage'}` : 'Pour les contrats existants non créés par le client'}</p>
         </div>
 
+        {step === 1 && (
         <div className="p-6 space-y-6">
           {/* Contract Type Selector */}
           <div className="flex gap-3">
@@ -21462,13 +21753,6 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                 <option value="quote_approved">{lang === 'en' ? '✅ Quote approved' : '✅ Devis approuvé'}</option>
                 <option value="expired">{lang === 'en' ? '⏰ Expired' : '⏰ Expiré'}</option>
               </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Purchase Order (optional)' : 'Bon de Commande (optionnel)'}</label>
-              <BCFileUploader lang={lang} 
-                onUploaded={(url) => setContractData({ ...contractData, bc_url: url })}
-                currentUrl={contractData.bc_url}
-              />
             </div>
           </div>
 
@@ -21654,19 +21938,40 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           </div>
           )}
         </div>
+        )}
+
+        {/* Step 2: Preview */}
+        {step === 2 && previewUrl && (
+        <div className="p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <button onClick={() => { setStep(1); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }} className="text-[#2D5A7B] hover:text-[#1a1a2e] font-medium">← Modifier</button>
+            <h3 className="font-bold text-gray-800">📄 Aperçu du contrat</h3>
+          </div>
+          <iframe src={previewUrl} className="w-full border rounded-lg" style={{ height: '70vh' }} title="Contract Preview" />
+        </div>
+        )}
 
         {/* Footer */}
         <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
-          <button onClick={onClose} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
-            Annuler
+          <button onClick={() => { if (step === 2) { setStep(1); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); } else { onClose(); } }} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+            {step === 2 ? '← Modifier' : 'Annuler'}
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="px-8 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
-          >
-            {saving ? (lang === 'en' ? 'Creating...' : 'Création...') : (lang === 'en' ? '✅ Create Contract' : '✅ Créer le Contrat')}
-          </button>
+          {step === 1 ? (
+            <button
+              onClick={showPreview}
+              className="px-8 py-2 bg-[#2D5A7B] hover:bg-[#1a1a2e] text-white rounded-lg font-bold"
+            >
+              📄 Voir le Contrat
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="px-8 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
+            >
+              {saving ? 'Création...' : '✅ Créer & Sauvegarder'}
+            </button>
+          )}
         </div>
       </div>
     </div>
