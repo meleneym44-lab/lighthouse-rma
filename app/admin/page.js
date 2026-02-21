@@ -17288,8 +17288,11 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
         if (englishMode) {
           data.filter(m => m.sender_type === 'customer' && isWithin48Hours(m.created_at)).forEach(m => translateMsg(m.id, m.content));
         }
-        if (selectedConvo._type === 'rma' || selectedConvo._type === 'parts') generateSuggestions(data);
-        else if (selectedConvo._type === 'rental' && data.length > 0) generateSuggestions(data);
+        // Only suggest responses when last message is from customer
+        const lastMsg = data[data.length - 1];
+        if (lastMsg && lastMsg.sender_type === 'customer') {
+          generateSuggestions(data);
+        }
       }
       // Mark as read
       if (selectedConvo._unread > 0) {
@@ -17382,7 +17385,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
       const { data, error } = await supabase.from('messages').insert(insertData).select().single();
       if (error) throw error;
       setMessages(p => [...p, data]);
-      setEnglishInput(''); setFrenchOutput('');
+      setEnglishInput(''); setFrenchOutput(''); setAiSuggestions([]);
       notify('✅ Envoyé !');
     } catch (e) { notify('Error: ' + e.message, 'error'); }
     setSendingMessage(false);
