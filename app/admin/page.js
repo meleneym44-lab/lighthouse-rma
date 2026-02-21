@@ -11553,6 +11553,23 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
     setSaving(false);
   };
   
+  // Mark order as shipped (will eventually be triggered by barcode scanner)
+  const markAsShipped = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('service_requests')
+      .update({ status: 'shipped', shipped_at: new Date().toISOString() })
+      .eq('id', order.id);
+    if (error) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
+    } else {
+      setOrder(prev => ({ ...prev, status: 'shipped', shipped_at: new Date().toISOString() }));
+      notify(lang === 'en' ? '🚚 Marked as shipped!' : '🚚 Marqué comme expédié !');
+      reload();
+    }
+    setSaving(false);
+  };
+  
   // Send message
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
@@ -11600,7 +11617,13 @@ const STATUS_STYLES = {
     return (
       <PartsShippingModal
         order={order}
-        onClose={() => { setShowShipping(false); reload(); }}
+        onClose={async () => { 
+          setShowShipping(false); 
+          // Refetch order to get updated shipping data
+          const { data: refreshed } = await supabase.from('service_requests').select('*, companies(*), request_devices(*)').eq('id', order.id).single();
+          if (refreshed) setOrder(refreshed);
+          reload(); 
+        }}
         notify={notify}
         reload={reload}
         profile={profile}
@@ -11649,13 +11672,23 @@ const STATUS_STYLES = {
                   🚚 Marquer Prêt
                 </button>
               )}
-              {order.status === 'ready_to_ship' && (
+              {order.status === 'ready_to_ship' && !shippingData.trackingNumber && (
                 <button
                   onClick={() => setShowShipping(true)}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
                 >
                   📦 Créer Expédition
                 </button>
+              )}
+              {order.status === 'ready_to_ship' && shippingData.trackingNumber && (
+                <>
+                  <button onClick={markAsShipped} disabled={saving} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50">
+                    {saving ? '⏳...' : '🚚 Marquer Expédié'}
+                  </button>
+                  <button onClick={() => setShowShipping(true)} className="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm">
+                    📦 Refaire
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -12208,12 +12241,22 @@ const STATUS_STYLES = {
                   </button>
                 )}
                 
-                {order.status === 'ready_to_ship' && (
+                {order.status === 'ready_to_ship' && !shippingData.trackingNumber && (
                   <button
                     onClick={() => setShowShipping(true)}
                     className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
                   >
                     {lang === 'en' ? '📦 Create Shipment & DN' : '📦 Créer Expédition & BL'}
+                  </button>
+                )}
+                
+                {order.status === 'ready_to_ship' && shippingData.trackingNumber && (
+                  <button
+                    onClick={markAsShipped}
+                    disabled={saving}
+                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50"
+                  >
+                    {saving ? '⏳...' : (lang === 'en' ? '🚚 Mark as Shipped' : '🚚 Marquer Expédié')}
                   </button>
                 )}
                 
@@ -14673,8 +14716,6 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       const { error: updateError } = await supabase
         .from('service_requests')
         .update({
-          status: 'shipped',
-          shipped_at: new Date().toISOString(),
           quote_data: updatedQuoteData
         })
         .eq('id', order.id);
@@ -14704,7 +14745,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         if (attErr2) console.error('BL attachment error:', attErr2);
       }
       
-      notify(lang === 'en' ? '🚚 Order shipped! Documents saved.' : '🚚 Commande expédiée! Documents sauvegardés.');
+      notify(lang === 'en' ? '📦 Shipment prepared! Documents saved.' : '📦 Expédition préparée ! Documents sauvegardés.');
       reload();
       onClose();
     } catch (err) {
