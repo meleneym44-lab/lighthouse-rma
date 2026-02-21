@@ -16497,6 +16497,20 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           status: 'shipped', 
           shipped_at: new Date().toISOString()
         }).eq('id', device.id);
+        
+        // Deduct token from contract if this is a contract-covered calibration
+        if (device.contract_covered && device.contract_device_id) {
+          const svcType = device.service_type || 'calibration';
+          if (svcType.includes('calibration')) {
+            // Increment tokens_used on the contract_device
+            const { data: cd } = await supabase.from('contract_devices').select('tokens_used').eq('id', device.contract_device_id).single();
+            if (cd) {
+              await supabase.from('contract_devices').update({ 
+                tokens_used: (cd.tokens_used || 0) + 1 
+              }).eq('id', device.contract_device_id);
+            }
+          }
+        }
       }
       
       // Update RMA to shipped (closes it)
@@ -20731,7 +20745,12 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                                 </div>
                               ) : (
                                 <div className="text-right text-sm">
-                                  {device.tokens_total && <p className="text-gray-600">{device.tokens_total} tokens</p>}
+                                  {device.tokens_total && (
+                                    <div>
+                                      <p className="text-gray-600">{(device.tokens_total || 0) - (device.tokens_used || 0)}/{device.tokens_total} tokens restants</p>
+                                      {device.tokens_used > 0 && <p className="text-xs text-orange-500">{device.tokens_used} utilisé(s)</p>}
+                                    </div>
+                                  )}
                                   {device.unit_price && <p className="text-gray-600">{parseFloat(device.unit_price).toFixed(2)} €</p>}
                                 </div>
                               )}
