@@ -21143,7 +21143,6 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     status: 'active',
     internal_notes: ''
   });
-  ]);
   
   // Pricing contract state - category-based pricing
   const [pricingMode, setPricingMode] = useState('fixed'); // 'fixed' or 'discount'
