@@ -17157,7 +17157,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
   const [filter, setFilter] = useState('open');
   const [search, setSearch] = useState('');
   const [profile, setProfile] = useState(null);
-  const [englishMode, setEnglishMode] = useState(true);
+  const [englishMode, setEnglishMode] = useState(false);
   const [englishInput, setEnglishInput] = useState('');
   const [frenchOutput, setFrenchOutput] = useState('');
   const [processingMessage, setProcessingMessage] = useState(false);
@@ -17355,10 +17355,10 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
     if (!englishInput.trim()) return;
     setProcessingMessage(true);
     try {
-      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: `Améliore ce message pour une communication professionnelle en français. Corrige la grammaire, l'orthographe et améliore le ton professionnel. Retourne uniquement le message corrigé en français, rien d'autre. Message: ${englishInput}`, direction: 'en-to-fr' }) });
+      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: englishInput, direction: 'fr-to-fr' }) });
       if (res.ok) { const d = await res.json(); setFrenchOutput(d.translation); }
-      else { notify('Erreur API', 'error'); }
-    } catch (e) { notify('Erreur de correction', 'error'); }
+      else { const errText = await res.text().catch(() => ''); notify(`Erreur (${res.status}): ${errText.slice(0, 100)}`, 'error'); }
+    } catch (e) { notify('Erreur de correction: ' + e.message, 'error'); }
     setProcessingMessage(false);
   };
   
@@ -17476,7 +17476,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                   <span className="text-sm text-gray-500 ml-2">{selectedConvo._company}</span>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setEnglishMode(!englishMode)} className={`px-2 py-1 rounded text-xs font-medium ${englishMode ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+                  <button onClick={() => { setEnglishMode(!englishMode); setEnglishInput(''); setFrenchOutput(''); }} className={`px-2 py-1 rounded text-xs font-medium ${englishMode ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
                     {englishMode ? '🇬🇧 EN' : '🇫🇷 FR'}
                   </button>
                   <button onClick={() => setShowInfoSidebar(!showInfoSidebar)} className={`px-2 py-1 rounded text-xs font-medium ${showInfoSidebar ? 'bg-purple-500 text-white' : 'bg-purple-100'}`}>📋 Info</button>
@@ -17533,7 +17533,7 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                         <button onClick={() => generateSuggestions(messages)} className="text-xs text-purple-600">🔄 Refresh</button>
                       </div>
                       {loadingSuggestions ? <p className="text-xs text-purple-500">Loading...</p> : aiSuggestions.map((s, i) => (
-                        <div key={i} onClick={() => { setEnglishInput(s.english); setFrenchOutput(s.french); }} className="p-2 bg-white rounded border border-purple-200 cursor-pointer hover:border-purple-400 text-xs">
+                        <div key={i} onClick={() => { if (englishMode) { setEnglishInput(s.english); setFrenchOutput(s.french); } else { setEnglishInput(''); setFrenchOutput(s.french); } }} className="p-2 bg-white rounded border border-purple-200 cursor-pointer hover:border-purple-400 text-xs">
                           <p className="text-gray-600">{englishMode ? s.english : s.french}</p>
                         </div>
                       ))}
@@ -17542,7 +17542,33 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                   
                   {/* Input */}
                   <div className="border-t bg-gray-50 p-3">
-                    {englishMode ? (
+                    {!englishMode ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-gray-500 mb-1 block">✏️ Votre message</label>
+                            <textarea value={englishInput} onChange={e => setEnglishInput(e.target.value)} placeholder="Tapez en français..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 mb-1 block">✅ Corrigé (sera envoyé)</label>
+                            <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Version corrigée..." className="w-full px-2 py-1.5 border rounded text-sm h-16 resize-none bg-white" />
+                          </div>
+                        </div>
+                        <div className="flex justify-between">
+                          <div className="flex gap-2">
+                            <button onClick={polishFrench} disabled={processingMessage || !englishInput.trim()} className="px-3 py-1.5 bg-purple-500 text-white rounded text-xs font-medium disabled:opacity-50">
+                              {processingMessage ? '⏳...' : '✨ Corriger'}
+                            </button>
+                            <label className="px-3 py-1.5 bg-gray-200 rounded text-xs font-medium cursor-pointer">
+                              📎 Fichier<input type="file" className="hidden" onChange={handleFile} disabled={uploadingFile} />
+                            </label>
+                          </div>
+                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-blue-500 text-white rounded text-xs font-medium disabled:opacity-50">
+                            {sendingMessage ? '⏳...' : '📤 Envoyer'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="space-y-2">
                         <div className="grid grid-cols-2 gap-2">
                           <div>
@@ -17566,14 +17592,6 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
                           <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-4 py-1.5 bg-green-500 text-white rounded text-xs font-medium disabled:opacity-50">
                             {sendingMessage ? '⏳...' : '📤 Send'}
                           </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <textarea value={frenchOutput} onChange={e => setFrenchOutput(e.target.value)} placeholder="Message en français..." className="flex-1 px-2 py-1.5 border rounded text-sm resize-none" rows={2} />
-                        <div className="flex flex-col gap-1">
-                          <label className="px-2 py-1.5 bg-gray-200 rounded text-xs cursor-pointer text-center">📎<input type="file" className="hidden" onChange={handleFile} /></label>
-                          <button onClick={sendMessage} disabled={sendingMessage || !frenchOutput.trim()} className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs disabled:opacity-50">📤</button>
                         </div>
                       </div>
                     )}
