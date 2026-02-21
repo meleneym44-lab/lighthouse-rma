@@ -11363,7 +11363,7 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
     const fetchData = async () => {
       // Fetch messages
       const { data: msgs } = await supabase
-        .from('request_messages')
+        .from('messages')
         .select('*')
         .eq('request_id', order.id)
         .order('created_at', { ascending: true });
@@ -11575,11 +11575,12 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
     if (!newMessage.trim()) return;
     setSendingMessage(true);
     
-    const { error } = await supabase.from('request_messages').insert({
+    const { error } = await supabase.from('messages').insert({
       request_id: order.id,
+      sender_id: profile?.id,
       sender_type: 'admin',
       sender_name: profile?.full_name || 'Admin',
-      message: newMessage.trim()
+      content: newMessage.trim()
     });
     
     if (error) {
@@ -11588,7 +11589,7 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
       setNewMessage('');
       // Refresh messages
       const { data: msgs } = await supabase
-        .from('request_messages')
+        .from('messages')
         .select('*')
         .eq('request_id', order.id)
         .order('created_at', { ascending: true });
@@ -11875,7 +11876,7 @@ const STATUS_STYLES = {
                               {new Date(msg.created_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR')}
                             </span>
                           </div>
-                          <p className="text-gray-800 whitespace-pre-wrap">{msg.message}</p>
+                          <p className="text-gray-800 whitespace-pre-wrap">{msg.content || msg.message}</p>
                         </div>
                       ))}
                     </div>
