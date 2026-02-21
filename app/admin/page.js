@@ -11323,7 +11323,8 @@ function RequestDetailModal({ request, onClose, onCreateQuote, lang = 'fr' }) {
 // ============================================
 // PARTS ORDER FULL PAGE - Like RMAFullPage but for parts
 // ============================================
-function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSettings, onOpenQuoteEditor, t = k=>k, lang = 'fr' }) {
+function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile, businessSettings, onOpenQuoteEditor, t = k=>k, lang = 'fr' }) {
+  const [order, setOrder] = useState(orderProp);
   const [activeTab, setActiveTab] = useState('details');
   const [saving, setSaving] = useState(false);
   const [showShipping, setShowShipping] = useState(false);
@@ -11338,6 +11339,9 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
   const [docUploadCategory, setDocUploadCategory] = useState('general');
   const [docUploadShared, setDocUploadShared] = useState(true);
   const [docUploading, setDocUploading] = useState(false);
+  
+  // Sync with parent prop changes
+  useEffect(() => { setOrder(orderProp); }, [orderProp]);
   
   // Safety check
   if (!order) {
@@ -11542,6 +11546,7 @@ function PartsOrderFullPage({ order, onBack, notify, reload, profile, businessSe
     if (error) {
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
     } else {
+      setOrder(prev => ({ ...prev, status: newStatus }));
       notify(lang === 'en' ? 'Status updated!' : 'Statut mis à jour!');
       reload();
     }
@@ -11872,7 +11877,7 @@ const STATUS_STYLES = {
                     </div>
                     
                     {/* System Documents */}
-                    <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3">
                       {/* Devis */}
                       {order.quote_url && (
                         <a href={order.quote_url} target="_blank" rel="noopener noreferrer" 
