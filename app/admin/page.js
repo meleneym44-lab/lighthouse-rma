@@ -21132,12 +21132,9 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
   const [saving, setSaving] = useState(false);
   const [contractType, setContractType] = useState('token'); // 'token' or 'pricing'
   const [businessSettings, setBusinessSettings] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [pdfBlob, setPdfBlob] = useState(null);
   const [contractData, setContractData] = useState({
     company_id: '',
     company_name: '',
-    contract_number: '',
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
     status: 'active',
@@ -21220,17 +21217,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     setPricingMode('fixed'); // Switch to fixed after applying
   };
 
-  const generateContractNumber = () => {
-    const year = new Date().getFullYear();
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `CTR-${year}-${random}`;
-  };
-
   useEffect(() => {
-    if (!contractData.contract_number) {
-      setContractData(prev => ({ ...prev, contract_number: generateContractNumber() }));
-    }
-    // Load business settings for PDF
     const loadSettings = async () => {
       const { data } = await supabase.from('business_settings').select('*').eq('id', 1).single();
       if (data) setBusinessSettings(data);
@@ -21239,7 +21226,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
   }, []);
 
   // Generate contract PDF for preview/save
-  const generateContractPDF = async () => {
+  const generateContractPDF = async (contractNumber) => {
     const jsPDF = await loadJsPDF();
     const pdf = new jsPDF('p', 'mm', 'a4');
     const biz = businessSettings || {};
@@ -21251,27 +21238,33 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     const pageWidth = 210, pageHeight = 297, margin = 15;
     const contentWidth = pageWidth - (margin * 2);
     const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
+    const accent = [0, 166, 81]; // Lighthouse green
     let y = margin;
+    const isPricing = contractType === 'pricing';
 
     // Load logo
     let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
 
-    const addFooter = () => {
-      pdf.setFillColor(...darkBlue);
-      pdf.rect(0, pageHeight - 16, pageWidth, 16, 'F');
-      pdf.setTextColor(...white);
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - 10, { align: 'center' });
+    const addFooter = (pageNum, totalPages) => {
+      // Footer line
+      pdf.setDrawColor(200, 200, 200);
+      pdf.setLineWidth(0.3);
+      pdf.line(margin, pageHeight - 22, pageWidth - margin, pageHeight - 22);
+      // Company info
+      pdf.setFontSize(7);
       pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(180, 180, 180);
-      pdf.setFontSize(8);
-      pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
+      pdf.setTextColor(140, 140, 140);
+      pdf.text(biz.company_name || 'Lighthouse France SAS', margin, pageHeight - 17);
+      pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'}`, margin, pageHeight - 13);
+      pdf.text(`Tel. ${biz.phone || '01 43 77 28 07'}${biz.email ? ' - ' + biz.email : ''}`, margin, pageHeight - 9);
+      if (biz.siret) pdf.text(`SIRET: ${biz.siret}`, margin, pageHeight - 5);
+      // Page number
+      pdf.text(`Page ${pageNum} / ${totalPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
     };
 
+    const footerZone = 30;
     const checkPageBreak = (needed) => {
-      if (y + needed > pageHeight - 16 - margin) {
-        addFooter();
+      if (y + needed > pageHeight - footerZone) {
         pdf.addPage();
         y = margin;
         return true;
@@ -21283,172 +21276,267 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     if (lighthouseLogo) {
       try {
         const fmt = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-        pdf.addImage(lighthouseLogo, fmt, margin, y - 2, 85, 22);
+        pdf.addImage(lighthouseLogo, fmt, margin, y, 60, 16);
       } catch (e) {
-        pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-        pdf.text('LIGHTHOUSE', margin, y + 8);
+        pdf.setFontSize(20); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+        pdf.text('LIGHTHOUSE', margin, y + 10);
       }
     }
     
-    const isPricing = contractType === 'pricing';
-    pdf.setFontSize(16);
+    // Title block - right aligned
+    pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...navy);
-    pdf.text(isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ÉTALONNAGE", pageWidth - margin, y + 5, { align: 'right' });
+    pdf.text(isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ETALONNAGE", pageWidth - margin, y + 5, { align: 'right' });
     
-    pdf.setFontSize(11);
-    pdf.setTextColor(...darkBlue);
-    pdf.text('N° ' + (contractData.contract_number || '—'), pageWidth - margin, y + 12, { align: 'right' });
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text(contractNumber || '', pageWidth - margin, y + 11, { align: 'right' });
     
     y += 20;
-    pdf.setDrawColor(...navy);
-    pdf.setLineWidth(1);
-    pdf.line(margin, y, pageWidth - margin, y);
-    y += 7;
+    
+    // Navy accent bar
+    pdf.setFillColor(...navy);
+    pdf.rect(margin, y, contentWidth, 1.2, 'F');
+    y += 6;
 
-    // ===== INFO BAR =====
-    pdf.setFillColor(245, 245, 245);
-    pdf.rect(margin, y, contentWidth, 16, 'F');
+    // ===== CONTRACT INFO + CLIENT - Side by side =====
+    const colLeft = margin;
+    const colRight = margin + contentWidth / 2 + 5;
+    const colW = contentWidth / 2 - 5;
+    
+    // Left column - Contract details
+    pdf.setFillColor(245, 247, 250);
+    pdf.roundedRect(colLeft, y, colW, 32, 2, 2, 'F');
+    
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...navy);
+    pdf.text('DETAILS DU CONTRAT', colLeft + 5, y + 5);
+    
     pdf.setFontSize(8);
-    pdf.setTextColor(...lightGray);
-    pdf.text('DATE', margin + 5, y + 5);
-    pdf.text('DÉBUT', margin + 50, y + 5);
-    pdf.text('FIN', margin + 100, y + 5);
-    pdf.text('VALIDITÉ', margin + 145, y + 5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    const infoY = y + 11;
+    pdf.text('Date :', colLeft + 5, infoY);
+    pdf.text('Debut :', colLeft + 5, infoY + 5);
+    pdf.text('Fin :', colLeft + 5, infoY + 10);
+    pdf.text('Validite :', colLeft + 5, infoY + 15);
+    
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(new Date().toLocaleDateString('fr-FR'), colLeft + 30, infoY);
+    pdf.text(new Date(contractData.start_date).toLocaleDateString('fr-FR'), colLeft + 30, infoY + 5);
+    pdf.text(new Date(contractData.end_date).toLocaleDateString('fr-FR'), colLeft + 30, infoY + 10);
+    pdf.text('30 jours', colLeft + 30, infoY + 15);
+    
+    // Right column - Client
+    pdf.setFillColor(245, 247, 250);
+    pdf.roundedRect(colRight, y, colW, 32, 2, 2, 'F');
+    
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...navy);
+    pdf.text('CLIENT', colRight + 5, y + 5);
+    
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(new Date().toLocaleDateString('fr-FR'), margin + 5, y + 12);
-    pdf.text(new Date(contractData.start_date).toLocaleDateString('fr-FR'), margin + 50, y + 12);
-    pdf.text(new Date(contractData.end_date).toLocaleDateString('fr-FR'), margin + 100, y + 12);
-    pdf.text('30 jours', margin + 145, y + 12);
-    y += 22;
-
-    // ===== CLIENT =====
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...lightGray);
-    pdf.text('CLIENT', margin, y);
-    y += 5;
-    pdf.setFontSize(14);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(clientName, margin, y);
-    y += 6;
+    pdf.text(clientName, colRight + 5, y + 13);
+    
+    let clientY = y + 18;
     if (clientObj) {
-      pdf.setFontSize(10);
+      pdf.setFontSize(8);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(...gray);
-      if (clientObj.billing_address || clientObj.address) { pdf.text(clientObj.billing_address || clientObj.address, margin, y); y += 5; }
-      const city = [clientObj.billing_postal_code || clientObj.postal_code, clientObj.billing_city || clientObj.city].filter(Boolean).join(' ');
-      if (city) { pdf.text(city, margin, y); y += 5; }
+      if (clientObj.billing_address || clientObj.address) { 
+        pdf.text(clientObj.billing_address || clientObj.address, colRight + 5, clientY); 
+        clientY += 4; 
+      }
+      const cityLine = [clientObj.billing_postal_code || clientObj.postal_code, clientObj.billing_city || clientObj.city].filter(Boolean).join(' ');
+      if (cityLine) { 
+        pdf.text(cityLine, colRight + 5, clientY); 
+        clientY += 4; 
+      }
+      if (clientObj.country) {
+        pdf.text(clientObj.country, colRight + 5, clientY);
+      }
     }
-    y += 8;
+    
+    y += 38;
 
     if (isPricing) {
-      // ===== PRICING CONTRACT - Categories =====
+      // ===== PRICING CONTRACT - Full model tables per category =====
       const enabledCats = pricingCategories.filter(c => c.enabled);
       
-      for (const cat of enabledCats) {
+      // Section title
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text('GRILLE TARIFAIRE - ETALONNAGE', margin, y);
+      y += 2;
+      pdf.setFillColor(...navy);
+      pdf.rect(margin, y, 50, 0.8, 'F');
+      y += 6;
+      
+      for (let catIdx = 0; catIdx < enabledCats.length; catIdx++) {
+        const cat = enabledCats[catIdx];
         const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
         if (!catalog) continue;
         
-        checkPageBreak(25);
+        // Estimate height: header(9) + subheader row(7) + models * 6 + spacing(4)
+        const estHeight = 9 + 7 + (cat.models.length * 6) + 4;
+        checkPageBreak(Math.min(estHeight, 40)); // At least check for header + a few rows
         
         // Category header bar
         pdf.setFillColor(...navy);
-        pdf.rect(margin, y, contentWidth, 8, 'F');
+        pdf.roundedRect(margin, y, contentWidth, 9, 1, 1, 'F');
         pdf.setTextColor(...white);
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'bold');
-        pdf.text(`${catalog.icon} ${catalog.name}`, margin + 3, y + 6);
-        pdf.text(`${cat.categoryPrice.toFixed(2)} € / étalonnage`, pageWidth - margin - 3, y + 6, { align: 'right' });
-        y += 10;
+        pdf.text(catalog.name.toUpperCase(), margin + 4, y + 6.5);
+        pdf.setFontSize(9);
+        pdf.text(`Tarif standard : ${cat.categoryPrice.toFixed(2)} EUR HT`, pageWidth - margin - 4, y + 6.5, { align: 'right' });
+        y += 11;
         
-        // Exceptions
-        const exceptions = cat.models.filter(m => m.isOverride && m.price !== null);
-        if (exceptions.length > 0) {
-          pdf.setFontSize(9);
-          pdf.setFont('helvetica', 'italic');
-          pdf.setTextColor(...gray);
-          pdf.text('Sauf les modèles suivants :', margin + 5, y + 4);
-          y += 6;
-          
-          for (const ex of exceptions) {
-            checkPageBreak(6);
-            pdf.setFont('helvetica', 'normal');
-            pdf.setTextColor(...darkBlue);
-            pdf.setFontSize(9);
-            pdf.text(`• ${ex.name}`, margin + 10, y + 4);
-            pdf.setFont('helvetica', 'bold');
-            pdf.text(`${ex.price.toFixed(2)} €`, pageWidth - margin - 3, y + 4, { align: 'right' });
-            y += 5;
-          }
-        }
-        
-        // Model count
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(...lightGray);
-        pdf.text(`${catalog.models.length} modèles inclus`, margin + 5, y + 4);
+        // Column headers
+        pdf.setFillColor(235, 238, 243);
+        pdf.rect(margin, y, contentWidth, 7, 'F');
+        pdf.setFontSize(7.5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...navy);
+        pdf.text('MODELE', margin + 4, y + 5);
+        pdf.text('PRIX UNITAIRE HT', pageWidth - margin - 4, y + 5, { align: 'right' });
         y += 8;
+        
+        // All models in this category
+        cat.models.forEach((model, i) => {
+          checkPageBreak(6);
+          const price = (model.isOverride && model.price !== null) ? model.price : cat.categoryPrice;
+          const isOverride = model.isOverride && model.price !== null;
+          
+          // Alternating row bg
+          if (i % 2 === 0) {
+            pdf.setFillColor(250, 250, 252);
+            pdf.rect(margin, y - 0.5, contentWidth, 6, 'F');
+          }
+          
+          // Model name
+          pdf.setFontSize(8.5);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(...darkBlue);
+          pdf.text(model.name, margin + 4, y + 4);
+          
+          // Price - bold if override, with indicator
+          if (isOverride) {
+            pdf.setFont('helvetica', 'bold');
+            pdf.setTextColor(...navy);
+            pdf.text(`${price.toFixed(2)} EUR`, pageWidth - margin - 4, y + 4, { align: 'right' });
+            // Small asterisk marker
+            pdf.setFontSize(6);
+            pdf.setTextColor(...accent);
+            pdf.text('*', pageWidth - margin - 4 - pdf.getTextWidth(`${price.toFixed(2)} EUR`) - 2, y + 3);
+          } else {
+            pdf.setFont('helvetica', 'normal');
+            pdf.setTextColor(...gray);
+            pdf.text(`${price.toFixed(2)} EUR`, pageWidth - margin - 4, y + 4, { align: 'right' });
+          }
+          
+          y += 6;
+        });
+        
+        // Category summary line
+        pdf.setDrawColor(220, 220, 225);
+        pdf.setLineWidth(0.2);
+        pdf.line(margin, y, pageWidth - margin, y);
+        y += 3;
+        
+        const overrideCount = cat.models.filter(m => m.isOverride && m.price !== null).length;
+        pdf.setFontSize(7);
+        pdf.setFont('helvetica', 'italic');
+        pdf.setTextColor(160, 160, 165);
+        const summaryParts = [`${cat.models.length} modeles inclus`];
+        if (overrideCount > 0) summaryParts.push(`* ${overrideCount} tarif(s) specifique(s)`);
+        pdf.text(summaryParts.join('  |  '), margin + 4, y + 1);
+        y += 6;
       }
+      
     } else {
       // ===== TOKEN CONTRACT - Device table =====
       const validDevices = devices.filter(d => d.serial_number);
       
+      // Section title
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text('APPAREILS SOUS CONTRAT', margin, y);
+      y += 2;
+      pdf.setFillColor(...navy);
+      pdf.rect(margin, y, 50, 0.8, 'F');
+      y += 6;
+      
       // Table header
       pdf.setFillColor(...navy);
-      pdf.rect(margin, y, contentWidth, 8, 'F');
+      pdf.roundedRect(margin, y, contentWidth, 9, 1, 1, 'F');
       pdf.setTextColor(...white);
-      pdf.setFontSize(9);
+      pdf.setFontSize(8);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('N° Série', margin + 3, y + 6);
-      pdf.text('Modèle', margin + 50, y + 6);
-      pdf.text('Tokens/an', margin + 115, y + 6);
-      pdf.text('Prix HT', pageWidth - margin - 3, y + 6, { align: 'right' });
-      y += 10;
+      const col1 = margin + 4;
+      const col2 = margin + 55;
+      const col3 = margin + 120;
+      const col4 = pageWidth - margin - 4;
+      pdf.text('N. SERIE', col1, y + 6.5);
+      pdf.text('MODELE', col2, y + 6.5);
+      pdf.text('TOKENS / AN', col3, y + 6.5);
+      pdf.text('PRIX HT', col4, y + 6.5, { align: 'right' });
+      y += 11;
       
       validDevices.forEach((d, i) => {
         checkPageBreak(7);
         if (i % 2 === 0) {
-          pdf.setFillColor(248, 248, 248);
-          pdf.rect(margin, y - 1, contentWidth, 7, 'F');
+          pdf.setFillColor(250, 250, 252);
+          pdf.rect(margin, y - 0.5, contentWidth, 7, 'F');
         }
-        pdf.setFontSize(9);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(...darkBlue);
-        pdf.text(d.serial_number || '—', margin + 3, y + 4);
-        pdf.text(d.model_name || '—', margin + 50, y + 4);
-        pdf.text(String(d.tokens_total || 1), margin + 115, y + 4);
+        pdf.setFontSize(8.5);
         pdf.setFont('helvetica', 'bold');
-        pdf.text(`${(parseFloat(d.unit_price) || 0).toFixed(2)} €`, pageWidth - margin - 3, y + 4, { align: 'right' });
+        pdf.setTextColor(...darkBlue);
+        pdf.text(d.serial_number || '', col1, y + 4.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(d.model_name || '', col2, y + 4.5);
+        pdf.setTextColor(...gray);
+        pdf.text(String(d.tokens_total || 1), col3, y + 4.5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(...darkBlue);
+        pdf.text(`${(parseFloat(d.unit_price) || 0).toFixed(2)} EUR`, col4, y + 4.5, { align: 'right' });
         y += 7;
       });
       
-      // Total
-      y += 3;
-      pdf.setDrawColor(...navy);
-      pdf.setLineWidth(0.5);
-      pdf.line(margin + 100, y, pageWidth - margin, y);
-      y += 5;
-      pdf.setFontSize(11);
+      // Total row
+      y += 2;
+      pdf.setFillColor(...navy);
+      pdf.rect(margin, y, contentWidth, 10, 'F');
+      pdf.setTextColor(...white);
+      pdf.setFontSize(10);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...navy);
-      pdf.text('TOTAL HT', margin + 100, y + 1);
-      pdf.text(`${totalPrice.toFixed(2)} €`, pageWidth - margin - 3, y + 1, { align: 'right' });
-      y += 3;
+      pdf.text('TOTAL HT', col3 - 20, y + 7);
+      pdf.text(`${totalPrice.toFixed(2)} EUR`, col4, y + 7, { align: 'right' });
+      y += 14;
     }
 
     // ===== NOTES =====
     if (contractData.internal_notes) {
-      checkPageBreak(20);
-      y += 5;
-      pdf.setFontSize(8);
-      pdf.setTextColor(...lightGray);
-      pdf.text('NOTES', margin, y);
-      y += 5;
+      checkPageBreak(25);
+      y += 4;
       pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text('NOTES', margin, y);
+      y += 1;
+      pdf.setFillColor(...navy);
+      pdf.rect(margin, y, 15, 0.5, 'F');
+      y += 4;
+      pdf.setFontSize(8.5);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(...gray);
       const noteLines = pdf.splitTextToSize(contractData.internal_notes, contentWidth);
@@ -21457,32 +21545,58 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     }
 
     // ===== SIGNATURES =====
-    checkPageBreak(40);
-    y += 10;
-    pdf.setDrawColor(200, 200, 200);
-    pdf.setLineWidth(0.3);
+    checkPageBreak(50);
+    y += 8;
+    
+    // Section title
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...navy);
+    pdf.text('SIGNATURES', margin, y);
+    y += 1;
+    pdf.setFillColor(...navy);
+    pdf.rect(margin, y, 20, 0.5, 'F');
+    y += 8;
+    
+    const sigBoxW = (contentWidth - 15) / 2;
+    const sigBoxH = 30;
     
     // Left - Lighthouse
+    pdf.setDrawColor(200, 205, 210);
+    pdf.setLineWidth(0.3);
+    pdf.roundedRect(margin, y, sigBoxW, sigBoxH, 2, 2, 'S');
     pdf.setFontSize(8);
-    pdf.setTextColor(...lightGray);
-    pdf.text('LIGHTHOUSE FRANCE', margin, y);
-    y += 3;
-    pdf.line(margin, y + 20, margin + 70, y + 20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...navy);
+    pdf.text('LIGHTHOUSE FRANCE', margin + 5, y + 6);
     pdf.setFontSize(7);
-    pdf.text('Date et signature', margin, y + 24);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date et signature :', margin + 5, y + 11);
     
     // Right - Client
-    pdf.text('LE CLIENT', pageWidth - margin - 70, y - 3);
-    pdf.line(pageWidth - margin - 70, y + 20, pageWidth - margin, y + 20);
-    pdf.text('Date et signature', pageWidth - margin - 70, y + 24);
+    pdf.roundedRect(pageWidth - margin - sigBoxW, y, sigBoxW, sigBoxH, 2, 2, 'S');
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...navy);
+    pdf.text('LE CLIENT', pageWidth - margin - sigBoxW + 5, y + 6);
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Date et signature :', pageWidth - margin - sigBoxW + 5, y + 11);
 
-    addFooter();
+    // Add footers to all pages
+    const pageCount = pdf.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      pdf.setPage(i);
+      addFooter(i, pageCount);
+    }
     
     return pdf;
   };
 
   // Show preview
-  const showPreview = async () => {
+  const showPreview = () => {
     // Validate first
     if (!contractData.company_id && !contractData.company_name) {
       notify('Veuillez sélectionner un client ou entrer un nom', 'error');
@@ -21496,35 +21610,10 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       notify("Veuillez activer au moins une catégorie d'appareils", 'error');
       return;
     }
-    
-    try {
-      const pdf = await generateContractPDF();
-      const blob = pdf.output('blob');
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
-      setPdfBlob(blob);
-      setStep(2);
-    } catch (err) {
-      console.error('PDF generation error:', err);
-      notify('Erreur lors de la génération du document: ' + err.message, 'error');
-    }
+    setStep(2);
   };
 
   const handleSubmit = async () => {
-    // Validate
-    if (!contractData.company_id && !contractData.company_name) {
-      notify(lang === 'en' ? 'Please select a client or enter a name' : 'Veuillez sélectionner un client ou entrer un nom', 'error');
-      return;
-    }
-    if (contractType === 'token' && (devices.length === 0 || !devices.some(d => d.serial_number))) {
-      notify(lang === 'en' ? 'Please add at least one device with a serial number' : 'Veuillez ajouter au moins un appareil avec un numéro de série', 'error');
-      return;
-    }
-    if (contractType === 'pricing' && !pricingCategories.some(c => c.enabled)) {
-      notify(lang === 'en' ? 'Please enable at least one device category' : 'Veuillez activer au moins une catégorie d\'appareils', 'error');
-      return;
-    }
-
     setSaving(true);
     try {
       // Check for overlapping contracts with same serial numbers (token contracts only)
@@ -21547,7 +21636,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
             conflicts.push({
               serial: cd.serial_number,
               contractNumber: existingContract.contract_number,
-              period: `${new Date(existingContract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - ${new Date(existingContract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}`
+              period: `${new Date(existingContract.start_date).toLocaleDateString('fr-FR')} - ${new Date(existingContract.end_date).toLocaleDateString('fr-FR')}`
             });
           }
         }
@@ -21557,19 +21646,18 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         const conflictMsg = conflicts.map(c => 
           `• ${c.serial} déjà dans contrat ${c.contractNumber} (${c.period})`
         ).join('\n');
-        notify(lang === 'en' ? `❌ Serial number conflict detected:\n${conflictMsg}` : `❌ Conflit de numéros de série détecté:\n${conflictMsg}`, 'error');
+        notify(`❌ Conflit de numéros de série détecté:\n${conflictMsg}`, 'error');
         setSaving(false);
         return;
       }
       } // end token serial conflict check
 
-      // Create contract
+      // Create contract (contract_number auto-generated by DB)
       const { data: contract, error: contractError } = await supabase
         .from('contracts')
         .insert({
           company_id: contractData.company_id || null,
           company_name_manual: contractData.company_id ? null : contractData.company_name,
-          contract_number: contractData.contract_number,
           contract_type: contractType,
           pricing_data: contractType === 'pricing' ? JSON.stringify(
             pricingCategories.filter(c => c.enabled).map(cat => ({
@@ -21591,7 +21679,6 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       // Add devices
       const deviceInserts = contractType === 'pricing' 
         ? (() => {
-            // Build pricing_data JSON and also insert representative rows for each enabled category
             const inserts = [];
             pricingCategories.filter(c => c.enabled).forEach(cat => {
               const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
@@ -21601,7 +21688,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                   serial_number: null,
                   model_name: m.name,
                   device_type: catalog?.deviceType || 'particle_counter',
-                  nickname: cat.id, // Store category ID for grouping
+                  nickname: cat.id,
                   tokens_total: 0,
                   tokens_used: 0,
                   unit_price: m.isOverride && m.price !== null ? m.price : cat.categoryPrice
@@ -21627,24 +21714,24 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
 
       if (devicesError) throw devicesError;
 
-      // Upload contract PDF if we have one
-      if (pdfBlob) {
-        try {
-          const fileName = `contracts/${contract.id}/${contractData.contract_number || 'contract'}.pdf`;
-          const contractDocUrl = await uploadPDFToStorage(pdfBlob, `contracts/${contract.id}`, `${contractData.contract_number || 'contract'}.pdf`);
-          if (contractDocUrl) {
-            await supabase.from('contracts').update({ signed_quote_url: contractDocUrl }).eq('id', contract.id);
-          }
-        } catch (pdfErr) {
-          console.error('PDF upload error (contract still created):', pdfErr);
+      // Generate and upload contract PDF (now we have the real contract_number from DB)
+      try {
+        const realContractNumber = contract.contract_number || '';
+        const pdf = await generateContractPDF(realContractNumber);
+        const pdfBlob = pdf.output('blob');
+        const contractDocUrl = await uploadPDFToStorage(pdfBlob, `contracts/${contract.id}`, `${realContractNumber || 'contract'}.pdf`);
+        if (contractDocUrl) {
+          await supabase.from('contracts').update({ signed_quote_url: contractDocUrl }).eq('id', contract.id);
         }
+      } catch (pdfErr) {
+        console.error('PDF generation/upload error (contract still created):', pdfErr);
       }
 
-      notify(lang === 'en' ? '✅ Contract created successfully!' : '✅ Contrat créé avec succès!');
+      notify('✅ Contrat créé avec succès!');
       onCreated();
     } catch (err) {
       console.error('Error creating contract:', err);
-      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+      notify('Erreur: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -21666,7 +21753,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         {/* Header */}
         <div className="px-6 py-4 bg-[#1a1a2e] text-white">
           <h2 className="text-xl font-bold">{step === 2 ? '📄 Aperçu du Contrat' : (contractType === 'pricing' ? "Nouveau Contrat Tarification" : "Nouveau Contrat d'Étalonnage")}</h2>
-          <p className="text-gray-300 text-sm">{step === 2 ? `${contractData.contract_number} • ${contractType === 'pricing' ? 'Tarification' : 'Étalonnage'}` : 'Pour les contrats existants non créés par le client'}</p>
+          <p className="text-gray-300 text-sm">{step === 2 ? `${contractType === 'pricing' ? 'Contrat de Tarification' : "Contrat d'Étalonnage"} • N° attribué automatiquement` : 'Pour les contrats existants non créés par le client'}</p>
         </div>
 
         {step === 1 && (
@@ -21714,16 +21801,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           </div>
 
           {/* Contract Details */}
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Contract #' : 'N° Contrat'}</label>
-              <input
-                type="text"
-                value={contractData.contract_number}
-                onChange={e => setContractData({ ...contractData, contract_number: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
+          <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">{lang === 'en' ? 'Start date' : 'Date début'}</label>
               <input
@@ -21944,20 +22022,173 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         </div>
         )}
 
-        {/* Step 2: Preview */}
-        {step === 2 && previewUrl && (
-        <div className="p-6">
-          <div className="mb-4 flex items-center gap-3">
-            <button onClick={() => { setStep(1); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }} className="text-[#2D5A7B] hover:text-[#1a1a2e] font-medium">← Modifier</button>
-            <h3 className="font-bold text-gray-800">📄 Aperçu du contrat</h3>
+        {/* Step 2: HTML Preview */}
+        {step === 2 && (() => {
+          const isPricing = contractType === 'pricing';
+          const clientName = contractData.company_id 
+            ? (clients.find(c => c.id === contractData.company_id)?.name || 'Client')
+            : (contractData.company_name || 'Client');
+          const clientObj = contractData.company_id ? clients.find(c => c.id === contractData.company_id) : null;
+          const enabledCats = pricingCategories.filter(c => c.enabled);
+          const validDevices = devices.filter(d => d.serial_number);
+          
+          return (
+          <div className="p-6 max-h-[70vh] overflow-y-auto">
+            {/* Contract document preview */}
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm max-w-3xl mx-auto">
+              
+              {/* Header */}
+              <div className="p-6 pb-4">
+                <div className="flex justify-between items-start">
+                  <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10" onError={e => { e.target.style.display='none'; }} />
+                  <div className="text-right">
+                    <h2 className="text-xl font-bold" style={{ color: '#2D5A7B' }}>
+                      {isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ÉTALONNAGE"}
+                    </h2>
+                    <p className="text-sm text-gray-400 mt-1">N° attribué à la création</p>
+                  </div>
+                </div>
+                <div className="mt-3 h-0.5 bg-[#2D5A7B] rounded" />
+              </div>
+              
+              {/* Info cards */}
+              <div className="px-6 grid grid-cols-2 gap-4 mb-5">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-[10px] font-bold text-[#2D5A7B] tracking-wider mb-2">DÉTAILS DU CONTRAT</p>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between"><span className="text-gray-500">Date :</span><span className="font-medium text-gray-800">{new Date().toLocaleDateString('fr-FR')}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Début :</span><span className="font-medium text-gray-800">{new Date(contractData.start_date).toLocaleDateString('fr-FR')}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Fin :</span><span className="font-medium text-gray-800">{new Date(contractData.end_date).toLocaleDateString('fr-FR')}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-500">Validité :</span><span className="font-medium text-gray-800">30 jours</span></div>
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-[10px] font-bold text-[#2D5A7B] tracking-wider mb-2">CLIENT</p>
+                  <p className="font-bold text-gray-800 text-base">{clientName}</p>
+                  {clientObj && (
+                    <div className="text-sm text-gray-500 mt-1 space-y-0.5">
+                      {(clientObj.billing_address || clientObj.address) && <p>{clientObj.billing_address || clientObj.address}</p>}
+                      <p>{[clientObj.billing_postal_code || clientObj.postal_code, clientObj.billing_city || clientObj.city].filter(Boolean).join(' ')}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Content - Pricing or Token */}
+              <div className="px-6 mb-6">
+                {isPricing ? (
+                  <>
+                    <h3 className="text-sm font-bold text-[#2D5A7B] tracking-wider mb-3">GRILLE TARIFAIRE — ÉTALONNAGE</h3>
+                    {enabledCats.map(cat => {
+                      const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
+                      if (!catalog) return null;
+                      return (
+                        <div key={cat.id} className="mb-4">
+                          <div className="bg-[#2D5A7B] text-white px-4 py-2 rounded-t-lg flex justify-between items-center">
+                            <span className="font-bold text-sm">{catalog.name.toUpperCase()}</span>
+                            <span className="text-sm">Tarif standard : {cat.categoryPrice.toFixed(2)} € HT</span>
+                          </div>
+                          <table className="w-full text-sm border border-gray-200 border-t-0">
+                            <thead>
+                              <tr className="bg-gray-100">
+                                <th className="text-left px-4 py-1.5 text-[10px] font-bold text-[#2D5A7B] tracking-wider">MODÈLE</th>
+                                <th className="text-right px-4 py-1.5 text-[10px] font-bold text-[#2D5A7B] tracking-wider">PRIX UNITAIRE HT</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cat.models.map((model, i) => {
+                                const price = (model.isOverride && model.price !== null) ? model.price : cat.categoryPrice;
+                                const isOverride = model.isOverride && model.price !== null;
+                                return (
+                                  <tr key={model.key} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                    <td className="px-4 py-1.5 text-gray-700">{model.name}</td>
+                                    <td className={`px-4 py-1.5 text-right ${isOverride ? 'font-bold text-[#2D5A7B]' : 'text-gray-500'}`}>
+                                      {isOverride && <span className="text-green-600 text-xs mr-1">★</span>}
+                                      {price.toFixed(2)} €
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                          <div className="text-xs text-gray-400 px-4 py-1.5 border border-t-0 border-gray-200 rounded-b-lg bg-gray-50">
+                            {cat.models.length} modèles inclus
+                            {cat.models.filter(m => m.isOverride && m.price !== null).length > 0 && 
+                              ` · ★ ${cat.models.filter(m => m.isOverride && m.price !== null).length} tarif(s) spécifique(s)`
+                            }
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-sm font-bold text-[#2D5A7B] tracking-wider mb-3">APPAREILS SOUS CONTRAT</h3>
+                    <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                      <thead>
+                        <tr className="bg-[#2D5A7B] text-white">
+                          <th className="text-left px-4 py-2 text-xs font-bold">N° SÉRIE</th>
+                          <th className="text-left px-4 py-2 text-xs font-bold">MODÈLE</th>
+                          <th className="text-center px-4 py-2 text-xs font-bold">TOKENS / AN</th>
+                          <th className="text-right px-4 py-2 text-xs font-bold">PRIX HT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {validDevices.map((d, i) => (
+                          <tr key={d.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-4 py-2 font-bold text-gray-800">{d.serial_number}</td>
+                            <td className="px-4 py-2 text-gray-600">{d.model_name || '—'}</td>
+                            <td className="px-4 py-2 text-center text-gray-600">{d.tokens_total || 1}</td>
+                            <td className="px-4 py-2 text-right font-bold text-gray-800">{(parseFloat(d.unit_price) || 0).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#2D5A7B] text-white">
+                          <td colSpan={3} className="px-4 py-2 font-bold text-right">TOTAL HT</td>
+                          <td className="px-4 py-2 text-right font-bold">{totalPrice.toFixed(2)} €</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </>
+                )}
+              </div>
+              
+              {/* Notes */}
+              {contractData.internal_notes && (
+                <div className="px-6 mb-5">
+                  <p className="text-xs font-bold text-[#2D5A7B] tracking-wider mb-1">NOTES</p>
+                  <p className="text-sm text-gray-500">{contractData.internal_notes}</p>
+                </div>
+              )}
+              
+              {/* Signatures */}
+              <div className="px-6 pb-6">
+                <p className="text-xs font-bold text-[#2D5A7B] tracking-wider mb-3">SIGNATURES</p>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="border border-gray-200 rounded-lg p-4 h-24">
+                    <p className="text-xs font-bold text-[#2D5A7B]">LIGHTHOUSE FRANCE</p>
+                    <p className="text-[10px] text-gray-400 mt-1">Date et signature :</p>
+                  </div>
+                  <div className="border border-gray-200 rounded-lg p-4 h-24">
+                    <p className="text-xs font-bold text-[#2D5A7B]">LE CLIENT</p>
+                    <p className="text-[10px] text-gray-400 mt-1">Date et signature :</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Footer */}
+              <div className="border-t border-gray-200 px-6 py-3 text-[10px] text-gray-400">
+                <p>{businessSettings?.company_name || 'Lighthouse France SAS'} — {businessSettings?.address || '16, rue Paul Séjourné'} — {businessSettings?.postal_code || '94000'} {businessSettings?.city || 'CRÉTEIL'}</p>
+              </div>
+            </div>
           </div>
-          <iframe src={previewUrl} className="w-full border rounded-lg" style={{ height: '70vh' }} title="Contract Preview" />
-        </div>
-        )}
+          );
+        })()}
 
         {/* Footer */}
         <div className="px-6 py-4 bg-gray-100 border-t flex justify-between">
-          <button onClick={() => { if (step === 2) { setStep(1); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null); } else { onClose(); } }} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+          <button onClick={() => { if (step === 2) { setStep(1); } else { onClose(); } }} className="px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
             {step === 2 ? '← Modifier' : 'Annuler'}
           </button>
           {step === 1 ? (
@@ -21965,7 +22196,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
               onClick={showPreview}
               className="px-8 py-2 bg-[#2D5A7B] hover:bg-[#1a1a2e] text-white rounded-lg font-bold"
             >
-              📄 Voir le Contrat
+              👁️ Aperçu
             </button>
           ) : (
             <button
