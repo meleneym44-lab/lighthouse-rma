@@ -17321,11 +17321,17 @@ function MessagesSheet({ requests, rentals = [], notify, reload, onSelectRMA, t 
     if (!selectedConvo) return;
     setLoadingSuggestions(true);
     try {
-      const rmaData = selectedConvo._type === 'rental' 
-        ? { request_number: selectedConvo.rental_number, status: selectedConvo.status, requested_service: 'Rental / Location', company_name: selectedConvo.companies?.name, devices: selectedConvo.rental_request_items?.map(d => ({ model: d.item_name, serial: d.serial_number || '', status: d.status || '' })) }
-        : { request_number: selectedConvo.request_number, status: selectedConvo.status, requested_service: selectedConvo.requested_service, company_name: selectedConvo.companies?.name, devices: selectedConvo.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) };
+      let contextData;
+      const convoType = selectedConvo._type;
+      if (convoType === 'rental') {
+        contextData = { type: 'rental', request_number: selectedConvo.rental_number, status: selectedConvo.status, requested_service: 'Location / Rental', company_name: selectedConvo.companies?.name, items: selectedConvo.rental_request_items?.map(d => ({ model: d.item_name, serial: d.serial_number || '', status: d.status || '' })) };
+      } else if (convoType === 'parts') {
+        contextData = { type: 'parts_order', request_number: selectedConvo._number, status: selectedConvo.status, requested_service: 'Commande Pièces Détachées / Parts Order', company_name: selectedConvo.companies?.name, items: selectedConvo.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) };
+      } else {
+        contextData = { type: 'rma', request_number: selectedConvo.request_number, status: selectedConvo.status, requested_service: selectedConvo.requested_service, company_name: selectedConvo.companies?.name, devices: selectedConvo.request_devices?.map(d => ({ model: d.model_name, serial: d.serial_number, status: d.status })) };
+      }
       const res = await fetch('/api/chat-suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        rma: rmaData,
+        rma: contextData,
         messages: msgs.slice(-10).map(m => ({ sender: m.sender_type, content: m.content }))
       })});
       if (res.ok) { const d = await res.json(); if (d.french) setAiSuggestions([d]); }
