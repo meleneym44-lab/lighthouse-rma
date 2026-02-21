@@ -11690,6 +11690,12 @@ const STATUS_STYLES = {
                   </button>
                 </>
               )}
+              {shippingData.trackingNumber && (
+                <a href={`https://www.ups.com/track?tracknum=${shippingData.trackingNumber}`} target="_blank" rel="noopener noreferrer"
+                  className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">
+                  📍 UPS
+                </a>
+              )}
             </div>
           </div>
           
@@ -12205,73 +12211,7 @@ const STATUS_STYLES = {
               </div>
             </div>
             
-            {/* Quick Actions Card */}
-            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <div className="bg-amber-500 px-4 py-3">
-                <h3 className="font-bold text-white">{lang === 'en' ? '⚡ Quick actions' : '⚡ Actions rapides'}</h3>
-              </div>
-              <div className="p-4 space-y-2">
-                {(order.status === 'submitted' || order.status === 'quote_revision_requested' || (order.quote_rejection_notes && order.status === 'rma_created')) && (
-                  <button
-                    onClick={() => onOpenQuoteEditor(order)}
-                    className="w-full px-4 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-medium"
-                  >
-                    {lang === 'en' ? '💰 Create/Revise Quote' : '💰 Créer/Réviser Devis'}
-                  </button>
-                )}
-                
-                {order.status === 'bc_review' && (
-                  <button
-                    onClick={() => {
-                      notify(lang === 'en' ? 'Use the PO to review tab in the list' : "Utilisez l'onglet BC à vérifier dans la liste");
-                    }}
-                    className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
-                  >
-                    🔍 Examiner BC
-                  </button>
-                )}
-                
-                {order.status === 'in_progress' && (
-                  <button
-                    onClick={() => updateStatus('ready_to_ship')}
-                    disabled={saving}
-                    className="w-full px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50"
-                  >
-                    {lang === 'en' ? '🚚 Mark Ready to Ship' : '🚚 Marquer Prêt à Expédier'}
-                  </button>
-                )}
-                
-                {order.status === 'ready_to_ship' && !shippingData.trackingNumber && (
-                  <button
-                    onClick={() => setShowShipping(true)}
-                    className="w-full px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
-                  >
-                    {lang === 'en' ? '📦 Create Shipment & DN' : '📦 Créer Expédition & BL'}
-                  </button>
-                )}
-                
-                {order.status === 'ready_to_ship' && shippingData.trackingNumber && (
-                  <button
-                    onClick={markAsShipped}
-                    disabled={saving}
-                    className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold disabled:opacity-50"
-                  >
-                    {saving ? '⏳...' : (lang === 'en' ? '🚚 Mark as Shipped' : '🚚 Marquer Expédié')}
-                  </button>
-                )}
-                
-                {shippingData.trackingNumber && (
-                  <a
-                    href={`https://www.ups.com/track?tracknum=${shippingData.trackingNumber}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-center"
-                  >
-                    📍 Suivre colis UPS
-                  </a>
-                )}
-              </div>
-            </div>
+            
             
             {/* Signature Card (if BC signed) */}
             {order.bc_signature_url && (
@@ -15113,7 +15053,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           {step === 3 && (
             <>
               <button onClick={() => setStep(2)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? '← Back' : '← Retour'}</button>
-              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? (lang === 'en' ? '⏳ Processing...' : '⏳ Traitement...') : (lang === 'en' ? '🚚 Mark Shipped' : '🚚 Marquer Expédié')}</button>
+              <button onClick={markAsShipped} disabled={saving} className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">{saving ? (lang === 'en' ? '⏳ Processing...' : '⏳ Traitement...') : (lang === 'en' ? '✅ Save & Close' : '✅ Enregistrer & Fermer')}</button>
             </>
           )}
         </div>
