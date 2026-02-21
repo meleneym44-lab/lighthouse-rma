@@ -4144,6 +4144,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           profile={profile} 
           setMessages={setMessages}
           setUnreadCount={setUnreadCount}
+          rentalThreadData={rentalThreadData}
         />
       )}
     </div>
@@ -4153,7 +4154,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
 // ============================================
 // MESSAGES PANEL COMPONENT
 // ============================================
-function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount }) {
+function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount, rentalThreadData = [] }) {
   const [selectedThread, setSelectedThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
