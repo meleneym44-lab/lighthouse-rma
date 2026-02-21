@@ -20750,6 +20750,52 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                     {/* Devices */}
                     <div>
                       <h4 className="font-bold text-gray-700 mb-2">{isPricingContract ? '💲 Grille Tarifaire' : '🔧 Appareils'} ({devices.length})</h4>
+                      
+                      {isPricingContract && !editMode ? (() => {
+                        // Group devices by category (stored in nickname field)
+                        const groups = {};
+                        devices.forEach(d => {
+                          const catId = d.nickname || 'other';
+                          if (!groups[catId]) groups[catId] = { models: [], prices: {} };
+                          groups[catId].models.push(d);
+                          const price = parseFloat(d.unit_price || 0);
+                          groups[catId].prices[price] = (groups[catId].prices[price] || 0) + 1;
+                        });
+                        
+                        return (
+                          <div className="space-y-3">
+                            {Object.entries(groups).map(([catId, group]) => {
+                              const catalog = PRICING_CATALOG.find(p => p.id === catId);
+                              const icon = catalog?.icon || '📦';
+                              const catName = catalog?.name || catId;
+                              
+                              // Find most common price (the category base price)
+                              const basePriceEntry = Object.entries(group.prices).sort((a, b) => b[1] - a[1])[0];
+                              const basePrice = parseFloat(basePriceEntry?.[0] || 0);
+                              const exceptions = group.models.filter(m => parseFloat(m.unit_price || 0) !== basePrice);
+                              
+                              return (
+                                <div key={catId} className="p-3 bg-gray-50 rounded-lg border">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span>{icon}</span>
+                                    <span className="font-bold text-gray-800">{catName}</span>
+                                    <span className="text-gray-400 text-sm">({group.models.length} modèles)</span>
+                                    <span className="ml-auto font-bold text-[#2D5A7B]">{basePrice.toFixed(2)} € / étal.</span>
+                                  </div>
+                                  {exceptions.length > 0 && (
+                                    <div className="mt-2 pl-7">
+                                      <p className="text-xs text-amber-600 font-medium mb-1">Sauf :</p>
+                                      {exceptions.map(ex => (
+                                        <p key={ex.id} className="text-sm text-gray-600">• {ex.model_name} → <span className="font-bold text-amber-700">{parseFloat(ex.unit_price || 0).toFixed(2)} €</span></p>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })() : (
                       <div className="space-y-2">
                         {devices.map(device => (
                           <div key={device.id} className="p-3 bg-gray-50 rounded-lg border">
@@ -20757,7 +20803,6 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                               <div>
                                 <p className="font-medium">{device.model_name || device.model}</p>
                                 {!isPricingContract && <p className="text-xs text-gray-500">SN: {device.serial_number || device.serial || '—'}</p>}
-                                {isPricingContract && <p className="text-xs text-gray-500">{device.device_type === 'particle_counter' ? 'Compteur particules' : device.device_type === 'bio_collector' ? 'Bio collecteur' : device.device_type === 'liquid_counter' ? 'Compteur liquide' : device.device_type || '—'}</p>}
                               </div>
                               {editMode ? (
                                 <div className="flex gap-2">
@@ -20774,25 +20819,20 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                                 </div>
                               ) : (
                                 <div className="text-right text-sm">
-                                  {isPricingContract ? (
-                                    <p className="font-bold text-[#2D5A7B]">{parseFloat(device.unit_price || 0).toFixed(2)} € / étal.</p>
-                                  ) : (
-                                    <>
-                                    {device.tokens_total && (
-                                      <div>
-                                        <p className="text-gray-600">{(device.tokens_total || 0) - (device.tokens_used || 0)}/{device.tokens_total} tokens restants</p>
-                                        {device.tokens_used > 0 && <p className="text-xs text-orange-500">{device.tokens_used} utilisé(s)</p>}
-                                      </div>
-                                    )}
-                                    {device.unit_price && <p className="text-gray-600">{parseFloat(device.unit_price).toFixed(2)} €</p>}
-                                    </>
+                                  {!isPricingContract && device.tokens_total && (
+                                    <div>
+                                      <p className="text-gray-600">{(device.tokens_total || 0) - (device.tokens_used || 0)}/{device.tokens_total} tokens restants</p>
+                                      {device.tokens_used > 0 && <p className="text-xs text-orange-500">{device.tokens_used} utilisé(s)</p>}
+                                    </div>
                                   )}
+                                  {device.unit_price && <p className="text-gray-600">{parseFloat(device.unit_price).toFixed(2)} €</p>}
                                 </div>
                               )}
                             </div>
                           </div>
                         ))}
                       </div>
+                      )}
                     </div>
 
                     {/* Notes */}
@@ -21104,6 +21144,24 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
   const [devices, setDevices] = useState([
     { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }
   ]);
+  
+  // Pricing contract state - category-based pricing
+  const [pricingMode, setPricingMode] = useState('fixed'); // 'fixed' or 'discount'
+  const [globalDiscount, setGlobalDiscount] = useState(0); // % discount applied to all
+  const [pricingCategories, setPricingCategories] = useState(() => 
+    PRICING_CATALOG.map(cat => ({
+      id: cat.id,
+      enabled: ['solair', 'remote', 'apex_r', 'apex_z'].includes(cat.id), // Common ones on by default
+      expanded: false,
+      categoryPrice: cat.defaultPrice,
+      models: cat.models.map(m => ({
+        key: m.key,
+        name: m.name,
+        price: null, // null = use category price
+        isOverride: false
+      }))
+    }))
+  );
 
   const addDevice = () => {
     setDevices([...devices, { id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }]);
@@ -21117,6 +21175,45 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
 
   const updateDevice = (id, field, value) => {
     setDevices(devices.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
+
+  // Pricing category helpers
+  const toggleCategory = (catId) => {
+    setPricingCategories(prev => prev.map(c => c.id === catId ? { ...c, enabled: !c.enabled } : c));
+  };
+  const toggleExpanded = (catId) => {
+    setPricingCategories(prev => prev.map(c => c.id === catId ? { ...c, expanded: !c.expanded } : c));
+  };
+  const setCategoryPrice = (catId, price) => {
+    setPricingCategories(prev => prev.map(c => c.id === catId ? { ...c, categoryPrice: parseFloat(price) || 0 } : c));
+  };
+  const setModelOverride = (catId, modelKey, price) => {
+    setPricingCategories(prev => prev.map(c => {
+      if (c.id !== catId) return c;
+      return { ...c, models: c.models.map(m => m.key === modelKey ? { ...m, price: price === '' ? null : (parseFloat(price) || 0), isOverride: price !== '' && price !== null } : m) };
+    }));
+  };
+  const clearModelOverride = (catId, modelKey) => {
+    setPricingCategories(prev => prev.map(c => {
+      if (c.id !== catId) return c;
+      return { ...c, models: c.models.map(m => m.key === modelKey ? { ...m, price: null, isOverride: false } : m) };
+    }));
+  };
+  const getEffectivePrice = (cat, model) => {
+    const basePrice = model.isOverride && model.price !== null ? model.price : cat.categoryPrice;
+    if (pricingMode === 'discount' && globalDiscount > 0 && !model.isOverride) {
+      return Math.round(basePrice * (1 - globalDiscount / 100) * 100) / 100;
+    }
+    return basePrice;
+  };
+  // Apply % discount to fill all category prices
+  const applyDiscountToAll = () => {
+    setPricingCategories(prev => prev.map(c => {
+      const catalog = PRICING_CATALOG.find(p => p.id === c.id);
+      const discounted = Math.round((catalog?.defaultPrice || 0) * (1 - globalDiscount / 100) * 100) / 100;
+      return { ...c, categoryPrice: discounted };
+    }));
+    setPricingMode('fixed'); // Switch to fixed after applying
   };
 
   const generateContractNumber = () => {
@@ -21192,6 +21289,13 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           company_name_manual: contractData.company_id ? null : contractData.company_name,
           contract_number: contractData.contract_number,
           contract_type: contractType,
+          pricing_data: contractType === 'pricing' ? JSON.stringify(
+            pricingCategories.filter(c => c.enabled).map(cat => ({
+              id: cat.id,
+              categoryPrice: cat.categoryPrice,
+              models: cat.models.filter(m => m.isOverride).map(m => ({ key: m.key, name: m.name, price: m.price }))
+            }))
+          ) : null,
           start_date: contractData.start_date,
           end_date: contractData.end_date,
           status: contractData.status,
@@ -21205,16 +21309,26 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
 
       // Add devices
       const deviceInserts = contractType === 'pricing' 
-        ? devices.filter(d => d.model_name).map(d => ({
-            contract_id: contract.id,
-            serial_number: null,
-            model_name: d.model_name,
-            device_type: d.device_type,
-            nickname: d.nickname || null,
-            tokens_total: 0,
-            tokens_used: 0,
-            unit_price: d.unit_price || 0
-          }))
+        ? (() => {
+            // Build pricing_data JSON and also insert representative rows for each enabled category
+            const inserts = [];
+            pricingCategories.filter(c => c.enabled).forEach(cat => {
+              const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
+              cat.models.forEach(m => {
+                inserts.push({
+                  contract_id: contract.id,
+                  serial_number: null,
+                  model_name: m.name,
+                  device_type: catalog?.deviceType || 'particle_counter',
+                  nickname: cat.id, // Store category ID for grouping
+                  tokens_total: 0,
+                  tokens_used: 0,
+                  unit_price: m.isOverride && m.price !== null ? m.price : cat.categoryPrice
+                });
+              });
+            });
+            return inserts;
+          })()
         : devices.filter(d => d.serial_number).map(d => ({
             contract_id: contract.id,
             serial_number: d.serial_number,
@@ -21369,111 +21483,176 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
             />
           </div>
 
-          {/* Devices Section */}
+          {/* === TOKEN DEVICES SECTION === */}
+          {contractType === 'token' && (
           <div className="border-t pt-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-gray-800">{contractType === 'pricing' ? (lang === 'en' ? `Device Rate Card (${devices.length})` : `Grille Tarifaire (${devices.length})`) : (lang === 'en' ? `Devices under contract (${devices.length})` : `Appareils sous contrat (${devices.length})`)}</h3>
-              <button
-                onClick={addDevice}
-                className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]"
-              >
-                + {contractType === 'pricing' ? 'Ajouter modèle' : 'Ajouter appareil'}
-              </button>
+              <h3 className="font-bold text-gray-800">{lang === 'en' ? `Devices under contract (${devices.length})` : `Appareils sous contrat (${devices.length})`}</h3>
+              <button onClick={addDevice} className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]">+ Ajouter appareil</button>
             </div>
-
             <div className="space-y-3">
               {devices.map((device, index) => (
                 <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
                   <div className="flex items-start gap-4">
                     <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
-                    <div className={`flex-1 grid gap-3 ${contractType === 'pricing' ? 'md:grid-cols-4' : 'md:grid-cols-6'}`}>
-                      {contractType === 'token' && (
+                    <div className="flex-1 grid md:grid-cols-6 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Serial # *' : 'N° Série *'}</label>
-                        <input
-                          type="text"
-                          value={device.serial_number}
-                          onChange={e => updateDevice(device.id, 'serial_number', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          placeholder="SN..."
-                        />
-                      </div>
-                      )}
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">{contractType === 'pricing' ? (lang === 'en' ? 'Model *' : 'Modèle *') : (t('model'))}</label>
-                        <input
-                          type="text"
-                          value={device.model_name}
-                          onChange={e => updateDevice(device.id, 'model_name', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          placeholder={lang === 'en' ? 'Model...' : 'Modèle...'}
-                        />
+                        <label className="block text-xs text-gray-500 mb-1">N° Série *</label>
+                        <input type="text" value={device.serial_number} onChange={e => updateDevice(device.id, 'serial_number', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="SN..." />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{t('type')}</label>
-                        <select
-                          value={device.device_type}
-                          onChange={e => updateDevice(device.id, 'device_type', e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                        >
-                          <option value="particle_counter">{lang === 'en' ? 'Particle counter' : 'Compteur particules'}</option>
-                          <option value="bio_collector">{lang === 'en' ? 'Bio collector' : 'Bio collecteur'}</option>
-                          <option value="liquid_counter">{lang === 'en' ? 'Liquid counter' : 'Compteur liquide'}</option>
-                          <option value="temp_humidity">{lang === 'en' ? "Temp/Humidity" : "Temp/Humidité"}</option>
-                          <option value="other">{lang === 'en' ? 'Other' : 'Autre'}</option>
+                        <label className="block text-xs text-gray-500 mb-1">Modèle</label>
+                        <input type="text" value={device.model_name} onChange={e => updateDevice(device.id, 'model_name', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Modèle..." />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Type</label>
+                        <select value={device.device_type} onChange={e => updateDevice(device.id, 'device_type', e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                          <option value="particle_counter">Compteur particules</option>
+                          <option value="bio_collector">Bio collecteur</option>
+                          <option value="liquid_counter">Compteur liquide</option>
+                          <option value="temp_humidity">Temp/Humidité</option>
+                          <option value="other">Autre</option>
                         </select>
                       </div>
-                      {contractType === 'token' && (
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Tokens/yr' : 'Tokens/an'}</label>
-                        <input
-                          type="number"
-                          value={device.tokens_total}
-                          onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 2)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          min="1"
-                        />
+                        <label className="block text-xs text-gray-500 mb-1">Tokens/an</label>
+                        <input type="number" value={device.tokens_total} onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 2)} className="w-full px-3 py-2 border rounded-lg text-sm" min="1" />
                       </div>
-                      )}
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{contractType === 'pricing' ? (lang === 'en' ? 'Price per cal. €' : 'Prix/étal. €') : (lang === 'en' ? 'Price €' : 'Prix €')}</label>
-                        <input
-                          type="number"
-                          value={device.unit_price}
-                          onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm"
-                          min="0"
-                          step="0.01"
-                        />
+                        <label className="block text-xs text-gray-500 mb-1">Prix €</label>
+                        <input type="number" value={device.unit_price} onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border rounded-lg text-sm" min="0" step="0.01" />
                       </div>
                       <div className="flex items-end">
-                        {devices.length > 1 && (
-                          <button
-                            onClick={() => removeDevice(device.id)}
-                            className="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm"
-                          >
-                            🗑️
-                          </button>
-                        )}
+                        {devices.length > 1 && (<button onClick={() => removeDevice(device.id)} className="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm">🗑️</button>)}
                       </div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-
-            {/* Summary */}
             <div className="mt-4 bg-emerald-50 rounded-lg p-4 flex justify-between items-center">
               <div>
-                <span className="text-emerald-800 font-medium">{contractType === 'pricing' ? `${devices.filter(d => d.model_name).length} modèle(s)` : `${devices.filter(d => d.serial_number).length} appareil(s)`}</span>
-                {contractType === 'token' && (<><span className="text-emerald-600 mx-3">•</span><span className="text-emerald-800">{totalTokens} tokens total</span></>)}
+                <span className="text-emerald-800 font-medium">{devices.filter(d => d.serial_number).length} appareil(s)</span>
+                <span className="text-emerald-600 mx-3">•</span>
+                <span className="text-emerald-800">{totalTokens} tokens total</span>
               </div>
               <div className="text-right">
                 <span className="text-emerald-800 font-bold text-xl">{totalPrice.toFixed(2)} €</span>
-                <span className="text-emerald-600 text-sm ml-2">{contractType === 'pricing' ? 'HT/étal.' : (lang === 'en' ? 'excl. VAT' : 'HT')}</span>
+                <span className="text-emerald-600 text-sm ml-2">HT</span>
               </div>
             </div>
           </div>
+          )}
+
+          {/* === PRICING CONTRACT SECTION === */}
+          {contractType === 'pricing' && (
+          <div className="border-t pt-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-800">💲 Grille Tarifaire par Catégorie</h3>
+            </div>
+            
+            {/* Discount / Fixed toggle */}
+            <div className="mb-4 p-4 bg-gray-50 rounded-xl border flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPricingMode('fixed')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${pricingMode === 'fixed' ? 'bg-[#2D5A7B] text-white' : 'bg-white border text-gray-600 hover:bg-gray-100'}`}>💲 Prix fixe</button>
+                <button onClick={() => setPricingMode('discount')} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${pricingMode === 'discount' ? 'bg-[#2D5A7B] text-white' : 'bg-white border text-gray-600 hover:bg-gray-100'}`}>📉 Remise %</button>
+              </div>
+              {pricingMode === 'discount' && (
+                <div className="flex items-center gap-2">
+                  <input type="number" value={globalDiscount} onChange={e => setGlobalDiscount(parseFloat(e.target.value) || 0)} className="w-20 px-3 py-1.5 border rounded-lg text-sm text-center" min="0" max="100" step="1" placeholder="%" />
+                  <span className="text-sm text-gray-600">%</span>
+                  <button onClick={applyDiscountToAll} className="px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]">Appliquer à tout</button>
+                  <span className="text-xs text-gray-400">Les prix catalogue seront recalculés</span>
+                </div>
+              )}
+            </div>
+
+            {/* Category Cards */}
+            <div className="space-y-3">
+              {pricingCategories.map((cat) => {
+                const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
+                if (!catalog) return null;
+                const overrideCount = cat.models.filter(m => m.isOverride).length;
+                const enabledModels = cat.models.length;
+                
+                return (
+                  <div key={cat.id} className={`rounded-xl border-2 transition-all ${cat.enabled ? 'border-[#2D5A7B] bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+                    {/* Category Header */}
+                    <div className="px-4 py-3 flex items-center gap-3">
+                      <button onClick={() => toggleCategory(cat.id)} className={`w-10 h-6 rounded-full transition-all flex items-center ${cat.enabled ? 'bg-[#00A651] justify-end' : 'bg-gray-300 justify-start'}`}>
+                        <span className="w-5 h-5 bg-white rounded-full shadow mx-0.5" />
+                      </button>
+                      
+                      <span className="text-xl">{catalog.icon}</span>
+                      <div className="flex-1">
+                        <span className="font-bold text-gray-800">{catalog.name}</span>
+                        <span className="text-gray-400 text-sm ml-2">({enabledModels} modèles)</span>
+                      </div>
+                      
+                      {cat.enabled && (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm text-gray-500">Tous:</span>
+                            <input type="number" value={cat.categoryPrice} onChange={e => setCategoryPrice(cat.id, e.target.value)} className="w-24 px-2 py-1.5 border rounded-lg text-sm text-right font-bold" min="0" step="0.01" />
+                            <span className="text-sm text-gray-500">€</span>
+                          </div>
+                          
+                          {overrideCount > 0 && (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">{overrideCount} exception(s)</span>
+                          )}
+                          
+                          <button onClick={() => toggleExpanded(cat.id)} className="px-2 py-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded">
+                            {cat.expanded ? '▲' : '▼'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    
+                    {/* Expanded Model List */}
+                    {cat.enabled && cat.expanded && (
+                      <div className="border-t px-4 py-3 bg-gray-50/50">
+                        <div className="grid gap-1">
+                          {cat.models.map(model => (
+                            <div key={model.key} className={`flex items-center gap-3 px-3 py-2 rounded-lg ${model.isOverride ? 'bg-amber-50 border border-amber-200' : 'hover:bg-gray-100'}`}>
+                              <span className="text-sm flex-1 font-medium">{model.name}</span>
+                              <div className="flex items-center gap-2">
+                                {!model.isOverride ? (
+                                  <span className="text-sm text-gray-400">{cat.categoryPrice.toFixed(2)} €</span>
+                                ) : (
+                                  <input type="number" value={model.price ?? ''} onChange={e => setModelOverride(cat.id, model.key, e.target.value)} className="w-24 px-2 py-1 border border-amber-300 rounded text-sm text-right font-bold bg-white" min="0" step="0.01" />
+                                )}
+                                <span className="text-sm text-gray-400">€</span>
+                                {model.isOverride ? (
+                                  <button onClick={() => clearModelOverride(cat.id, model.key)} className="text-xs text-red-500 hover:text-red-700 px-1" title="Supprimer l'exception">✕</button>
+                                ) : (
+                                  <button onClick={() => setModelOverride(cat.id, model.key, cat.categoryPrice)} className="text-xs text-[#2D5A7B] hover:text-[#1a1a2e] px-1" title="Prix différent">✏️</button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pricing Summary */}
+            <div className="mt-4 bg-blue-50 rounded-lg p-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <span className="text-blue-800 font-medium">{pricingCategories.filter(c => c.enabled).length} catégorie(s) active(s)</span>
+                  <span className="text-blue-600 mx-3">•</span>
+                  <span className="text-blue-800">{pricingCategories.filter(c => c.enabled).reduce((sum, c) => sum + c.models.length, 0)} modèles</span>
+                  {pricingCategories.some(c => c.enabled && c.models.some(m => m.isOverride)) && (
+                    <><span className="text-blue-600 mx-3">•</span><span className="text-amber-600 font-medium">{pricingCategories.reduce((sum, c) => sum + c.models.filter(m => m.isOverride).length, 0)} exception(s)</span></>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -24877,6 +25056,204 @@ const MODEL_TO_CAL_PART = {
   'rac': 'Cal-RAC'
 };
 
+// ============================================
+// PRICING CONTRACT CATALOG
+// All device models grouped by category for pricing contracts
+// ============================================
+const PRICING_CATALOG = [
+  {
+    id: 'solair',
+    name: 'Solair',
+    icon: '🔬',
+    deviceType: 'particle_counter',
+    defaultPrice: 630,
+    models: [
+      { name: 'Solair 3100', key: 'solair 3100' },
+      { name: 'Solair 3200', key: 'solair 3200' },
+      { name: 'Solair 5100', key: 'solair 5100' },
+      { name: 'Solair 5200', key: 'solair 5200' },
+      { name: 'Solair 3100 Rx', key: 'solair 3100rx' },
+      { name: 'Solair 5100 Rx', key: 'solair 5100rx' },
+      { name: 'Solair 3200 Rx', key: 'solair 3200rx' },
+      { name: 'Solair 5200 Rx', key: 'solair 5200rx' },
+      { name: 'Solair 3350', key: 'solair 3350' },
+      { name: 'Solair 5350', key: 'solair 5350' },
+      { name: 'Solair 3010', key: 'solair 3010' },
+      { name: 'Solair 2010', key: 'solair 2010' },
+      { name: 'Solair 1001', key: 'solair 1001' },
+      { name: 'Solair 1100', key: 'solair 1100' },
+      { name: 'Solair 1100 LD', key: 'solair 1100ld' },
+      { name: 'Solair 1200', key: 'solair 1200' }
+    ]
+  },
+  {
+    id: 'remote',
+    name: 'Remote',
+    icon: '📡',
+    deviceType: 'particle_counter',
+    defaultPrice: 630,
+    models: [
+      { name: 'Remote 3014', key: 'remote 3014' },
+      { name: 'Remote 5014', key: 'remote 5014' },
+      { name: 'Remote 3012', key: 'remote 3012' },
+      { name: 'Remote 5012', key: 'remote 5012' },
+      { name: 'Remote 3016', key: 'remote 3016' },
+      { name: 'Remote 3102', key: 'remote 3102' },
+      { name: 'Remote 5102', key: 'remote 5102' },
+      { name: 'Remote 3104', key: 'remote 3104' },
+      { name: 'Remote 5104', key: 'remote 5104' },
+      { name: 'Remote 3010', key: 'remote 3010' },
+      { name: 'Remote 5010', key: 'remote 5010' },
+      { name: 'Remote 2010', key: 'remote 2010' },
+      { name: 'Remote 2012', key: 'remote 2012' },
+      { name: 'Remote 3014i', key: 'remote 3014i' },
+      { name: 'Remote 5014i', key: 'remote 5014i' },
+      { name: 'Remote 2014i', key: 'remote 2014i' },
+      { name: 'Remote 2014', key: 'remote 2014' },
+      { name: 'Remote 5104v', key: 'remote 5104v' },
+      { name: 'Remote 3104v', key: 'remote 3104v' },
+      { name: 'Remote 5100', key: 'remote 5100' },
+      { name: 'Remote CEMS', key: 'remote cems' },
+      { name: 'Remote 3014P', key: 'remote 3014p' },
+      { name: 'Remote 5014P', key: 'remote 5014p' },
+      { name: 'Remote 2014P', key: 'remote 2014p' },
+      { name: 'Remote 5104P', key: 'remote 5104p' },
+      { name: 'Remote 3104P', key: 'remote 3104p' },
+      { name: 'Remote 1100', key: 'remote 1100' },
+      { name: 'Remote 1104', key: 'remote 1104' },
+      { name: 'Remote 1102', key: 'remote 1102' },
+      { name: 'Remote 1100 LD', key: 'remote 1100ld' },
+      { name: 'Remote 1104 LD', key: 'remote 1104ld' }
+    ]
+  },
+  {
+    id: 'apex_r',
+    name: 'Apex R',
+    icon: '🟦',
+    deviceType: 'particle_counter',
+    defaultPrice: 630,
+    models: [
+      { name: 'Apex R3', key: 'apex r3' },
+      { name: 'Apex R5', key: 'apex r5' },
+      { name: 'Apex R03', key: 'apex r03' },
+      { name: 'Apex R05', key: 'apex r05' },
+      { name: 'Apex R02', key: 'apex r02' },
+      { name: 'Apex R3P', key: 'apex r3p' },
+      { name: 'Apex R5P', key: 'apex r5p' },
+      { name: 'Apex R03P', key: 'apex r03p' },
+      { name: 'Apex R05P', key: 'apex r05p' },
+      { name: 'Apex R02P', key: 'apex r02p' },
+      { name: 'ApexBCRP', key: 'apexbcrp' }
+    ]
+  },
+  {
+    id: 'apex_z',
+    name: 'Apex Z',
+    icon: '🟩',
+    deviceType: 'particle_counter',
+    defaultPrice: 630,
+    models: [
+      { name: 'Apex Z3', key: 'apex z3' },
+      { name: 'Apex Z5', key: 'apex z5' },
+      { name: 'Apex Z30', key: 'apex z30' },
+      { name: 'Apex Z50', key: 'apex z50' },
+      { name: 'Apex 1100', key: 'apex 1100' }
+    ]
+  },
+  {
+    id: 'apex_p',
+    name: 'Apex P (Portable)',
+    icon: '🟪',
+    deviceType: 'particle_counter',
+    defaultPrice: 630,
+    models: [
+      { name: 'Apex P3', key: 'apex p3' },
+      { name: 'Apex P5', key: 'apex p5' }
+    ]
+  },
+  {
+    id: 'handheld',
+    name: 'Handheld',
+    icon: '✋',
+    deviceType: 'particle_counter',
+    defaultPrice: 630,
+    models: [
+      { name: 'Handheld 2016', key: 'handheld 2016' },
+      { name: 'Handheld 3013', key: 'handheld 3013' },
+      { name: 'Handheld 3016', key: 'handheld 3016' },
+      { name: 'Handheld 5016', key: 'handheld 5016' },
+      { name: 'IAQ Handheld', key: 'iaq handheld' }
+    ]
+  },
+  {
+    id: 'bio_collector',
+    name: 'Bio Collecteurs',
+    icon: '🧫',
+    deviceType: 'bio_collector',
+    defaultPrice: 330,
+    models: [
+      { name: 'AC100', key: 'ac100' },
+      { name: 'AC100H', key: 'ac100h' },
+      { name: 'AC90', key: 'ac90' },
+      { name: 'AES Samplair', key: 'aes samplair' },
+      { name: 'Airideal', key: 'airideal' },
+      { name: 'AirTest', key: 'airtest' },
+      { name: 'MAS-100', key: 'mas100' },
+      { name: 'Microflow', key: 'microflow' },
+      { name: 'Triobas', key: 'triobas' },
+      { name: 'ActiveCount 25H', key: 'activecount 25h' },
+      { name: 'ActiveCount 100', key: 'activecount 100' },
+      { name: 'ActiveCount 100H', key: 'activecount 100h' },
+      { name: 'Remote Active Count', key: 'remote active count' },
+      { name: 'ScanAir', key: 'scanair' }
+    ]
+  },
+  {
+    id: 'liquid_counter',
+    name: 'Compteurs Liquide',
+    icon: '💧',
+    deviceType: 'liquid_counter',
+    defaultPrice: 750,
+    models: [
+      { name: 'LS-20', key: 'ls-20' },
+      { name: 'LS-60', key: 'ls-60' },
+      { name: 'Vertex 50', key: 'vertex 50' },
+      { name: 'Vertex 50C', key: 'vertex 50c' },
+      { name: 'Vertex 100', key: 'vertex 100' },
+      { name: 'NanoCount 50', key: 'nc50' },
+      { name: 'NanoCount 65C', key: 'nc65c' },
+      { name: 'NanoCount 25', key: 'nc25' },
+      { name: 'NanoCount 30', key: 'nc30' },
+      { name: 'Remote LPC', key: 'remote lpc' }
+    ]
+  },
+  {
+    id: 'temp_humidity',
+    name: 'Temp / Humidité',
+    icon: '🌡️',
+    deviceType: 'temp_humidity',
+    defaultPrice: 280,
+    models: [
+      { name: 'TRH Sensor', key: 'trh sensor' },
+      { name: 'TRH Probe', key: 'trh probe' },
+      { name: 'TRH Wand', key: 'trh wand' }
+    ]
+  },
+  {
+    id: 'other',
+    name: 'Autres',
+    icon: '📦',
+    deviceType: 'other',
+    defaultPrice: 400,
+    models: [
+      { name: 'Boulder', key: 'boulder' },
+      { name: 'HPC 1100', key: 'hpc 1100' },
+      { name: 'Diluter', key: 'diluter' },
+      { name: 'RAC', key: 'rac' }
+    ]
+  }
+];
+
 // Get calibration part number from model name
 const getCalibrationPartNumber = (modelName) => {
   if (!modelName) return null;
@@ -25209,15 +25586,20 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
               const pricingDevices = pricingContract.contract_devices || [];
               
               // Build a pricing map: model_name (uppercase) -> { unit_price, device_type }
+              // Also index by PRICING_CATALOG key for fuzzy matching
               const pricingMap = {};
               for (const pd of pricingDevices) {
                 const modelKey = (pd.model_name || '').trim().toUpperCase();
+                const normalizedKey = modelKey.toLowerCase().replace(/[+\-\/\s]+/g, ' ').trim();
                 if (modelKey) {
-                  pricingMap[modelKey] = {
+                  const entry = {
                     unit_price: pd.unit_price || 0,
                     device_type: pd.device_type,
                     contract_device_id: pd.id
                   };
+                  pricingMap[modelKey] = entry;
+                  // Also store under normalized key for fuzzy matching
+                  pricingMap[normalizedKey.toUpperCase()] = entry;
                 }
               }
               console.log('💲 Pricing map:', pricingMap);
@@ -25335,7 +25717,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         // Check pricing contract (company-wide special rates by model name)
         const pricingMap = contractInfo?.pricingMap;
         const modelUpper = modelName.trim().toUpperCase();
-        const pricingMatch = pricingMap ? pricingMap[modelUpper] : null;
+        const modelNormalized = modelUpper.replace(/[+\-\/\s]+/g, ' ').trim();
+        // Try exact match first, then normalized, then partial match
+        const pricingMatch = pricingMap ? (pricingMap[modelUpper] || pricingMap[modelNormalized] || Object.entries(pricingMap).find(([k]) => modelNormalized.includes(k) || k.includes(modelNormalized))?.[1]) : null;
         const hasPricingContract = !!pricingMatch && needsCal;
         const pricingContractPrice = pricingMatch?.unit_price || 0;
         
