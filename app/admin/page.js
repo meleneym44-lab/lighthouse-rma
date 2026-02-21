@@ -21367,7 +21367,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     y += 38;
 
     if (isPricing) {
-      // ===== PRICING CONTRACT - Full model tables per category =====
+      // ===== PRICING CONTRACT - Category + exceptions only =====
       const enabledCats = pricingCategories.filter(c => c.enabled);
       
       // Section title
@@ -21385,80 +21385,53 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
         if (!catalog) continue;
         
-        // Estimate height: header(9) + subheader row(7) + models * 6 + spacing(4)
-        const estHeight = 9 + 7 + (cat.models.length * 6) + 4;
-        checkPageBreak(Math.min(estHeight, 40)); // At least check for header + a few rows
+        const exceptions = cat.models.filter(m => m.isOverride && m.price !== null);
+        checkPageBreak(12 + (exceptions.length > 0 ? 8 + exceptions.length * 5 : 0));
         
-        // Category header bar
+        // Category header bar with standard price
         pdf.setFillColor(...navy);
         pdf.roundedRect(margin, y, contentWidth, 9, 1, 1, 'F');
         pdf.setTextColor(...white);
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'bold');
-        pdf.text(catalog.name.toUpperCase(), margin + 4, y + 6.5);
+        pdf.text(catalog.name, margin + 4, y + 6.5);
         pdf.setFontSize(9);
-        pdf.text(`Tarif standard : ${cat.categoryPrice.toFixed(2)} EUR HT`, pageWidth - margin - 4, y + 6.5, { align: 'right' });
+        pdf.text(`${cat.categoryPrice.toFixed(2)} EUR / etalonnage`, pageWidth - margin - 4, y + 6.5, { align: 'right' });
         y += 11;
         
-        // Column headers
-        pdf.setFillColor(235, 238, 243);
-        pdf.rect(margin, y, contentWidth, 7, 'F');
-        pdf.setFontSize(7.5);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(...navy);
-        pdf.text('MODELE', margin + 4, y + 5);
-        pdf.text('PRIX UNITAIRE HT', pageWidth - margin - 4, y + 5, { align: 'right' });
-        y += 8;
-        
-        // All models in this category
-        cat.models.forEach((model, i) => {
-          checkPageBreak(6);
-          const price = (model.isOverride && model.price !== null) ? model.price : cat.categoryPrice;
-          const isOverride = model.isOverride && model.price !== null;
+        // Exceptions only
+        if (exceptions.length > 0) {
+          pdf.setFillColor(248, 249, 250);
+          const excBlockH = 6 + exceptions.length * 5.5;
+          pdf.roundedRect(margin, y, contentWidth, excBlockH, 0, 0, 'F');
+          pdf.setDrawColor(220, 220, 225);
+          pdf.setLineWidth(0.2);
+          pdf.rect(margin, y, contentWidth, excBlockH, 'S');
           
-          // Alternating row bg
-          if (i % 2 === 0) {
-            pdf.setFillColor(250, 250, 252);
-            pdf.rect(margin, y - 0.5, contentWidth, 6, 'F');
-          }
+          pdf.setFontSize(8);
+          pdf.setFont('helvetica', 'italic');
+          pdf.setTextColor(...gray);
+          pdf.text('Sauf les modeles suivants :', margin + 5, y + 4.5);
+          y += 7;
           
-          // Model name
-          pdf.setFontSize(8.5);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(...darkBlue);
-          pdf.text(model.name, margin + 4, y + 4);
-          
-          // Price - bold if override, with indicator
-          if (isOverride) {
+          for (const ex of exceptions) {
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(8.5);
+            pdf.setTextColor(...darkBlue);
+            pdf.text(`  - ${ex.name}`, margin + 8, y + 3);
             pdf.setFont('helvetica', 'bold');
             pdf.setTextColor(...navy);
-            pdf.text(`${price.toFixed(2)} EUR`, pageWidth - margin - 4, y + 4, { align: 'right' });
-            // Small asterisk marker
-            pdf.setFontSize(6);
-            pdf.setTextColor(...accent);
-            pdf.text('*', pageWidth - margin - 4 - pdf.getTextWidth(`${price.toFixed(2)} EUR`) - 2, y + 3);
-          } else {
-            pdf.setFont('helvetica', 'normal');
-            pdf.setTextColor(...gray);
-            pdf.text(`${price.toFixed(2)} EUR`, pageWidth - margin - 4, y + 4, { align: 'right' });
+            pdf.text(`${ex.price.toFixed(2)} EUR`, pageWidth - margin - 5, y + 3, { align: 'right' });
+            y += 5.5;
           }
-          
-          y += 6;
-        });
+          y += 1;
+        }
         
-        // Category summary line
-        pdf.setDrawColor(220, 220, 225);
-        pdf.setLineWidth(0.2);
-        pdf.line(margin, y, pageWidth - margin, y);
-        y += 3;
-        
-        const overrideCount = cat.models.filter(m => m.isOverride && m.price !== null).length;
+        // Model count
         pdf.setFontSize(7);
-        pdf.setFont('helvetica', 'italic');
-        pdf.setTextColor(160, 160, 165);
-        const summaryParts = [`${cat.models.length} modeles inclus`];
-        if (overrideCount > 0) summaryParts.push(`* ${overrideCount} tarif(s) specifique(s)`);
-        pdf.text(summaryParts.join('  |  '), margin + 4, y + 1);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(170, 170, 175);
+        pdf.text(`${catalog.models.length} modeles inclus`, margin + 4, y + 2);
         y += 6;
       }
       
@@ -22082,41 +22055,27 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                     {enabledCats.map(cat => {
                       const catalog = PRICING_CATALOG.find(p => p.id === cat.id);
                       if (!catalog) return null;
+                      const exceptions = cat.models.filter(m => m.isOverride && m.price !== null);
                       return (
-                        <div key={cat.id} className="mb-4">
-                          <div className="bg-[#2D5A7B] text-white px-4 py-2 rounded-t-lg flex justify-between items-center">
-                            <span className="font-bold text-sm">{catalog.name.toUpperCase()}</span>
-                            <span className="text-sm">Tarif standard : {cat.categoryPrice.toFixed(2)} € HT</span>
+                        <div key={cat.id} className="mb-3">
+                          {/* Category bar: name + standard price */}
+                          <div className="bg-[#2D5A7B] text-white px-4 py-2.5 rounded-lg flex justify-between items-center">
+                            <span className="font-bold">{catalog.name}</span>
+                            <span className="font-medium">{cat.categoryPrice.toFixed(2)} € / étalonnage</span>
                           </div>
-                          <table className="w-full text-sm border border-gray-200 border-t-0">
-                            <thead>
-                              <tr className="bg-gray-100">
-                                <th className="text-left px-4 py-1.5 text-[10px] font-bold text-[#2D5A7B] tracking-wider">MODÈLE</th>
-                                <th className="text-right px-4 py-1.5 text-[10px] font-bold text-[#2D5A7B] tracking-wider">PRIX UNITAIRE HT</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {cat.models.map((model, i) => {
-                                const price = (model.isOverride && model.price !== null) ? model.price : cat.categoryPrice;
-                                const isOverride = model.isOverride && model.price !== null;
-                                return (
-                                  <tr key={model.key} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                    <td className="px-4 py-1.5 text-gray-700">{model.name}</td>
-                                    <td className={`px-4 py-1.5 text-right ${isOverride ? 'font-bold text-[#2D5A7B]' : 'text-gray-500'}`}>
-                                      {isOverride && <span className="text-green-600 text-xs mr-1">★</span>}
-                                      {price.toFixed(2)} €
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                          <div className="text-xs text-gray-400 px-4 py-1.5 border border-t-0 border-gray-200 rounded-b-lg bg-gray-50">
-                            {cat.models.length} modèles inclus
-                            {cat.models.filter(m => m.isOverride && m.price !== null).length > 0 && 
-                              ` · ★ ${cat.models.filter(m => m.isOverride && m.price !== null).length} tarif(s) spécifique(s)`
-                            }
-                          </div>
+                          {/* Only show exceptions if any */}
+                          {exceptions.length > 0 && (
+                            <div className="border border-gray-200 border-t-0 rounded-b-lg bg-gray-50 px-4 py-2.5">
+                              <p className="text-xs text-gray-500 italic mb-1.5">Sauf les modèles suivants :</p>
+                              {exceptions.map(ex => (
+                                <div key={ex.key} className="flex justify-between py-0.5 text-sm">
+                                  <span className="text-gray-700">• {ex.name}</span>
+                                  <span className="font-bold text-[#2D5A7B]">{ex.price.toFixed(2)} €</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <p className="text-[10px] text-gray-400 mt-1 ml-1">{catalog.models.length} modèles inclus</p>
                         </div>
                       );
                     })}
