@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // Expose supabase to window for debugging
@@ -18234,6 +18234,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                 contract={selectedContract}
                 clients={[client]}
                 notify={notify}
+                profile={profile}
                 onClose={() => setSelectedContract(null)}
                 onUpdate={() => { loadContracts(); setSelectedContract(null); }}
               />
@@ -19082,6 +19083,8 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
         contract={selectedContract}
         clients={clients}
         notify={notify}
+        profile={profile}
+        onOpenQuoteEditor={(c) => { setSelectedContract(null); setQuoteContract(c); }}
         onClose={() => setSelectedContract(null)}
         onUpdate={() => { loadContracts(); if (reloadMain) reloadMain(); }}
       />
@@ -20382,21 +20385,28 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
 // ============================================
 // CONTRACT DETAIL VIEW
 // ============================================
-function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang = 'fr' }) {
-  const t = k => k;
-  const [editMode, setEditMode] = useState(contract.status === 'requested');
+function ContractDetailView({ contract: contractProp, clients, notify, onClose, onUpdate, profile, onOpenQuoteEditor, lang = 'fr' }) {
+  const [contract, setContract] = useState(contractProp);
+  const [activeTab, setActiveTab] = useState('details');
   const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(contract.status === 'requested');
   const [devices, setDevices] = useState(contract.contract_devices || []);
   const [contractData, setContractData] = useState({
     start_date: contract.start_date || new Date().toISOString().split('T')[0],
     end_date: contract.end_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
     internal_notes: contract.internal_notes || ''
   });
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
-
-  // Check for existing active contracts for this client
   const [existingContracts, setExistingContracts] = useState([]);
-  
+  const messagesEndRef = useRef(null);
+
+  // Sync with parent prop
+  useEffect(() => { setContract(contractProp); }, [contractProp]);
+
+  // Load existing contracts check
   useEffect(() => {
     const checkExisting = async () => {
       if (!contract.company_id) return;
@@ -20411,6 +20421,28 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
     checkExisting();
   }, [contract.company_id, contract.id]);
 
+  // Load messages
+  useEffect(() => {
+    const loadMessages = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('contract_id', contract.id)
+        .order('created_at', { ascending: true });
+      setMessages(data || []);
+    };
+    loadMessages();
+  }, [contract.id]);
+
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const company = contract.companies || {};
+  const quoteData = contract.quote_data || {};
+
+  // Device helpers
   const updateDevice = (deviceId, field, value) => {
     setDevices(devices.map(d => d.id === deviceId ? { ...d, [field]: value } : d));
   };
@@ -20418,7 +20450,6 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
   const saveDeviceChanges = async () => {
     setSaving(true);
     try {
-      // Update contract dates and notes
       const { error: contractError } = await supabase
         .from('contracts')
         .update({
@@ -20427,646 +20458,461 @@ function ContractDetailView({ contract, clients, notify, onClose, onUpdate, lang
           internal_notes: contractData.internal_notes
         })
         .eq('id', contract.id);
-
       if (contractError) throw contractError;
 
-      // Update each device
       for (const device of devices) {
         const { error } = await supabase
           .from('contract_devices')
-          .update({
-            tokens_total: device.tokens_total,
-            unit_price: device.unit_price
-          })
+          .update({ tokens_total: device.tokens_total, unit_price: device.unit_price })
           .eq('id', device.id);
-        
         if (error) throw error;
       }
 
-      notify(lang === 'en' ? 'Changes saved' : 'Modifications enregistrées', 'success');
+      notify(lang === 'en' ? 'Changes saved' : 'Modifications enregistrées');
       setEditMode(false);
       onUpdate();
     } catch (err) {
-      console.error('Error saving:', err);
-      notify(lang === 'en' ? 'Error saving' : 'Erreur lors de la sauvegarde', 'error');
-    } finally {
-      setSaving(false);
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
+    setSaving(false);
   };
 
+  // Status update
   const updateContractStatus = async (newStatus) => {
     setSaving(true);
     try {
       const updates = { status: newStatus };
-      
       if (newStatus === 'active') {
         updates.bc_approved_at = new Date().toISOString();
       }
-
-      const { error } = await supabase
-        .from('contracts')
-        .update(updates)
-        .eq('id', contract.id);
-
+      const { error } = await supabase.from('contracts').update(updates).eq('id', contract.id);
       if (error) throw error;
-
-      notify(lang === 'en' ? `Status updated: ${newStatus}` : `Statut mis à jour: ${newStatus}`, 'success');
+      setContract(prev => ({ ...prev, ...updates }));
+      notify(lang === 'en' ? `Status updated: ${newStatus}` : `Statut mis à jour: ${newStatus}`);
       onUpdate();
-      onClose();
     } catch (err) {
-      console.error('Error updating status:', err);
-      notify(lang === 'en' ? 'Error updating' : 'Erreur lors de la mise à jour', 'error');
-    } finally {
-      setSaving(false);
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
     }
+    setSaving(false);
   };
 
-  const totalPrice = devices.reduce((sum, d) => sum + (parseFloat(d.unit_price) || 0), 0);
-  const totalTokens = devices.reduce((sum, d) => sum + (parseInt(d.tokens_total) || 0), 0);
+  // Send message
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return;
+    setSendingMessage(true);
+    try {
+      const { data, error } = await supabase.from('messages').insert({
+        contract_id: contract.id,
+        sender_id: profile?.id,
+        sender_type: 'admin',
+        sender_name: profile?.full_name || 'Admin',
+        content: newMessage.trim()
+      }).select().single();
+      if (error) throw error;
+      setMessages(p => [...p, data]);
+      setNewMessage('');
+      notify(lang === 'en' ? 'Message sent!' : 'Message envoyé!');
+    } catch (e) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + e.message, 'error');
+    }
+    setSendingMessage(false);
+  };
+
+  // Progress steps
+  const progressSteps = [
+    { id: 'submitted', label: 'Soumis', icon: '📋' },
+    { id: 'quote_sent', label: 'Devis', icon: '💰' },
+    { id: 'bc', label: 'BC', icon: '✍️' },
+    { id: 'active', label: 'Actif', icon: '✅' }
+  ];
+
+  const getStepIndex = (status) => {
+    const statusMap = {
+      'requested': 0,
+      'pending_quote_review': 0,
+      'modification_requested': 0,
+      'refused': 0,
+      'quote_sent': 1,
+      'quote_approved': 1,
+      'bc_pending': 2,
+      'active': 3,
+      'expired': 3,
+      'completed': 3
+    };
+    return statusMap[status] ?? 0;
+  };
+
+  const currentStepIndex = getStepIndex(contract.status);
 
   const CONTRACT_STATUS_STYLES = {
-    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '🆕 New request' : '🆕 Nouvelle demande' },
-    pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: lang === 'en' ? '⏳ Quote Under Review' : '⏳ Devis en vérification' },
-    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: lang === 'en' ? '📧 Quote sent' : '📧 Devis envoyé' },
-    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: lang === 'en' ? '✅ Quote approved' : '✅ Devis approuvé' },
-    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: lang === 'en' ? '📄 Awaiting PO' : '📄 Attente BC' },
-    active: { bg: 'bg-green-100', text: 'text-green-700', label: lang === 'en' ? '✅ Active' : '✅ Actif' },
-    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: lang === 'en' ? '⏰ Expired' : '⏰ Expiré' },
-    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: lang === 'en' ? '❌ Cancelled' : '❌ Annulé' }
+    requested: { bg: 'bg-amber-100', text: 'text-amber-700', label: '🆕 Nouvelle demande' },
+    pending_quote_review: { bg: 'bg-amber-100', text: 'text-amber-700', label: '⏳ Devis en vérification' },
+    modification_requested: { bg: 'bg-orange-100', text: 'text-orange-700', label: '✏️ Modification demandée' },
+    refused: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Refusé' },
+    quote_sent: { bg: 'bg-blue-100', text: 'text-blue-700', label: '📧 Devis envoyé' },
+    quote_approved: { bg: 'bg-purple-100', text: 'text-purple-700', label: '✅ Devis approuvé' },
+    bc_pending: { bg: 'bg-orange-100', text: 'text-orange-700', label: '📄 Attente BC' },
+    active: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Actif' },
+    expired: { bg: 'bg-gray-100', text: 'text-gray-600', label: '⏰ Expiré' },
+    cancelled: { bg: 'bg-red-100', text: 'text-red-700', label: '❌ Annulé' }
   };
 
-  const getStatusBadge = (status) => {
-    const style = CONTRACT_STATUS_STYLES[status] || CONTRACT_STATUS_STYLES.requested;
-    return (
-      <span className={`px-3 py-1 rounded-full text-sm font-medium ${style.bg} ${style.text}`}>
-        {lang === 'en' && style.en ? style.en : style.label}
-      </span>
-    );
-  };
+  const statusStyle = CONTRACT_STATUS_STYLES[contract.status] || CONTRACT_STATUS_STYLES.requested;
+
+  // Timeline entries
+  const timeline = [];
+  if (contract.created_at) timeline.push({ date: contract.created_at, icon: '📋', label: 'Demande créée' });
+  if (contract.quote_sent_at) timeline.push({ date: contract.quote_sent_at, icon: '💰', label: 'Devis envoyé' });
+  if (contract.bc_submitted_at) timeline.push({ date: contract.bc_submitted_at, icon: '✍️', label: 'BC soumis', detail: contract.bc_signed_by ? `par ${contract.bc_signed_by}` : undefined });
+  if (contract.bc_approved_at) timeline.push({ date: contract.bc_approved_at, icon: '✅', label: 'BC approuvé / Contrat actif' });
+  timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   return (
-    <div className="space-y-6">
-      <button 
-        onClick={onClose}
-        className="text-gray-500 hover:text-gray-700 flex items-center gap-2"
-      >
-        ← Retour aux contrats
-      </button>
-
-      {/* Warning for existing active contracts */}
-      {existingContracts.length > 0 && (
-        <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div>
-              <h3 className="font-bold text-amber-800">{lang === 'en' ? "Existing contract detected" : "Contrat existant détecté"}</h3>
-              <p className="text-sm text-amber-700">
-                {lang === 'en' ? `This client already has ${existingContracts.length} active contract(s):` : `Ce client a déjà ${existingContracts.length} contrat(s) actif(s):`}
-              </p>
-              <ul className="text-sm text-amber-700 mt-1">
-                {existingContracts.map(c => (
-                  <li key={c.id}>• {c.contract_number} ({new Date(c.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(c.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')})</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* BC REVIEW SECTION - Shows when client has submitted BC */}
-      {contract.status === 'bc_pending' && (
-        <div className="bg-orange-50 border-2 border-orange-300 rounded-xl p-6">
-          <div className="flex items-start gap-4 mb-4">
-            <div className="w-14 h-14 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-2xl">📄</span>
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-orange-800">{lang === 'en' ? 'Purchase Order to Review' : 'Bon de Commande à Vérifier'}</h2>
-              <p className="text-orange-700">
-                {lang === 'en' ? 'Client submitted their purchase order. Review documents and activate the contract.' : 'Le client a soumis son bon de commande. Vérifiez les documents et activez le contrat.'}
-              </p>
-              {contract.bc_submitted_at && (
-                <p className="text-sm text-orange-600 mt-1">
-                  {lang === 'en' ? 'Submitted on' : 'Soumis le'} {new Date(contract.bc_submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} à {new Date(contract.bc_submitted_at).toLocaleTimeString(lang === 'en' ? 'en-US' : 'fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  {contract.bc_signed_by && ` par ${contract.bc_signed_by}`}
-                </p>
-              )}
-            </div>
-          </div>
-          
-          {/* Documents */}
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
-            {/* Signed Quote PDF */}
-            {contract.signed_quote_url && (
-              <div className="bg-white rounded-lg p-4 border border-green-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <span className="text-green-600">✅</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-green-800">{lang === 'en' ? 'Signed Quote' : 'Devis Signé'}</p>
-                    <p className="text-xs text-green-600">{lang === 'en' ? 'PDF with client signature' : 'PDF avec signature client'}</p>
-                  </div>
-                </div>
-                <a
-                  href={contract.signed_quote_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full px-4 py-2 bg-green-600 text-white rounded-lg text-center font-medium hover:bg-green-700"
-                >
-                  📥 Voir le Devis Signé
-                </a>
-              </div>
-            )}
-            
-            {/* BC File */}
-            {contract.bc_file_url && (
-              <div className="bg-white rounded-lg p-4 border border-purple-200">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <span className="text-purple-600">📋</span>
-                  </div>
-                  <div>
-                    <p className="font-bold text-purple-800">{t('purchaseOrder')}</p>
-                    <p className="text-xs text-purple-600">{lang === 'en' ? "Document uploaded by client" : "Document uploadé par le client"}</p>
-                  </div>
-                </div>
-                <a
-                  href={contract.bc_file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block w-full px-4 py-2 bg-purple-600 text-white rounded-lg text-center font-medium hover:bg-purple-700"
-                >
-                  📥 Voir le BC
-                </a>
-              </div>
-            )}
-            
-            {/* No documents */}
-            {!contract.signed_quote_url && !contract.bc_file_url && (
-              <div className="col-span-2 bg-white rounded-lg p-4 border border-gray-200 text-center text-gray-500">
-                <p>{lang === 'en' ? 'No document attached' : 'Aucun document attaché'} (signature électronique uniquement)</p>
-              </div>
-            )}
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => updateContractStatus('active')}
-              disabled={saving}
-              className="flex-1 px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008c44] disabled:opacity-50"
-            >
-              ✅ Approuver et Activer le Contrat
-            </button>
-            <button
-              onClick={() => {
-                const reason = window.prompt(lang === 'en' ? 'Reason for rejection:' : 'Raison du rejet:');
-                if (reason) {
-                  // Update with rejection
-                  supabase.from('contracts').update({
-                    status: 'bc_rejected',
-                    bc_rejection_reason: reason
-                  }).eq('id', contract.id).then(() => {
-                    notify(lang === 'en' ? 'PO rejected' : 'BC rejeté', 'success');
-                    onUpdate();
-                  });
-                }
-              }}
-              disabled={saving}
-              className="px-6 py-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 disabled:opacity-50"
-            >
-              ❌ Rejeter
-            </button>
-          </div>
-        </div>
-      )}
-
+    <div className="space-y-0">
       {/* Header */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-[#2D5A7B]">
-              Contrat {contract.contract_number || (lang === 'en' ? '(Pending)' : '(En attente)')}
-            </h1>
-            <p className="text-gray-600">{contract.companies?.name}</p>
-          </div>
-          {getStatusBadge(contract.status)}
-        </div>
-
-        {/* Correction notes from reviewer */}
-        {contract.quote_rejection_notes && contract.status === 'requested' && (
-          <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 mb-4">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-lg">✏️</span>
-              <span className="font-bold text-amber-800">{lang === 'en' ? 'Reviewer requested correction' : 'Le vérificateur demande une correction'}</span>
+      <div className="bg-white rounded-t-xl shadow-sm border overflow-hidden">
+        <div className="bg-gradient-to-r from-[#2D5A7B] to-[#1a3a5c] px-6 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <button onClick={onClose} className="text-white/70 hover:text-white text-lg">←</button>
+              <div>
+                <h1 className="text-xl font-bold text-white">{contract.contract_number || 'Nouveau Contrat'}</h1>
+                <p className="text-white/70 text-sm">{company.name} • Contrat de service</p>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>{statusStyle.label}</span>
             </div>
-            <div className="ml-9 bg-white rounded-lg p-3 border border-amber-200">
-              <p className="text-amber-900">{contract.quote_rejection_notes}</p>
+            <div className="flex items-center gap-3">
+              {(contract.status === 'requested' || contract.status === 'modification_requested' || contract.status === 'refused') && onOpenQuoteEditor && (
+                <button
+                  onClick={() => onOpenQuoteEditor(contract)}
+                  className={`px-4 py-2 ${contract.status === 'modification_requested' ? 'bg-red-500 hover:bg-red-600' : 'bg-[#00A651] hover:bg-[#008f45]'} text-white rounded-lg font-medium`}
+                >
+                  💰 {contract.status === 'modification_requested' ? 'Réviser Devis' : 'Créer Devis'}
+                </button>
+              )}
+              {contract.status === 'bc_pending' && (
+                <button onClick={() => updateContractStatus('active')} disabled={saving}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
+                  {saving ? '⏳...' : '✅ Approuver BC → Activer'}
+                </button>
+              )}
+              {contract.status === 'active' && (
+                <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium text-sm">✅ Contrat Actif</span>
+              )}
             </div>
           </div>
-        )}
-
-        {/* Contract Period */}
-        <div className="grid md:grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">{lang === 'en' ? 'Start date' : 'Date de début'}</label>
-            {editMode ? (
-              <input
-                type="date"
-                value={contractData.start_date}
-                onChange={e => setContractData({...contractData, start_date: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-              />
-            ) : (
-              <p className="text-gray-900">{new Date(contract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">{lang === 'en' ? 'End date' : 'Date de fin'}</label>
-            {editMode ? (
-              <input
-                type="date"
-                value={contractData.end_date}
-                onChange={e => setContractData({...contractData, end_date: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-              />
-            ) : (
-              <p className="text-gray-900">{new Date(contract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">{lang === 'en' ? 'Duration' : 'Durée'}</label>
-            <p className="text-gray-900">
-              {Math.round((new Date(contractData.end_date) - new Date(contractData.start_date)) / (1000 * 60 * 60 * 24 * 30))} mois
-            </p>
-          </div>
         </div>
 
-        {/* Customer Notes */}
-        {contract.customer_notes && (
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-            <h4 className="font-bold text-blue-800 text-sm mb-1">{lang === 'en' ? 'Client notes:' : 'Notes du client:'}</h4>
-            <p className="text-sm text-blue-700">{contract.customer_notes}</p>
-          </div>
-        )}
-
-        {/* Internal Notes */}
-        <div className="mb-4">
-          <label className="block text-sm font-bold text-gray-700 mb-1">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</label>
-          {editMode ? (
-            <textarea
-              value={contractData.internal_notes}
-              onChange={e => setContractData({...contractData, internal_notes: e.target.value})}
-              rows={2}
-              className="w-full px-3 py-2 border rounded-lg"
-              placeholder={lang === 'en' ? 'Notes visible only to the team...' : "Notes visibles uniquement par l'équipe..."}
-            />
-          ) : (
-            <p className="text-gray-600 text-sm">{contract.internal_notes || '—'}</p>
-          )}
-        </div>
-
-        {/* Summary Stats */}
-        <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-[#2D5A7B]">{devices.length}</div>
-            <div className="text-sm text-gray-600">{t('devices')}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{totalTokens}</div>
-            <div className="text-sm text-gray-600">{lang === 'en' ? 'Calibrations included' : 'Étalonnages inclus'}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-[#3B7AB4]">{totalPrice.toFixed(2)} €</div>
-            <div className="text-sm text-gray-600">{t('totalHT')}</div>
-          </div>
+        {/* Progress Bar */}
+        <div className="flex items-center w-full">
+          {progressSteps.map((step, index) => {
+            const isCompleted = index < currentStepIndex;
+            const isCurrent = index === currentStepIndex;
+            const isLast = index === progressSteps.length - 1;
+            return (
+              <div key={step.id} className="flex items-center flex-1">
+                <div
+                  className={`relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
+                    ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'}
+                    ${index === 0 ? 'rounded-l-md' : ''} ${isLast ? 'rounded-r-md' : ''}
+                  `}
+                  style={{
+                    clipPath: isLast
+                      ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)'
+                      : index === 0
+                        ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)'
+                        : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
+                  }}
+                >
+                  <span className="mr-1">{step.icon}</span>
+                  <span className="hidden sm:inline">{step.label}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Devices Table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b flex justify-between items-center">
-          <h2 className="font-bold text-gray-800">{lang === 'en' ? `Devices (${devices.length})` : `Appareils (${devices.length})`}</h2>
-          {!editMode && contract.status !== 'active' && (
-            <button
-              onClick={() => setEditMode(true)}
-              className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
-            >
-              ✏️ Modifier
-            </button>
-          )}
-        </div>
-        
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? '#' : '#'}</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Nickname' : 'Surnom'}</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{t('serialNumber')}</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{t('model')}</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-600">{t('type')}</th>
-                <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">{lang === 'en' ? 'Tokens' : 'Tokens'}</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-gray-600">{t('unitPrice')}</th>
-                {contract.status === 'active' && (
-                  <th className="px-4 py-3 text-center text-xs font-bold text-gray-600">{lang === 'en' ? 'Used' : 'Utilisés'}</th>
+      {/* Main Content */}
+      <div className="p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              {/* Tabs */}
+              <div className="flex border-b">
+                {[
+                  { id: 'details', label: 'Détails', icon: '📋' },
+                  { id: 'messages', label: 'Messages', icon: '💬' },
+                  { id: 'documents', label: 'Documents', icon: '📄' },
+                  { id: 'history', label: 'Historique', icon: '📜' }
+                ].map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                    className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                      activeTab === tab.id ? 'border-[#2D5A7B] text-[#2D5A7B] bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}>
+                    {tab.icon} {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="p-4">
+                {/* Details Tab */}
+                {activeTab === 'details' && (
+                  <div className="space-y-4">
+                    {/* Warning for existing contracts */}
+                    {existingContracts.length > 0 && (
+                      <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded">
+                        <p className="text-sm font-bold text-amber-800">⚠️ Ce client a déjà {existingContracts.length} contrat(s) actif(s)</p>
+                        {existingContracts.map(c => (
+                          <p key={c.id} className="text-xs text-amber-700">• {c.contract_number} ({new Date(c.start_date).toLocaleDateString('fr-FR')} - {new Date(c.end_date).toLocaleDateString('fr-FR')})</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Contract Info */}
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div><p className="text-xs text-gray-500">N° Contrat</p><p className="font-bold font-mono text-[#00A651]">{contract.contract_number || '—'}</p></div>
+                      <div><p className="text-xs text-gray-500">Client</p><p className="font-medium">{company.name}</p></div>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-xs text-gray-500">Date début</p>
+                        {editMode ? (
+                          <input type="date" value={contractData.start_date} onChange={e => setContractData({...contractData, start_date: e.target.value})} className="border rounded px-2 py-1 text-sm w-full" />
+                        ) : (
+                          <p className="font-medium">{contract.start_date ? new Date(contract.start_date).toLocaleDateString('fr-FR') : '—'}</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Date fin</p>
+                        {editMode ? (
+                          <input type="date" value={contractData.end_date} onChange={e => setContractData({...contractData, end_date: e.target.value})} className="border rounded px-2 py-1 text-sm w-full" />
+                        ) : (
+                          <p className="font-medium">{contract.end_date ? new Date(contract.end_date).toLocaleDateString('fr-FR') : '—'}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Pricing summary */}
+                    {quoteData.grandTotal && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div><p className="text-xs text-gray-500">Sous-total</p><p className="font-medium">{parseFloat(quoteData.servicesSubtotal || 0).toFixed(2)} €</p></div>
+                          <div><p className="text-xs text-gray-500">Livraison</p><p className="font-medium">{parseFloat(quoteData.shippingTotal || 0).toFixed(2)} €</p></div>
+                          <div><p className="text-xs text-gray-500 font-bold">Total HT</p><p className="font-bold text-lg text-green-700">{parseFloat(quoteData.grandTotal || 0).toFixed(2)} €</p></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Devices */}
+                    <div>
+                      <h4 className="font-bold text-gray-700 mb-2">🔧 Appareils ({devices.length})</h4>
+                      <div className="space-y-2">
+                        {devices.map(device => (
+                          <div key={device.id} className="p-3 bg-gray-50 rounded-lg border">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <p className="font-medium">{device.model_name || device.model}</p>
+                                <p className="text-xs text-gray-500">SN: {device.serial_number || device.serial || '—'}</p>
+                              </div>
+                              {editMode ? (
+                                <div className="flex gap-2">
+                                  <div>
+                                    <label className="text-xs text-gray-500">Tokens</label>
+                                    <input type="number" value={device.tokens_total || ''} onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value))} className="border rounded px-2 py-1 text-sm w-20" />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-gray-500">Prix unit.</label>
+                                    <input type="number" step="0.01" value={device.unit_price || ''} onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value))} className="border rounded px-2 py-1 text-sm w-24" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-right text-sm">
+                                  {device.tokens_total && <p className="text-gray-600">{device.tokens_total} tokens</p>}
+                                  {device.unit_price && <p className="text-gray-600">{parseFloat(device.unit_price).toFixed(2)} €</p>}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    {editMode ? (
+                      <div>
+                        <label className="text-xs text-gray-500">Notes internes</label>
+                        <textarea value={contractData.internal_notes} onChange={e => setContractData({...contractData, internal_notes: e.target.value})} className="w-full border rounded px-3 py-2 text-sm" rows={3} />
+                      </div>
+                    ) : contract.internal_notes ? (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 mb-1">📝 Notes internes</p>
+                        <p className="text-sm">{contract.internal_notes}</p>
+                      </div>
+                    ) : null}
+
+                    {contract.customer_notes && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 mb-1">💬 Notes client</p>
+                        <p className="text-sm">{contract.customer_notes}</p>
+                      </div>
+                    )}
+
+                    {/* Edit/Save buttons */}
+                    <div className="flex gap-2">
+                      {editMode ? (
+                        <>
+                          <button onClick={saveDeviceChanges} disabled={saving} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                            {saving ? '⏳...' : '💾 Enregistrer'}
+                          </button>
+                          <button onClick={() => { setEditMode(false); setDevices(contract.contract_devices || []); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Annuler</button>
+                        </>
+                      ) : (
+                        <button onClick={() => setEditMode(true)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">✏️ Modifier</button>
+                      )}
+                    </div>
+                  </div>
                 )}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {devices.map((device, idx) => (
-                <tr key={device.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
-                  <td className="px-4 py-3 text-sm">{device.nickname || '—'}</td>
-                  <td className="px-4 py-3 text-sm font-mono">{device.serial_number}</td>
-                  <td className="px-4 py-3 text-sm font-medium"><div className="flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-5 h-5 object-contain" />}{device.model_name}</div></td>
-                  <td className="px-4 py-3 text-sm">
-                    {device.device_type === 'particle_counter' && (lang === 'en' ? '🔬 Air Counter' : '🔬 Compteur Air')}
-                    {device.device_type === 'bio_collector' && (lang === 'en' ? '🧫 Bio Collector' : '🧫 Bio Collecteur')}
-                    {device.device_type === 'liquid_counter' && (lang === 'en' ? '💧 Liquid Counter' : '💧 Compteur Liquide')}
-                    {device.device_type === 'temp_humidity' && (lang === 'en' ? '🌡️ Temp/Humidity' : '🌡️ Temp/Humidité')}
-                    {device.device_type === 'other' && (lang === 'en' ? '📦 Other' : '📦 Autre')}
-                    {!device.device_type && '—'}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {editMode ? (
-                      <input
-                        type="number"
-                        min="1"
-                        value={device.tokens_total || 2}
-                        onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value) || 2)}
-                        className="w-16 px-2 py-1 border rounded text-center"
-                      />
-                    ) : (
-                      <span className="font-bold">{device.tokens_total || 2}</span>
+
+                {/* Messages Tab */}
+                {activeTab === 'messages' && (
+                  <div className="space-y-3">
+                    <div className="h-[400px] overflow-y-auto space-y-3 p-2">
+                      {messages.length === 0 ? (
+                        <div className="text-center text-gray-400 py-12">
+                          <p className="text-3xl mb-2">💬</p>
+                          <p>Aucun message</p>
+                        </div>
+                      ) : messages.map(msg => {
+                        const isAdmin = msg.sender_type === 'admin';
+                        return (
+                          <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[70%] p-3 rounded-lg ${isAdmin ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}>
+                              <div className="flex justify-between text-xs mb-1 gap-2">
+                                <span className={isAdmin ? 'text-blue-200' : 'text-gray-500'}>{msg.sender_name || (isAdmin ? 'Admin' : 'Client')}</span>
+                                <span className={isAdmin ? 'text-blue-200' : 'text-gray-400'}>{new Date(msg.created_at).toLocaleString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                              </div>
+                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div ref={messagesEndRef} />
+                    </div>
+                    <div className="flex gap-2 border-t pt-3">
+                      <textarea value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Message..." className="flex-1 px-3 py-2 border rounded-lg text-sm resize-none" rows={2}
+                        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }}} />
+                      <button onClick={sendMessage} disabled={sendingMessage || !newMessage.trim()} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 self-end">
+                        {sendingMessage ? '⏳' : '📤'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Documents Tab */}
+                {activeTab === 'documents' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Quote/Devis */}
+                      {contract.signed_quote_url && (
+                        <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
+                          <div>
+                            <p className="font-medium text-gray-800">Devis</p>
+                            <p className="text-sm text-blue-600">{contract.contract_number || '—'}</p>
+                          </div>
+                        </a>
+                      )}
+
+                      {/* BC / Bon de Commande */}
+                      {contract.bc_file_url && (
+                        <a href={contract.bc_file_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✍️</div>
+                          <div>
+                            <p className="font-medium text-gray-800">Bon de Commande</p>
+                            <p className="text-sm text-green-600">{contract.bc_signed_by ? `Signé par ${contract.bc_signed_by}` : 'BC client'}</p>
+                          </div>
+                        </a>
+                      )}
+                    </div>
+
+                    {!contract.signed_quote_url && !contract.bc_file_url && (
+                      <div className="text-center text-gray-400 py-8">
+                        <p className="text-3xl mb-2">📄</p>
+                        <p>Aucun document disponible</p>
+                      </div>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {editMode ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={device.unit_price || ''}
-                        onChange={e => updateDevice(device.id, 'unit_price', e.target.value)}
-                        className="w-24 px-2 py-1 border rounded text-right"
-                        placeholder="0.00"
-                      />
+                  </div>
+                )}
+
+                {/* History Tab */}
+                {activeTab === 'history' && (
+                  <div className="space-y-4">
+                    {timeline.length === 0 ? (
+                      <div className="text-center text-gray-400 py-8">
+                        <p className="text-3xl mb-2">📜</p>
+                        <p>Aucun historique</p>
+                      </div>
                     ) : (
-                      <span className="font-medium">{device.unit_price ? `${parseFloat(device.unit_price).toFixed(2)} €` : '—'}</span>
+                      <div className="relative">
+                        <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                        {timeline.map((event, i) => (
+                          <div key={i} className="relative flex items-start gap-4 pb-4">
+                            <div className="w-8 h-8 rounded-full bg-white border-2 border-[#00A651] flex items-center justify-center text-sm z-10">{event.icon}</div>
+                            <div className="flex-1 pt-1">
+                              <p className="font-medium text-sm text-gray-800">{event.label}</p>
+                              {event.detail && <p className="text-xs text-gray-500">{event.detail}</p>}
+                              <p className="text-xs text-gray-400">{new Date(event.date).toLocaleString('fr-FR')}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                  </td>
-                  {contract.status === 'active' && (
-                    <td className="px-4 py-3 text-center">
-                      <span className={`font-bold ${(device.tokens_used || 0) >= (device.tokens_total || 2) ? 'text-red-600' : 'text-green-600'}`}>
-                        {device.tokens_used || 0}/{device.tokens_total || 2}
-                      </span>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="bg-gray-100">
-              <tr>
-                <td colSpan={5} className="px-4 py-3 text-right font-bold">{lang === 'en' ? 'Total:' : 'Total:'}</td>
-                <td className="px-4 py-3 text-center font-bold text-green-600">{totalTokens}</td>
-                <td className="px-4 py-3 text-right font-bold text-[#2D5A7B]">{totalPrice.toFixed(2)} €</td>
-                {contract.status === 'active' && <td></td>}
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex flex-wrap gap-3">
-          {editMode && (
-            <>
-              <button
-                onClick={() => setEditMode(false)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={saveDeviceChanges}
-                disabled={saving}
-                className="px-4 py-2 bg-[#00A651] text-white rounded-lg hover:bg-[#008c44] disabled:opacity-50"
-              >
-                {saving ? (lang === 'en' ? 'Saving...' : 'Enregistrement...') : (lang === 'en' ? 'Save changes' : 'Enregistrer les modifications')}
-              </button>
-            </>
-          )}
-
-          {!editMode && contract.status === 'requested' && (
-            <>
-              <button
-                onClick={() => setEditMode(true)}
-                className="px-4 py-2 border border-[#3B7AB4] text-[#3B7AB4] rounded-lg hover:bg-blue-50"
-              >
-                ✏️ Définir les prix et tokens
-              </button>
-              <button
-                onClick={() => setShowQuoteModal(true)}
-                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg hover:bg-[#2D5A7B]"
-              >
-                📧 Créer le devis
-              </button>
-              <button
-                onClick={async () => {
-                  const reason = window.prompt(lang === 'en' ? 'Reason for modification request:\n(This message will be visible to the client)' : 'Raison de la demande de modification:\n(Ce message sera visible par le client)');
-                  if (reason) {
-                    setSaving(true);
-                    try {
-                      await supabase.from('contracts').update({
-                        status: 'modification_requested',
-                        admin_notes: reason,
-                        updated_at: new Date().toISOString()
-                      }).eq('id', contract.id);
-                      notify(lang === 'en' ? 'Modification request sent to client' : 'Demande de modification envoyée au client', 'success');
-                      onUpdate();
-                    } catch (err) {
-                      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
-                    }
-                    setSaving(false);
-                  }
-                }}
-                disabled={saving}
-                className="px-4 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-50"
-              >
-                ✏️ Demander modification
-              </button>
-              <button
-                onClick={async () => {
-                  const reason = window.prompt(lang === 'en' ? 'Reason for rejection:\n(This message will be visible to the client)' : 'Raison du refus:\n(Ce message sera visible par le client)');
-                  if (reason) {
-                    setSaving(true);
-                    try {
-                      await supabase.from('contracts').update({
-                        status: 'refused',
-                        admin_notes: reason,
-                        updated_at: new Date().toISOString()
-                      }).eq('id', contract.id);
-                      notify(lang === 'en' ? 'Contract request declined' : 'Demande de contrat refusée', 'success');
-                      onUpdate();
-                    } catch (err) {
-                      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
-                    }
-                    setSaving(false);
-                  }
-                }}
-                disabled={saving}
-                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
-              >
-                ❌ Refuser la demande
-              </button>
-            </>
-          )}
-
-          {contract.status === 'modification_requested' && (
-            <div className="w-full bg-amber-50 border border-amber-200 rounded-lg p-4 mb-2">
-              <p className="text-amber-800 font-medium">{lang === 'en' ? '⏳ Awaiting client modification' : '⏳ En attente de modification par le client'}</p>
-              {contract.admin_notes && (
-                <p className="text-amber-700 text-sm mt-1">Message: "{contract.admin_notes}"</p>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          </div>
 
-          {contract.status === 'refused' && (
-            <div className="w-full bg-red-50 border border-red-200 rounded-lg p-4 mb-2">
-              <p className="text-red-800 font-medium">{lang === 'en' ? '❌ Request declined' : '❌ Demande refusée'}</p>
-              {contract.admin_notes && (
-                <p className="text-red-700 text-sm mt-1">Raison: "{contract.admin_notes}"</p>
-              )}
+          {/* Right Column - Sidebar */}
+          <div className="space-y-4">
+            {/* Client Card */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <div className="bg-[#2D5A7B] px-4 py-3">
+                <h3 className="font-bold text-white">🏢 Client</h3>
+              </div>
+              <div className="p-4 space-y-3 text-sm">
+                <div><p className="text-xs text-gray-500 uppercase">Société</p><p className="font-bold">{company.name}</p></div>
+                <div><p className="text-xs text-gray-500 uppercase">Contact</p><p>{company.contact_name || '—'}</p></div>
+                <div><p className="text-xs text-gray-500 uppercase">Téléphone</p><p>{company.phone || '—'}</p></div>
+                <div><p className="text-xs text-gray-500 uppercase">Email</p><p className="text-blue-600 break-all">{company.email || '—'}</p></div>
+                <div><p className="text-xs text-gray-500 uppercase">Adresse</p><p>{company.address || '—'}</p></div>
+              </div>
             </div>
-          )}
 
-          {contract.status === 'quote_sent' && (
-            <button
-              onClick={() => updateContractStatus('quote_approved')}
-              disabled={saving}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-            >
-              ✅ Marquer devis approuvé
-            </button>
-          )}
-
-          {contract.status === 'quote_approved' && (
-            <button
-              onClick={() => updateContractStatus('bc_pending')}
-              disabled={saving}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
-            >
-              📄 En attente du BC
-            </button>
-          )}
-
-          {contract.status === 'bc_pending' && (
-            <button
-              onClick={() => updateContractStatus('active')}
-              disabled={saving}
-              className="px-4 py-2 bg-[#00A651] text-white rounded-lg hover:bg-[#008c44] disabled:opacity-50"
-            >
-              ✅ Activer le contrat
-            </button>
-          )}
-
-          {contract.status !== 'cancelled' && contract.status !== 'active' && !editMode && (
-            <button
-              onClick={() => {
-                if (window.confirm(lang === 'en' ? 'Are you sure you want to cancel this contract? Type "cancel contract" to confirm.' : 'Êtes-vous sûr de vouloir annuler ce contrat? Tapez "annuler contrat" pour confirmer.')) {
-                  const confirmation = window.prompt(lang === 'en' ? 'Type "cancel contract" to confirm:' : 'Tapez "annuler contrat" pour confirmer:');
-                  if (confirmation?.toLowerCase() === 'annuler contrat') {
-                    updateContractStatus('cancelled');
-                  }
-                }
-              }}
-              disabled={saving}
-              className="px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50"
-            >
-              ❌ Annuler Contrat
-            </button>
-          )}
-
-          {/* Delete Contract - Admin only, for any status */}
-          <button
-            onClick={async () => {
-              const confirmation = window.prompt((lang === 'en' ? '⚠️ WARNING: This action is irreversible!\n\nType "DELETE" to confirm permanent deletion of contract ' : '⚠️ ATTENTION: Cette action est irréversible!\n\nTapez "SUPPRIMER" pour confirmer la suppression définitive du contrat ') + + (contract.contract_number || contract.id) + ':');
-              if (confirmation === (lang === 'en' ? 'DELETE' : 'SUPPRIMER')) {
-                setSaving(true);
-                try {
-                  // First, get all contract device IDs from database
-                  const { data: contractDevices } = await supabase
-                    .from('contract_devices')
-                    .select('id')
-                    .eq('contract_id', contract.id);
-                  
-                  const contractDeviceIds = (contractDevices || []).map(d => d.id);
-                  console.log('Contract device IDs to clear:', contractDeviceIds);
-                  
-                  // Clear any references in request_devices
-                  if (contractDeviceIds.length > 0) {
-                    await supabase
-                      .from('request_devices')
-                      .update({ contract_device_id: null })
-                      .in('contract_device_id', contractDeviceIds);
-                  }
-                  
-                  // Clear any references in service_requests (contract_id column if exists)
-                  await supabase
-                    .from('service_requests')
-                    .update({ contract_id: null })
-                    .eq('contract_id', contract.id);
-                  
-                  // Delete contract devices
-                  const { error: devicesError } = await supabase
-                    .from('contract_devices')
-                    .delete()
-                    .eq('contract_id', contract.id);
-                  
-                  if (devicesError) {
-                    console.error('Error deleting contract_devices:', devicesError);
-                  }
-                  
-                  // Then delete the contract
-                  const { error: contractError } = await supabase
-                    .from('contracts')
-                    .delete()
-                    .eq('id', contract.id);
-                  
-                  if (contractError) {
-                    console.error('Error deleting contract:', contractError);
-                    throw contractError;
-                  }
-                  
-                  notify(lang === 'en' ? 'Contract permanently deleted' : 'Contrat supprimé définitivement', 'success');
-                  onClose();
-                  onUpdate();
-                } catch (err) {
-                  notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
-                }
-                setSaving(false);
-              }
-            }}
-            disabled={saving}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
-          >
-            🗑️ Supprimer Définitivement
-          </button>
+            {/* Timeline Card */}
+            <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+              <div className="bg-gray-100 px-4 py-3">
+                <h3 className="font-bold text-gray-700">📅 Dates</h3>
+              </div>
+              <div className="p-4 space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-gray-500">Créé le</span><span>{new Date(contract.created_at).toLocaleDateString('fr-FR')}</span></div>
+                {contract.start_date && <div className="flex justify-between"><span className="text-gray-500">Début</span><span className="font-medium text-green-600">{new Date(contract.start_date).toLocaleDateString('fr-FR')}</span></div>}
+                {contract.end_date && <div className="flex justify-between"><span className="text-gray-500">Fin</span><span className="font-medium text-red-600">{new Date(contract.end_date).toLocaleDateString('fr-FR')}</span></div>}
+                {contract.bc_approved_at && <div className="flex justify-between"><span className="text-gray-500">BC approuvé</span><span>{new Date(contract.bc_approved_at).toLocaleDateString('fr-FR')}</span></div>}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
-// ============================================
-// CREATE CONTRACT MODAL - Manual Contract Creation
-// ============================================
-// ============================================
-// BC FILE UPLOADER (Admin side)
-// ============================================
 function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-commande/manual' }) {
   const t = k => k;
   const [uploading, setUploading] = useState(false);
