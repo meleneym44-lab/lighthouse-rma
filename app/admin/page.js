@@ -19296,6 +19296,7 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Contract #' : 'N° Contrat'}</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{t('client')}</th>
+                <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-bold text-gray-600">{lang === 'en' ? 'Period' : 'Période'}</th>
                 <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">{t('devices')}</th>
                 <th className="px-6 py-3 text-center text-xs font-bold text-gray-600">{lang === 'en' ? 'Tokens' : 'Tokens'}</th>
@@ -19317,6 +19318,11 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
                     <td className="px-6 py-4">
                       <div className="font-medium">{contract.companies?.name || contract.company_name_manual || 'N/A'}</div>
                     </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${contract.contract_type === 'pricing' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                        {contract.contract_type === 'pricing' ? '💲 Tarif' : '🎫 Token'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-sm">
                       {new Date(contract.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
                     </td>
@@ -19324,9 +19330,13 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
                       <span className="font-bold">{devices.length}</span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <span className={`font-bold ${usedTokens >= totalTokens ? 'text-red-600' : 'text-green-600'}`}>
-                        {totalTokens - usedTokens}/{totalTokens}
-                      </span>
+                      {contract.contract_type === 'pricing' ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <span className={`font-bold ${usedTokens >= totalTokens ? 'text-red-600' : 'text-green-600'}`}>
+                          {totalTokens - usedTokens}/{totalTokens}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">{getStatusBadge(contract.status)}</td>
                     <td className="px-6 py-4">
@@ -20533,7 +20543,14 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
   };
 
   // Progress steps
-  const progressSteps = [
+  const isPricingContract = contract.contract_type === 'pricing';
+  
+  const progressSteps = isPricingContract ? [
+    { id: 'submitted', label: 'Soumis', icon: '📋' },
+    { id: 'contract_sent', label: 'Contrat envoyé', icon: '📧' },
+    { id: 'approved', label: 'Approuvé', icon: '✅' },
+    { id: 'active', label: 'Actif', icon: '🟢' }
+  ] : [
     { id: 'submitted', label: 'Soumis', icon: '📋' },
     { id: 'quote_sent', label: 'Devis', icon: '💰' },
     { id: 'bc', label: 'BC', icon: '✍️' },
@@ -20541,6 +20558,15 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
   ];
 
   const getStepIndex = (status) => {
+    if (isPricingContract) {
+      const statusMap = {
+        'requested': 0, 'pending_quote_review': 0, 'modification_requested': 0, 'refused': 0,
+        'quote_sent': 1, 'contract_sent': 1,
+        'quote_approved': 2, 'contract_approved': 2, 'bc_pending': 2,
+        'active': 3, 'expired': 3, 'completed': 3
+      };
+      return statusMap[status] ?? 0;
+    }
     const statusMap = {
       'requested': 0,
       'pending_quote_review': 0,
@@ -20591,7 +20617,7 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
               <button onClick={onClose} className="text-white/70 hover:text-white text-lg">←</button>
               <div>
                 <h1 className="text-xl font-bold text-white">{contract.contract_number || 'Nouveau Contrat'}</h1>
-                <p className="text-white/70 text-sm">{company.name} • Contrat de service</p>
+                <p className="text-white/70 text-sm">{company.name} • {isPricingContract ? 'Contrat tarification' : 'Contrat de service'}</p>
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>{statusStyle.label}</span>
             </div>
@@ -20723,35 +20749,44 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
 
                     {/* Devices */}
                     <div>
-                      <h4 className="font-bold text-gray-700 mb-2">🔧 Appareils ({devices.length})</h4>
+                      <h4 className="font-bold text-gray-700 mb-2">{isPricingContract ? '💲 Grille Tarifaire' : '🔧 Appareils'} ({devices.length})</h4>
                       <div className="space-y-2">
                         {devices.map(device => (
                           <div key={device.id} className="p-3 bg-gray-50 rounded-lg border">
                             <div className="flex justify-between items-center">
                               <div>
                                 <p className="font-medium">{device.model_name || device.model}</p>
-                                <p className="text-xs text-gray-500">SN: {device.serial_number || device.serial || '—'}</p>
+                                {!isPricingContract && <p className="text-xs text-gray-500">SN: {device.serial_number || device.serial || '—'}</p>}
+                                {isPricingContract && <p className="text-xs text-gray-500">{device.device_type === 'particle_counter' ? 'Compteur particules' : device.device_type === 'bio_collector' ? 'Bio collecteur' : device.device_type === 'liquid_counter' ? 'Compteur liquide' : device.device_type || '—'}</p>}
                               </div>
                               {editMode ? (
                                 <div className="flex gap-2">
+                                  {!isPricingContract && (
                                   <div>
                                     <label className="text-xs text-gray-500">Tokens</label>
                                     <input type="number" value={device.tokens_total || ''} onChange={e => updateDevice(device.id, 'tokens_total', parseInt(e.target.value))} className="border rounded px-2 py-1 text-sm w-20" />
                                   </div>
+                                  )}
                                   <div>
-                                    <label className="text-xs text-gray-500">Prix unit.</label>
+                                    <label className="text-xs text-gray-500">{isPricingContract ? 'Prix/étal.' : 'Prix unit.'}</label>
                                     <input type="number" step="0.01" value={device.unit_price || ''} onChange={e => updateDevice(device.id, 'unit_price', parseFloat(e.target.value))} className="border rounded px-2 py-1 text-sm w-24" />
                                   </div>
                                 </div>
                               ) : (
                                 <div className="text-right text-sm">
-                                  {device.tokens_total && (
-                                    <div>
-                                      <p className="text-gray-600">{(device.tokens_total || 0) - (device.tokens_used || 0)}/{device.tokens_total} tokens restants</p>
-                                      {device.tokens_used > 0 && <p className="text-xs text-orange-500">{device.tokens_used} utilisé(s)</p>}
-                                    </div>
+                                  {isPricingContract ? (
+                                    <p className="font-bold text-[#2D5A7B]">{parseFloat(device.unit_price || 0).toFixed(2)} € / étal.</p>
+                                  ) : (
+                                    <>
+                                    {device.tokens_total && (
+                                      <div>
+                                        <p className="text-gray-600">{(device.tokens_total || 0) - (device.tokens_used || 0)}/{device.tokens_total} tokens restants</p>
+                                        {device.tokens_used > 0 && <p className="text-xs text-orange-500">{device.tokens_used} utilisé(s)</p>}
+                                      </div>
+                                    )}
+                                    {device.unit_price && <p className="text-gray-600">{parseFloat(device.unit_price).toFixed(2)} €</p>}
+                                    </>
                                   )}
-                                  {device.unit_price && <p className="text-gray-600">{parseFloat(device.unit_price).toFixed(2)} €</p>}
                                 </div>
                               )}
                             </div>
@@ -21055,6 +21090,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
   const t = k => k;
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [contractType, setContractType] = useState('token'); // 'token' or 'pricing'
   const [contractData, setContractData] = useState({
     company_id: '',
     company_name: '', // For display when no company selected
@@ -21101,14 +21137,19 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       notify(lang === 'en' ? 'Please select a client or enter a name' : 'Veuillez sélectionner un client ou entrer un nom', 'error');
       return;
     }
-    if (devices.length === 0 || !devices.some(d => d.serial_number)) {
+    if (contractType === 'token' && (devices.length === 0 || !devices.some(d => d.serial_number))) {
       notify(lang === 'en' ? 'Please add at least one device with a serial number' : 'Veuillez ajouter au moins un appareil avec un numéro de série', 'error');
+      return;
+    }
+    if (contractType === 'pricing' && (devices.length === 0 || !devices.some(d => d.model_name))) {
+      notify(lang === 'en' ? 'Please add at least one device model with a price' : 'Veuillez ajouter au moins un modèle avec un prix', 'error');
       return;
     }
 
     setSaving(true);
     try {
-      // Check for overlapping contracts with same serial numbers
+      // Check for overlapping contracts with same serial numbers (token contracts only)
+      if (contractType === 'token') {
       const serialNumbers = devices.filter(d => d.serial_number).map(d => d.serial_number.trim().toUpperCase());
       
       // Get all active/quote_sent contracts that overlap with this date range
@@ -21141,6 +21182,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         setSaving(false);
         return;
       }
+      } // end token serial conflict check
 
       // Create contract
       const { data: contract, error: contractError } = await supabase
@@ -21149,6 +21191,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           company_id: contractData.company_id || null,
           company_name_manual: contractData.company_id ? null : contractData.company_name,
           contract_number: contractData.contract_number,
+          contract_type: contractType,
           start_date: contractData.start_date,
           end_date: contractData.end_date,
           status: contractData.status,
@@ -21161,16 +21204,27 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       if (contractError) throw contractError;
 
       // Add devices
-      const deviceInserts = devices.filter(d => d.serial_number).map(d => ({
-        contract_id: contract.id,
-        serial_number: d.serial_number,
-        model_name: d.model_name,
-        device_type: d.device_type,
-        nickname: d.nickname,
-        tokens_total: d.tokens_total || 2,
-        tokens_used: 0,
-        unit_price: d.unit_price || 0
-      }));
+      const deviceInserts = contractType === 'pricing' 
+        ? devices.filter(d => d.model_name).map(d => ({
+            contract_id: contract.id,
+            serial_number: null,
+            model_name: d.model_name,
+            device_type: d.device_type,
+            nickname: d.nickname || null,
+            tokens_total: 0,
+            tokens_used: 0,
+            unit_price: d.unit_price || 0
+          }))
+        : devices.filter(d => d.serial_number).map(d => ({
+            contract_id: contract.id,
+            serial_number: d.serial_number,
+            model_name: d.model_name,
+            device_type: d.device_type,
+            nickname: d.nickname,
+            tokens_total: d.tokens_total || 2,
+            tokens_used: 0,
+            unit_price: d.unit_price || 0
+          }));
 
       const { error: devicesError } = await supabase
         .from('contract_devices')
@@ -21203,11 +21257,24 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 bg-[#1a1a2e] text-white">
-          <h2 className="text-xl font-bold">{lang === 'en' ? "New Calibration Contract" : "Nouveau Contrat d'Étalonnage"}</h2>
+          <h2 className="text-xl font-bold">{contractType === 'pricing' ? (lang === 'en' ? "New Pricing Contract" : "Nouveau Contrat Tarification") : (lang === 'en' ? "New Calibration Contract" : "Nouveau Contrat d'Étalonnage")}</h2>
           <p className="text-gray-300 text-sm">{lang === 'en' ? 'For existing contracts not created by client' : 'Pour les contrats existants non créés par le client'}</p>
         </div>
 
         <div className="p-6 space-y-6">
+          {/* Contract Type Selector */}
+          <div className="flex gap-3">
+            <button onClick={() => { setContractType('token'); setDevices([{ id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 1, unit_price: 0 }]); }}
+              className={`flex-1 p-4 rounded-xl border-2 transition-all ${contractType === 'token' ? 'border-[#00A651] bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
+              <p className="font-bold text-lg">{lang === 'en' ? '🎫 Token Contract' : '🎫 Contrat Tokens'}</p>
+              <p className="text-sm text-gray-500">{lang === 'en' ? 'Prepaid calibrations per device (serial-specific)' : 'Étalonnages prépayés par appareil (par N° série)'}</p>
+            </button>
+            <button onClick={() => { setContractType('pricing'); setDevices([{ id: Date.now(), serial_number: '', model_name: '', device_type: 'particle_counter', nickname: '', tokens_total: 0, unit_price: 0 }]); }}
+              className={`flex-1 p-4 rounded-xl border-2 transition-all ${contractType === 'pricing' ? 'border-[#2D5A7B] bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+              <p className="font-bold text-lg">{lang === 'en' ? '💲 Pricing Contract' : '💲 Contrat Tarification'}</p>
+              <p className="text-sm text-gray-500">{lang === 'en' ? 'Special rates per device model (company-wide)' : 'Tarifs spéciaux par modèle (par entreprise)'}</p>
+            </button>
+          </div>
           {/* Client Selection */}
           <div className="grid md:grid-cols-2 gap-6">
             <div>
@@ -21305,12 +21372,12 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           {/* Devices Section */}
           <div className="border-t pt-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-gray-800">{lang === 'en' ? `Devices under contract (${devices.length})` : `Appareils sous contrat (${devices.length})`}</h3>
+              <h3 className="font-bold text-gray-800">{contractType === 'pricing' ? (lang === 'en' ? `Device Rate Card (${devices.length})` : `Grille Tarifaire (${devices.length})`) : (lang === 'en' ? `Devices under contract (${devices.length})` : `Appareils sous contrat (${devices.length})`)}</h3>
               <button
                 onClick={addDevice}
                 className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]"
               >
-                + Ajouter appareil
+                + {contractType === 'pricing' ? 'Ajouter modèle' : 'Ajouter appareil'}
               </button>
             </div>
 
@@ -21319,7 +21386,8 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                 <div key={device.id} className="bg-gray-50 rounded-lg p-4 border">
                   <div className="flex items-start gap-4">
                     <span className="bg-[#1a1a2e] text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">{index + 1}</span>
-                    <div className="flex-1 grid md:grid-cols-6 gap-3">
+                    <div className={`flex-1 grid gap-3 ${contractType === 'pricing' ? 'md:grid-cols-4' : 'md:grid-cols-6'}`}>
+                      {contractType === 'token' && (
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Serial # *' : 'N° Série *'}</label>
                         <input
@@ -21330,8 +21398,9 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                           placeholder="SN..."
                         />
                       </div>
+                      )}
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{t('model')}</label>
+                        <label className="block text-xs text-gray-500 mb-1">{contractType === 'pricing' ? (lang === 'en' ? 'Model *' : 'Modèle *') : (t('model'))}</label>
                         <input
                           type="text"
                           value={device.model_name}
@@ -21354,6 +21423,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                           <option value="other">{lang === 'en' ? 'Other' : 'Autre'}</option>
                         </select>
                       </div>
+                      {contractType === 'token' && (
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Tokens/yr' : 'Tokens/an'}</label>
                         <input
@@ -21364,8 +21434,9 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                           min="1"
                         />
                       </div>
+                      )}
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{lang === 'en' ? 'Price €' : 'Prix €'}</label>
+                        <label className="block text-xs text-gray-500 mb-1">{contractType === 'pricing' ? (lang === 'en' ? 'Price per cal. €' : 'Prix/étal. €') : (lang === 'en' ? 'Price €' : 'Prix €')}</label>
                         <input
                           type="number"
                           value={device.unit_price}
@@ -21394,13 +21465,12 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
             {/* Summary */}
             <div className="mt-4 bg-emerald-50 rounded-lg p-4 flex justify-between items-center">
               <div>
-                <span className="text-emerald-800 font-medium">{devices.filter(d => d.serial_number).length} appareil(s)</span>
-                <span className="text-emerald-600 mx-3">•</span>
-                <span className="text-emerald-800">{totalTokens} tokens total</span>
+                <span className="text-emerald-800 font-medium">{contractType === 'pricing' ? `${devices.filter(d => d.model_name).length} modèle(s)` : `${devices.filter(d => d.serial_number).length} appareil(s)`}</span>
+                {contractType === 'token' && (<><span className="text-emerald-600 mx-3">•</span><span className="text-emerald-800">{totalTokens} tokens total</span></>)}
               </div>
               <div className="text-right">
                 <span className="text-emerald-800 font-bold text-xl">{totalPrice.toFixed(2)} €</span>
-                <span className="text-emerald-600 text-sm ml-2">{lang === 'en' ? 'excl. VAT' : 'HT'}</span>
+                <span className="text-emerald-600 text-sm ml-2">{contractType === 'pricing' ? 'HT/étal.' : (lang === 'en' ? 'excl. VAT' : 'HT')}</span>
               </div>
             </div>
           </div>
@@ -25117,7 +25187,50 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           });
           console.log('✅ Contract info set!');
         } else {
-          console.log('❌ No matching serial numbers found in contracts');
+          console.log('❌ No matching serial numbers found in token contracts');
+          
+          // === PRICING CONTRACT LOOKUP ===
+          // If no token contract match, check for pricing contracts by company_id
+          const companyId = request?.company_id;
+          if (companyId) {
+            console.log('🔍 Checking pricing contracts for company_id:', companyId);
+            const { data: pricingContracts } = await supabase
+              .from('contracts')
+              .select('id, contract_number, start_date, end_date, company_id, contract_type, contract_devices(*)')
+              .eq('status', 'active')
+              .eq('company_id', companyId)
+              .eq('contract_type', 'pricing')
+              .lte('start_date', todayStr)
+              .gte('end_date', todayStr);
+            
+            if (pricingContracts && pricingContracts.length > 0) {
+              console.log('✅ Found pricing contract:', pricingContracts[0].contract_number);
+              const pricingContract = pricingContracts[0];
+              const pricingDevices = pricingContract.contract_devices || [];
+              
+              // Build a pricing map: model_name (uppercase) -> { unit_price, device_type }
+              const pricingMap = {};
+              for (const pd of pricingDevices) {
+                const modelKey = (pd.model_name || '').trim().toUpperCase();
+                if (modelKey) {
+                  pricingMap[modelKey] = {
+                    unit_price: pd.unit_price || 0,
+                    device_type: pd.device_type,
+                    contract_device_id: pd.id
+                  };
+                }
+              }
+              console.log('💲 Pricing map:', pricingMap);
+              
+              setContractInfo({
+                contracts: [pricingContract],
+                primaryContract: pricingContract,
+                deviceMap: {},
+                pricingContract: true,
+                pricingMap
+              });
+            }
+          }
         }
       } catch (err) {
         console.error('Contract check error:', err);
@@ -25219,7 +25332,19 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
         const isContractCovered = needsCal && contractDevice && contractDevice.tokens_remaining > 0;
         const tokensExhausted = needsCal && contractDevice && contractDevice.tokens_remaining <= 0;
         
-        console.log(`📊 Device ${serialTrimmed}: model="${modelName}", calPart=${calPartNumber}, price=${calPrice}, nettoyage=${nettoyageCellType}${savedDevice ? ' (restored from quote_data)' : ''}`);
+        // Check pricing contract (company-wide special rates by model name)
+        const pricingMap = contractInfo?.pricingMap;
+        const modelUpper = modelName.trim().toUpperCase();
+        const pricingMatch = pricingMap ? pricingMap[modelUpper] : null;
+        const hasPricingContract = !!pricingMatch && needsCal;
+        const pricingContractPrice = pricingMatch?.unit_price || 0;
+        
+        // Determine calibration price: token contract = 0, pricing contract = special rate, else = standard
+        const effectiveCalPrice = isContractCovered ? 0 
+          : hasPricingContract ? pricingContractPrice 
+          : (needsCal ? calPrice : 0);
+        
+        console.log(`📊 Device ${serialTrimmed}: model="${modelName}", calPart=${calPartNumber}, price=${calPrice}${hasPricingContract ? `, pricingContract=${pricingContractPrice}` : ''}, nettoyage=${nettoyageCellType}${savedDevice ? ' (restored from quote_data)' : ''}`);
         
         return {
           id: d.id || `device-${i}`,
@@ -25232,9 +25357,11 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           customerNotes: d.notes || d.problem_description || '',
           // Contract coverage
           isContractCovered: isContractCovered,
+          hasPricingContract: hasPricingContract,
+          pricingContractPrice: pricingContractPrice,
           tokensExhausted: tokensExhausted,
-          contractDeviceId: contractDevice?.contract_device_id || null,
-          contractId: contractDevice?.contract_id || null,
+          contractDeviceId: contractDevice?.contract_device_id || pricingMatch?.contract_device_id || null,
+          contractId: contractDevice?.contract_id || contractInfo?.primaryContract?.id || null,
           tokensRemaining: contractDevice?.tokens_remaining || 0,
           // Calibration part number for reference
           calPartNumber: calPartNumber,
@@ -25247,7 +25374,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           hideNettoyageOnQuote: false, // Option to hide nettoyage on quote (price still included)
           // Pricing - restore from saved data if revision, otherwise calculate fresh
           calibrationQty: 1,
-          calibrationPrice: isContractCovered ? 0 : (savedDevice ? (parseFloat(savedDevice.calibrationPrice) || 0) : (needsCal ? calPrice : 0)),
+          calibrationPrice: savedDevice ? (parseFloat(savedDevice.calibrationPrice) || effectiveCalPrice) : effectiveCalPrice,
           repairQty: 1,
           repairPrice: savedDevice ? (parseFloat(savedDevice.repairPrice) || 0) : (needsRepair ? REPAIR_TEMPLATE.defaultPrice : 0),
           repairPartNumber: savedDevice?.repairPartNumber || '',
@@ -25920,6 +26047,27 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           <p className="text-xs text-emerald-600 mt-2">
                             Contrat: {contractInfo.primaryContract.contract_number} • 
                             Valide jusqu'au {new Date(contractInfo.primaryContract.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* PRICING CONTRACT BANNER */}
+                {contractInfo?.pricingContract && !hasContractCoveredDevices && (
+                  <div className="mb-6 p-4 rounded-xl border-2 bg-blue-50 border-blue-300">
+                    <div className="flex items-start gap-3">
+                      <span className="text-3xl">💲</span>
+                      <div className="flex-1">
+                        <p className="font-bold text-blue-800">Contrat tarification détecté</p>
+                        <p className="text-blue-700 text-sm mt-1">
+                          Les prix de calibration ont été automatiquement remplis selon la grille tarifaire du contrat.
+                        </p>
+                        {contractInfo?.primaryContract && (
+                          <p className="text-xs text-blue-600 mt-2">
+                            Contrat: {contractInfo.primaryContract.contract_number} • 
+                            Valide jusqu'au {new Date(contractInfo.primaryContract.end_date).toLocaleDateString('fr-FR')}
                           </p>
                         )}
                       </div>
