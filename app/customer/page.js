@@ -3146,16 +3146,26 @@ export default function CustomerPortal() {
       }
       setLoading(false);
     };
-    checkAuth();
 
     // Listen for auth events
+    let initialCheckDone = false;
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
         setLoading(false);
       }
+      // When user arrives from invite email link, Supabase processes the hash tokens
+      // and fires SIGNED_IN after checkAuth has already run and found no session.
+      // Detect this by checking: SIGNED_IN event + we have a session + checkAuth already ran + no user loaded
+      if (event === 'SIGNED_IN' && session?.user && initialCheckDone) {
+        console.log('[Auth] New SIGNED_IN after init, reloading to process invite');
+        window.location.replace(window.location.pathname);
+      }
     });
+    
+    // After checkAuth completes, mark initial check as done
+    checkAuth().then(() => { initialCheckDone = true; });
 
     // Check URL for invite token
     const params = new URLSearchParams(window.location.search);
@@ -3335,44 +3345,34 @@ export default function CustomerPortal() {
 
   // Process pending invite on first login (when user has session but no profile)
   const processInviteOnFirstLogin = async (userId, userEmail) => {
-    // Get user metadata (name, phone stored during signup)
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    const meta = authUser?.user_metadata || {};
+    console.log('[Invite] Processing invite for:', userEmail);
     
-    // Check for pending invite by email
-    const { data: invite } = await supabase
-      .from('team_invitations')
-      .select('*')
-      .eq('email', userEmail.toLowerCase())
-      .is('accepted_at', null)
-      .gt('expires_at', new Date().toISOString())
-      .single();
-
-    if (invite) {
-      // Create profile from invite
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: userId,
-        email: userEmail,
-        full_name: meta.full_name || userEmail.split('@')[0],
-        phone: meta.phone || null,
-        role: invite.role || 'customer',
-        company_id: invite.company_id,
-        invitation_status: 'active',
-        can_view: invite.can_view !== false,
-        can_request: !!invite.can_request,
-        can_invoice: !!invite.can_invoice
+    // Call server-side API to accept invite (bypasses RLS)
+    try {
+      const res = await fetch('/api/accept-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId, 
+          userEmail,
+          fullName: userEmail.split('@')[0],
+          phone: null
+        })
       });
-
-      if (!profileError) {
-        // Mark invite as accepted
-        await supabase.from('team_invitations')
-          .update({ accepted_at: new Date().toISOString(), accepted_by: userId })
-          .eq('id', invite.id);
+      
+      const result = await res.json();
+      console.log('[Invite] Accept result:', result);
+      
+      if (res.ok && result.success) {
         return true;
+      } else {
+        console.error('[Invite] Accept failed:', result.error);
       }
+    } catch (err) {
+      console.error('[Invite] Accept API error:', err);
     }
 
-    // Check for pending normal registration
+    // Check for pending normal registration (localStorage fallback)
     const pendingReg = localStorage.getItem('lhf_pending_registration');
     if (pendingReg) {
       try {
