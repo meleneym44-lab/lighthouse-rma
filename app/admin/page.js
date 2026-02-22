@@ -26283,27 +26283,24 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             }
           }
           
-          // Fuzzy fallback for early path
+          // Fuzzy fallback for early path - check ALL pricing contracts
           if (!earlyPricingContract) {
             const companyName = request?.companies?.name || '';
             if (companyName) {
-              const { data: unlinked } = await supabase
+              const { data: allPricing } = await supabase
                 .from('contracts')
-                .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+                .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*), companies(name)')
                 .eq('status', 'active')
-                .is('company_id', null)
-                .not('company_name_manual', 'is', null)
                 .eq('contract_type', 'pricing')
                 .lte('start_date', todayStr)
                 .gte('end_date', todayStr);
               
-              if (unlinked && unlinked.length > 0) {
-                const fakeList = unlinked.map(c => ({ id: c.id, name: c.company_name_manual }));
-                const matches = fuzzyMatchCompanies(companyName, fakeList);
+              if (allPricing && allPricing.length > 0) {
+                const candidateList = allPricing.map(c => ({ id: c.id, name: c.companies?.name || c.company_name_manual || '' })).filter(c => c.name);
+                const matches = fuzzyMatchCompanies(companyName, candidateList);
                 if (matches.length > 0 && matches[0].score >= 60) {
-                  earlyPricingContract = unlinked.find(c => c.id === matches[0].company.id);
-                  console.log(`✅ Fuzzy matched pricing contract (early path): "${matches[0].company.name}" → score ${matches[0].score}`);
-                  if (earlyPricingContract && companyId) {
+                  earlyPricingContract = allPricing.find(c => c.id === matches[0].company.id);
+                  if (earlyPricingContract && companyId && earlyPricingContract.company_id !== companyId) {
                     await supabase.from('contracts').update({ company_id: companyId, company_name_manual: null }).eq('id', earlyPricingContract.id).catch(() => {});
                   }
                 }
@@ -26443,35 +26440,42 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           }
         }
         
-        // Fuzzy fallback: check unlinked pricing contracts by company_name_manual
+        // Fuzzy fallback: check ALL active pricing contracts by name match
+        // (handles: wrong company_id linked, unlinked, or name mismatch)
         if (!foundPricingContract) {
           const companyName = request?.companies?.name || request?.company_name || '';
           if (companyName) {
-            console.log('🔍 Fuzzy checking unlinked pricing contracts for:', companyName);
-            const { data: unlinkedContracts } = await supabase
+            console.log('🔍 Fuzzy checking ALL pricing contracts for:', companyName);
+            const { data: allPricingContracts } = await supabase
               .from('contracts')
-              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*), companies(name)')
               .eq('status', 'active')
-              .is('company_id', null)
-              .not('company_name_manual', 'is', null)
               .eq('contract_type', 'pricing')
               .lte('start_date', todayStr)
               .gte('end_date', todayStr);
             
-            if (unlinkedContracts && unlinkedContracts.length > 0) {
-              const fakeCompanyList = unlinkedContracts.map(c => ({ id: c.id, name: c.company_name_manual }));
-              const matches = fuzzyMatchCompanies(companyName, fakeCompanyList);
+            if (allPricingContracts && allPricingContracts.length > 0) {
+              console.log('🔍 Found', allPricingContracts.length, 'active pricing contracts to check');
+              // Build a list with both linked company names and manual names
+              const candidateList = allPricingContracts.map(c => ({
+                id: c.id,
+                name: c.companies?.name || c.company_name_manual || ''
+              })).filter(c => c.name);
+              
+              const matches = fuzzyMatchCompanies(companyName, candidateList);
+              console.log('🔍 Fuzzy match results:', matches.map(m => `${m.company.name} (score: ${m.score})`));
+              
               if (matches.length > 0 && matches[0].score >= 60) {
-                foundPricingContract = unlinkedContracts.find(c => c.id === matches[0].company.id);
-                console.log(`✅ Fuzzy matched unlinked pricing contract: "${matches[0].company.name}" → score ${matches[0].score}`, foundPricingContract?.contract_number);
+                foundPricingContract = allPricingContracts.find(c => c.id === matches[0].company.id);
+                console.log(`✅ Fuzzy matched pricing contract: "${matches[0].company.name}" → score ${matches[0].score}`, foundPricingContract?.contract_number);
                 
-                // Auto-link the contract to this company
-                if (foundPricingContract && companyId) {
+                // Auto-link to the correct company if not already linked
+                if (foundPricingContract && companyId && foundPricingContract.company_id !== companyId) {
                   try {
                     await supabase.from('contracts')
                       .update({ company_id: companyId, company_name_manual: null })
                       .eq('id', foundPricingContract.id);
-                    console.log('🔗 Auto-linked pricing contract to company_id:', companyId);
+                    console.log('🔗 Auto-linked/re-linked pricing contract to correct company_id:', companyId);
                   } catch (linkErr) {
                     console.error('Auto-link failed:', linkErr);
                   }
