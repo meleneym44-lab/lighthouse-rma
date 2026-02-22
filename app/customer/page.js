@@ -11,6 +11,13 @@ if (typeof window !== 'undefined') {
 // Valid France Metropolitan: 5 digits, starting with 01-95 (includes Corsica 20)
 // INVALID (show warning): DOM-TOM (97xxx, 98xxx), foreign addresses, or non-French codes
 
+// French date formatter: "19 février 2026"
+const formatDateWrittenFR = (d) => {
+  const date = new Date(d);
+  const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+};
+
 const isFranceMetropolitan = (postalCode) => {
   if (!postalCode) return false; // No postal code = can't verify = show warning
   
@@ -2267,6 +2274,411 @@ async function generateSignedAvenantPDF(options) {
 }
 
 
+// ============================================
+// RENTAL QUOTE PDF GENERATOR (Customer Portal)
+// ============================================
+async function generateRentalQuotePDF(options) {
+  const { rental, isSigned = false, signatureName = '', signatureDate = '', signatureImage = null } = options;
+  
+  await new Promise((resolve, reject) => {
+    if (window.jspdf) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    script.onload = resolve; script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+
+  const qd = rental.quote_data || {};
+  const company = rental.companies || {};
+  const items = qd.quoteItems || qd.items || rental.rental_request_items || [];
+  const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1 };
+
+  // French date formatter: "19 février 2026"
+  const formatDateFR = (d) => {
+    const date = new Date(d);
+    const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+  };
+
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+
+  const navy = [45, 90, 123];
+  const darkBlue = [26, 26, 46];
+  const gray = [80, 80, 80];
+  const lightGray = [130, 130, 130];
+  const white = [255, 255, 255];
+
+  let y = 8;
+
+  const loadImg = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) { return null; }
+  };
+
+  let lighthouseLogo = await loadImg('/images/logos/Lighthouse-color-logo.jpg');
+  let capcertLogo = await loadImg('/images/logos/capcert-logo.png');
+
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; return true; }
+    return false;
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, format, margin, y - 5, 80, 20);
+    } catch (e) {
+      pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+    }
+  } else {
+    pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+  }
+
+  pdf.setFontSize(18);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...navy);
+  pdf.text('DEVIS LOCATION', pageWidth - margin, y + 5, { align: 'right' });
+
+  pdf.setFontSize(11);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('N\u00B0 ' + (rental.rental_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
+
+  y += 17;
+  pdf.setDrawColor(...navy);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 3;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.setFontSize(7);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 4);
+  pdf.text('VALIDITE', margin + 65, y + 4);
+  pdf.text('CONDITIONS', margin + 120, y + 4);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(formatDateFR(new Date()), margin + 5, y + 11);
+  pdf.text('30 jours', margin + 65, y + 11);
+  pdf.setFontSize(9);
+  pdf.text(qd.paymentTerms || 'A reception de facture', margin + 120, y + 11);
+  y += 20;
+
+  // ===== CLIENT =====
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...lightGray);
+  pdf.text('CLIENT', margin, y);
+  y += 5;
+  pdf.setFontSize(14);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(qd.clientName || company.name || 'Client', margin, y);
+  y += 6;
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  const addr = qd.clientAddress || company.billing_address || company.address || '';
+  if (addr) { pdf.text(addr, margin, y); y += 5; }
+  const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
+  if (cityLine) { pdf.text(cityLine, margin, y); y += 5; }
+  y += 5;
+
+  // ===== RENTAL PERIOD BLOCK =====
+  checkPageBreak(16);
+  const periodStartY = y;
+  pdf.setDrawColor(139, 92, 246);
+  pdf.setLineWidth(1);
+  
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Location de Materiel', margin + 5, y + 4);
+  y += 11;
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
+  pdf.text('- Periode: du ' + formatDateFR(period.start) + ' au ' + formatDateFR(period.end) + ' (' + period.days + ' jours)', margin + 9, y);
+  y += 5;
+  if (qd.deliveryTerms) { pdf.text('- Delai de livraison: ' + qd.deliveryTerms, margin + 9, y); y += 5; }
+  pdf.text('- Assurance \u00AB Bien Confie \u00BB obligatoire (vol, incendie, degats des eaux, bris accidentel)', margin + 9, y);
+  y += 3;
+  pdf.line(margin, periodStartY, margin, y);
+  y += 8;
+
+  // ===== PRICING TABLE =====
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colRate = pageWidth - margin - 68;
+  const colDuration = pageWidth - margin - 38;
+  const colTotal = pageWidth - margin - 3;
+
+  const drawTableHeader = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(margin, y, contentWidth, 9, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...white);
+    pdf.text('Qte', colQty + 3, y + 6);
+    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Tarif', colRate, y + 6, { align: 'right' });
+    pdf.text('Duree', colDuration, y + 6, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+    y += 9;
+  };
+
+  const checkTablePageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; drawTableHeader(); return true; }
+    return false;
+  };
+
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Recapitulatif des Prix', margin, y);
+  y += 6;
+  drawTableHeader();
+
+  let rowIndex = 0;
+
+  items.forEach((item) => {
+    const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : item.rate_type === 'forfait' ? '' : '/jour';
+    const appliedRate = parseFloat(item.applied_rate) || 0;
+    const lineTotal = parseFloat(item.line_total) || 0;
+    const retailVal = parseFloat(item.retail_value) || 0;
+    const daysDisplay = (item.rental_days || period.days) + 'j';
+    
+    // Build device name - avoid duplicate serial
+    const rawName = item.item_name || 'Equipement';
+    const serial = item.serial_number || '';
+    const nameHasSerial = serial && rawName.includes(serial);
+    const deviceName = nameHasSerial ? rawName : (serial ? rawName + ' (SN: ' + serial + ')' : rawName);
+    
+    const specs = item.specs || item.description || '';
+    const hasSpecs = specs.length > 0;
+    
+    const mainLineH = 7;
+    const specsLineH = hasSpecs ? 5 : 0;
+    const insuranceLineH = retailVal > 0 ? 5 : 0;
+    const totalRowH = mainLineH + specsLineH + insuranceLineH + 2;
+    
+    checkTablePageBreak(totalRowH);
+    
+    pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248);
+    pdf.rect(margin, y, contentWidth, totalRowH, 'F');
+    
+    const textY = y + 5;
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text('1', colQty + 3, textY);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(deviceName.substring(0, 52), colDesc, textY);
+    
+    pdf.setFont('helvetica', 'normal');
+    if (appliedRate > 0) pdf.text(appliedRate.toFixed(2) + ' EUR' + rateLabel, colRate, textY, { align: 'right' });
+    pdf.text(daysDisplay, colDuration, textY, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(lineTotal.toFixed(2) + ' EUR', colTotal, textY, { align: 'right' });
+    
+    let subY = textY + mainLineH;
+    
+    if (hasSpecs) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(...lightGray);
+      pdf.text(specs.substring(0, 80), colDesc, subY - 1);
+      subY += specsLineH;
+    }
+    
+    if (retailVal > 0) {
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(...lightGray);
+      pdf.text('Valeur neuf (assurance): ' + retailVal.toFixed(2) + ' EUR', colDesc, subY - 1);
+    }
+    
+    y += totalRowH;
+    rowIndex++;
+  });
+
+  // Shipping
+  const shippingVal = parseFloat(qd.shipping) || 0;
+  if (shippingVal > 0) {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkBlue);
+    pdf.text('1', colQty + 3, y + 5);
+    pdf.text('Frais de port', colDesc, y + 5);
+    pdf.text(shippingVal.toFixed(2) + ' EUR', colRate, y + 5, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(shippingVal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+    y += rowH;
+  }
+
+  // Discount
+  const discountAmount = parseFloat(qd.discountAmount) || 0;
+  if (discountAmount > 0) {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(255, 251, 235);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(180, 30, 30);
+    pdf.text('1', colQty + 3, y + 5);
+    pdf.text(qd.discountType === 'percent' ? 'Remise (' + qd.discount + '%)' : 'Remise', colDesc, y + 5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('-' + discountAmount.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+    y += rowH;
+  }
+
+  // Total
+  checkPageBreak(14);
+  pdf.setFillColor(...navy);
+  pdf.rect(margin, y, contentWidth, 12, 'F');
+  pdf.setTextColor(...white);
+  pdf.setFontSize(11); pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT', colDuration - 20, y + 8);
+  pdf.setFontSize(16);
+  pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 16;
+
+  // Conditions
+  const RENTAL_CONDITIONS = [
+    'Le materiel reste la propriete de Lighthouse France. La garde est transferee au client des reception jusqu\'a restitution.',
+    'Utilisation conforme par personnel qualifie. Sous-location interdite sans accord ecrit. Tout incident doit etre signale sous 48h par ecrit.',
+    'Le client doit souscrire une assurance \u00AB Bien Confie \u00BB couvrant: vol, incendie, degats des eaux, bris accidentel.',
+    'Le materiel doit etre restitue en bon etat a la date convenue. Les dommages ou pieces manquantes seront factures au cout de remise en etat.',
+    'Les jours de retard seront factures au tarif journalier majore de 50%. Lighthouse France pourra recuperer le materiel a tout moment.',
+    'Le non-respect des conditions peut entrainer la resiliation immediate du contrat de location.'
+  ];
+
+  y += 5;
+  checkPageBreak(8 + RENTAL_CONDITIONS.length * 5);
+  pdf.setFontSize(8.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS GENERALES DE LOCATION', margin, y);
+  y += 5;
+  pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+  RENTAL_CONDITIONS.forEach((d, i) => {
+    checkPageBreak(5);
+    const wrapped = pdf.splitTextToSize((i + 1) + '. ' + d, contentWidth);
+    wrapped.forEach(line => { checkPageBreak(4.5); pdf.text(line, margin, y); y += 4.5; });
+  });
+
+  if (qd.notes) {
+    y += 2;
+    checkPageBreak(10);
+    pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
+    pdf.text('NOTES', margin, y);
+    y += 3;
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+    const noteLines = pdf.splitTextToSize(qd.notes, contentWidth);
+    noteLines.forEach(line => { checkPageBreak(3.5); pdf.text(line, margin, y); y += 3.5; });
+  }
+
+  // ===== SIGNATURE SECTION =====
+  const signatureHeight = 36;
+  const signatureLimit = pageHeight - footerHeight - 2;
+  if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
+  const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
+
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+
+  pdf.setFontSize(7); pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 6);
+  pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+  pdf.text(qd.businessSettings?.quote_signatory || 'M. Meleney', margin, sigY + 12);
+  pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+  pdf.text(qd.businessSettings?.company_name || 'Lighthouse France', margin, sigY + 17);
+
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 50, sigY + 2, 28, 28);
+    } catch (e) {}
+  }
+
+  if (isSigned && signatureName) {
+    const sigBoxX = pageWidth - margin - 60;
+    pdf.setFillColor(240, 253, 244);
+    pdf.rect(sigBoxX, sigY + 2, 60, 30, 'F');
+    pdf.setDrawColor(0, 166, 81);
+    pdf.setLineWidth(0.5);
+    pdf.rect(sigBoxX, sigY + 2, 60, 30, 'S');
+    
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(0, 166, 81);
+    pdf.text('BON POUR ACCORD', sigBoxX + 10, sigY + 9);
+    pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkBlue);
+    pdf.text('Signe par: ' + signatureName, sigBoxX + 3, sigY + 15);
+    pdf.text('Date: ' + signatureDate, sigBoxX + 3, sigY + 20);
+    
+    if (signatureImage) {
+      try { pdf.addImage(signatureImage, 'PNG', sigBoxX + 8, sigY + 21, 38, 9); } catch (e) {}
+    }
+  } else {
+    const sigBoxX = pageWidth - margin - 60;
+    pdf.setFontSize(7); pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 6);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigY + 9, 50, 18, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.text('Lu et approuve', sigBoxX + 17, sigY + 30);
+  }
+
+  addFooter();
+
+  const totalPages = pdf.internal.getNumberOfPages();
+  if (totalPages > 1) {
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      pdf.setFontSize(7);
+      pdf.setTextColor(180, 180, 180);
+      pdf.text('Page ' + i + ' / ' + totalPages, pageWidth - margin, pageHeight - 2, { align: 'right' });
+    }
+  }
+
+  return pdf.output('blob');
+}
+
 
 // Translations
 const T = {
@@ -2402,6 +2814,17 @@ const STATUS_STYLES = {
 // Step Progress Tracker Component (Chevron Style)
 const StepProgress = ({ status, serviceType }) => {
   // Define steps based on service type
+  // RENTAL: 6 steps
+  const rentalSteps = [
+    { id: 'submitted', label: 'Demande Soumise', shortLabel: 'Soumis' },
+    { id: 'quote', label: 'Devis Envoyé', shortLabel: 'Devis' },
+    { id: 'approved', label: 'BC Approuvé', shortLabel: 'Approuvé' },
+    { id: 'shipped', label: 'Expédié / En Location', shortLabel: 'En cours' },
+    { id: 'returned', label: 'Retourné', shortLabel: 'Retourné' },
+    { id: 'inspection', label: 'Inspection', shortLabel: 'Inspection' },
+    { id: 'completed', label: 'Terminé', shortLabel: 'Terminé' }
+  ];
+  
   // CALIBRATION: 10 steps
   const calibrationSteps = [
     { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
@@ -2433,13 +2856,25 @@ const StepProgress = ({ status, serviceType }) => {
   ];
 
   const isRepair = serviceType === 'repair' || serviceType === 'réparation';
-  const steps = isRepair ? repairSteps : calibrationSteps;
+  const isRental = serviceType === 'rental' || serviceType === 'location';
+  const steps = isRental ? rentalSteps : isRepair ? repairSteps : calibrationSteps;
 
   // Map current status to step index
   const getStepIndex = (currentStatus) => {
     if (!currentStatus) return 0;
     
-    if (isRepair) {
+    if (isRental) {
+      const rentalMap = {
+        'requested': 0, 'submitted': 0, 'pending': 0,
+        'pending_quote_review': 1, 'quote_sent': 1,
+        'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2,
+        'shipped': 3, 'in_rental': 3,
+        'return_pending': 4, 'returned': 4,
+        'inspection': 5, 'inspection_issue': 5,
+        'completed': 6, 'cancelled': 0
+      };
+      return rentalMap[currentStatus] ?? 0;
+    } else if (isRepair) {
       // Repair flow mapping (12 steps: 0-11)
       const repairMap = {
         'submitted': 0, 'pending': 0,
@@ -2592,15 +3027,16 @@ export default function CustomerPortal() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [recoveryMode, setRecoveryMode] = useState(false);
   const [lang, setLang] = useState('fr');
   const [page, setPage] = useState('dashboard');
   const [previousPage, setPreviousPage] = useState('dashboard');
+  const [pendingRentalId, setPendingRentalId] = useState(null);
   const [toast, setToast] = useState(null);
   const [cookieConsent, setCookieConsent] = useState(() => {
     try { return localStorage.getItem('lhf_cookie_consent') === 'accepted'; } catch { return false; }
   });
   const [showLegalPage, setShowLegalPage] = useState(null); // 'privacy' | 'mentions' | null
+  const [recoveryMode, setRecoveryMode] = useState(false);
   
   // Data
   const [requests, setRequests] = useState([]);
@@ -2643,50 +3079,6 @@ export default function CustomerPortal() {
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get('code');
-      const recoveryParam = urlParams.get('recovery') === '1';
-      const recoveryFlag = (() => { try { return localStorage.getItem('lhf_password_recovery') === 'pending'; } catch { return false; } })();
-      const isRecoveryHint = recoveryParam || recoveryFlag;
-
-      // 1. Handle PKCE code exchange (?code=xxx in URL)
-      if (code) {
-        try {
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          window.history.replaceState({}, '', window.location.pathname);
-          if (!error && data?.session) {
-            if (isRecoveryHint) {
-              try { localStorage.removeItem('lhf_password_recovery'); } catch {}
-              setRecoveryMode(true);
-              setUser(data.session.user);
-              setLoading(false);
-              return;
-            }
-          }
-        } catch (e) {
-          console.warn('Code exchange failed:', e);
-          window.history.replaceState({}, '', window.location.pathname);
-        }
-      }
-
-      // 2. Handle hash fragment tokens (#access_token=xxx&type=recovery)
-      const hash = window.location.hash;
-      if (hash && hash.includes('access_token')) {
-        // Give Supabase JS a moment to process the hash
-        await new Promise(r => setTimeout(r, 500));
-        const { data: { session: hashSession } } = await supabase.auth.getSession();
-        const isHashRecovery = hash.includes('type=recovery') || isRecoveryHint;
-        window.history.replaceState({}, '', window.location.pathname);
-        if (hashSession && isHashRecovery) {
-          try { localStorage.removeItem('lhf_password_recovery'); } catch {}
-          setRecoveryMode(true);
-          setUser(hashSession.user);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 3. Normal auth flow
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         const { data: p } = await supabase.from('profiles')
@@ -2715,7 +3107,7 @@ export default function CustomerPortal() {
     };
     checkAuth();
 
-    // Listen for auth events (password recovery, etc.)
+    // Listen for auth events (password recovery)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
@@ -2756,7 +3148,6 @@ export default function CustomerPortal() {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
     
-    // Check if Lighthouse staff - redirect to admin
     const { data: p } = await supabase.from('profiles')
       .select('*, companies(*)')
       .eq('id', data.user.id)
@@ -2778,10 +3169,6 @@ export default function CustomerPortal() {
       if (p.preferred_language) setLang(p.preferred_language);
       setPage('dashboard');
       await loadData(p);
-    } else {
-      // Auth succeeded but no profile exists — sign out
-      await supabase.auth.signOut({ scope: 'local' });
-      return 'Aucun profil trouvé pour ce compte. Veuillez contacter Lighthouse France.';
     }
     return null;
   };
@@ -2806,7 +3193,6 @@ export default function CustomerPortal() {
         .single();
 
       if (invite) {
-        // Create profile linked to existing company with invite permissions
         await supabase.from('profiles').insert({
           id: authData.user.id,
           email: formData.email,
@@ -2820,12 +3206,11 @@ export default function CustomerPortal() {
           can_invoice: !!invite.can_invoice
         });
 
-        // Mark invite as accepted
         await supabase.from('team_invitations')
           .update({ accepted_at: new Date().toISOString(), accepted_by: authData.user.id })
           .eq('id', invite.id);
 
-        notify('Compte créé! Vous avez rejoint l\'équipe.');
+        notify("Compte créé! Vous avez rejoint l'équipe.");
         setPage('login');
         return null;
       } else {
@@ -2872,13 +3257,21 @@ export default function CustomerPortal() {
       is_default: true
     });
     
-    notify('Compte créé! Vous êtes administrateur de votre entreprise.');
+    notify('Compte créé avec succès! Veuillez vérifier votre email.');
     setPage('login');
     return null;
   };
 
-  // Show login/register if not authenticated
-  // Password recovery mode - show reset form
+  // Permissions
+  const isAdmin = profile?.role === 'admin';
+  const perms = {
+    canView: isAdmin || profile?.can_view !== false,
+    canRequest: isAdmin || !!profile?.can_request,
+    canInvoice: isAdmin || !!profile?.can_invoice,
+    isAdmin
+  };
+
+  // Password recovery mode
   if (recoveryMode) {
     return (
       <>
@@ -2901,6 +3294,7 @@ export default function CustomerPortal() {
     );
   }
 
+  // Show login/register if not authenticated
   if (!user) {
     return (
       <div className="min-h-screen bg-[#F9F9F9]">
@@ -2913,31 +3307,17 @@ export default function CustomerPortal() {
           </div>
         )}
         
-        {page === 'login' && <LoginPage t={t} login={login} setPage={setPage} supabase={supabase} notify={notify} />}
-        {page === 'register' && <RegisterPage t={t} register={register} setPage={setPage} supabase={supabase} notify={notify} />}
+        {page === 'login' && <LoginPage t={t} login={login} setPage={setPage} />}
+        {page === 'register' && <RegisterPage t={t} register={register} setPage={setPage} notify={notify} />}
         {(page !== 'login' && page !== 'register') && <HomePage t={t} setPage={setPage} setShowLegalPage={setShowLegalPage} />}
-        
-        {/* Cookie Banner */}
+
         {!cookieConsent && (
           <CookieBanner onAccept={() => { setCookieConsent(true); try { localStorage.setItem('lhf_cookie_consent', 'accepted'); } catch {} }} onShowPolicy={() => setShowLegalPage('privacy')} />
         )}
-        
-        {/* Legal Pages Overlay */}
         {showLegalPage && <LegalPageModal page={showLegalPage} onClose={() => setShowLegalPage(null)} />}
       </div>
     );
   }
-
-  // Check if user is admin
-  const isAdmin = profile?.role === 'admin';
-  
-  // Permission flags (admin always has all)
-  const perms = {
-    canView: isAdmin || profile?.can_view !== false,
-    canRequest: isAdmin || !!profile?.can_request,
-    canInvoice: isAdmin || !!profile?.can_invoice,
-    isAdmin
-  };
 
   return (
     <div className="min-h-screen bg-[#f0f2f5]">
@@ -2977,14 +3357,14 @@ export default function CustomerPortal() {
                 {t('dashboard')}
               </button>
               {perms.canRequest && (
-                <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
-                  {t('newRequest')}
-                </button>
+              <button onClick={() => setPage('new-request')} className={`font-medium ${page === 'new-request' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {t('newRequest')}
+              </button>
               )}
               {perms.canInvoice && (
-                <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
-                  Contrats
-                </button>
+              <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                Contrats
+              </button>
               )}
               <button onClick={() => setPage('rentals')} className={`font-medium ${page === 'rentals' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 Locations
@@ -3019,14 +3399,7 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {[
-              'dashboard',
-              ...(perms.canRequest ? ['new-request'] : []),
-              ...(perms.canInvoice ? ['contracts'] : []),
-              'rentals',
-              'equipment',
-              'settings'
-            ].map(p => (
+            {['dashboard', ...(perms.canRequest ? ['new-request'] : []), ...(perms.canInvoice ? ['contracts'] : []), 'rentals', 'equipment', 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -3052,6 +3425,7 @@ export default function CustomerPortal() {
             setPage={setPage}
             setSelectedRequest={setSelectedRequest}
             setPreviousPage={setPreviousPage}
+            setPendingRentalId={setPendingRentalId}
             perms={perms}
           />
         )}
@@ -3136,6 +3510,8 @@ export default function CustomerPortal() {
             notify={notify}
             setPage={setPage}
             refresh={refresh}
+            pendingRentalId={pendingRentalId}
+            setPendingRentalId={setPendingRentalId}
           />
         )}
       </main>
@@ -3145,9 +3521,9 @@ export default function CustomerPortal() {
         <div className="max-w-7xl mx-auto px-6 text-center">
           <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
           <p className="text-white/60 text-sm">
-            16 Rue Paul Sejourne, 94000 Créteil — france@golighthouse.com
+            16 Rue Paul Sejourne, 94000 Creteil - France@golighthouse.com
           </p>
-          <div className="flex justify-center gap-4 mt-3">
+          <div className="mt-3 flex justify-center gap-4">
             <button onClick={() => setShowLegalPage('mentions')} className="text-white/40 text-xs hover:text-white/70">Mentions légales</button>
             <span className="text-white/20">|</span>
             <button onClick={() => setShowLegalPage('privacy')} className="text-white/40 text-xs hover:text-white/70">Politique de confidentialité</button>
@@ -3155,12 +3531,9 @@ export default function CustomerPortal() {
         </div>
       </footer>
 
-      {/* Cookie Banner */}
       {!cookieConsent && (
         <CookieBanner onAccept={() => { setCookieConsent(true); try { localStorage.setItem('lhf_cookie_consent', 'accepted'); } catch {} }} onShowPolicy={() => setShowLegalPage('privacy')} />
       )}
-
-      {/* Legal Pages Overlay */}
       {showLegalPage && <LegalPageModal page={showLegalPage} onClose={() => setShowLegalPage(null)} />}
     </div>
   );
@@ -3169,30 +3542,75 @@ export default function CustomerPortal() {
 // ============================================
 // DASHBOARD COMPONENT (Enhanced)
 // ============================================
-function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage, perms }) {
+function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage, setPendingRentalId, perms }) {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
   const [deviceSearch, setDeviceSearch] = useState('');
+  const [rentalActions, setRentalActions] = useState([]);
+  const [rentalThreadData, setRentalThreadData] = useState([]);
 
-  // Load messages
+  // Load messages + rental actions
   useEffect(() => {
     const loadMessages = async () => {
       if (!profile?.company_id) return;
       
       const requestIds = requests.map(r => r.id);
-      if (requestIds.length === 0) return;
+      
+      // Load rental messages for this company (always)
+      const { data: rentalMsgs } = await supabase
+        .from('messages')
+        .select('*, rental_requests!inner(company_id)')
+        .eq('rental_requests.company_id', profile.company_id)
+        .not('rental_request_id', 'is', null)
+        .order('created_at', { ascending: false });
+
+      if (requestIds.length === 0) {
+        // Still load rental actions even with no requests
+        const { data: rentalData } = await supabase
+          .from('rental_requests')
+          .select('id, rental_number, status, quote_total_ht, rental_request_items(item_name)')
+          .eq('company_id', profile.company_id)
+          .in('status', ['quote_sent']);
+        if (rentalData) setRentalActions(rentalData);
+        // Load rental thread data
+        const { data: rentalAll } = await supabase
+          .from('rental_requests')
+          .select('id, rental_number, status, created_at, companies(name)')
+          .eq('company_id', profile.company_id)
+          .order('created_at', { ascending: false });
+        if (rentalAll) setRentalThreadData(rentalAll);
+        const allMessages = rentalMsgs || [];
+        setMessages(allMessages);
+        setUnreadCount(allMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length);
+        return;
+      }
       
       const { data } = await supabase
         .from('messages')
         .select('*')
         .in('request_id', requestIds)
         .order('created_at', { ascending: false });
+
+      const allMessages = [...(data || []), ...(rentalMsgs || [])];
+      setMessages(allMessages);
+      setUnreadCount(allMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length);
       
-      if (data) {
-        setMessages(data);
-        setUnreadCount(data.filter(m => !m.is_read && m.sender_id !== profile.id).length);
-      }
+      // Load rental actions
+      const { data: rentalData } = await supabase
+        .from('rental_requests')
+        .select('id, rental_number, status, quote_total_ht, rental_request_items(item_name)')
+        .eq('company_id', profile.company_id)
+        .in('status', ['quote_sent']);
+      if (rentalData) setRentalActions(rentalData);
+
+      // Load rental threads for messages tab
+      const { data: rentalAll } = await supabase
+        .from('rental_requests')
+        .select('id, rental_number, status, created_at, companies(name)')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (rentalAll) setRentalThreadData(rentalAll);
     };
     loadMessages();
   }, [profile, requests]);
@@ -3276,13 +3694,13 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           <h1 className="text-2xl font-bold text-[#1E3A5F]">Bonjour, {profile?.full_name?.split(' ')[0] || 'Client'}</h1>
           <p className="text-gray-600">Bienvenue sur votre espace client Lighthouse France</p>
         </div>
-        {perms.canRequest && (
-          <button 
-            onClick={() => setPage('new-request')}
-            className="px-6 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
-          >
-            + Nouvelle Demande
-          </button>
+        {perms?.canRequest && (
+        <button 
+          onClick={() => setPage('new-request')}
+          className="px-6 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors"
+        >
+          + Nouvelle Demande
+        </button>
         )}
       </div>
 
@@ -3345,7 +3763,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             (r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at)
           ).length > 0 || 
             partsNeedingAction.length > 0 ||
-            (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0)) && (
+            (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0) ||
+            rentalActions.length > 0) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
               <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
                 <span className="animate-pulse">⚠</span> Action requise
@@ -3416,7 +3835,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                   </div>
                 ))}
                 {/* Contract Quotes - only for canInvoice users */}
-                {perms.canInvoice && contracts && contracts
+                {perms?.canInvoice && contracts && contracts
                   .filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected')
                   .map(contract => (
                   <div 
@@ -3430,6 +3849,23 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       <span className="text-sm text-red-600">
                         {contract.status === 'quote_sent' ? 'Approuver le devis contrat' : 'Resoumettre BC contrat'}
                       </span>
+                    </div>
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* Rental Quotes */}
+                {rentalActions.map(rental => (
+                  <div 
+                    key={rental.id}
+                    onClick={() => { if (setPendingRentalId) setPendingRentalId(rental.id); setPage('rentals'); }}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-purple-500">📦</span>
+                      <span className="font-mono font-bold text-red-700">{rental.rental_number}</span>
+                      <span className="text-sm text-red-600">Approuver le devis location</span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
                       Agir →
@@ -3613,7 +4049,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-12 text-center">
               <p className="text-4xl mb-3">📋</p>
               <p className="text-gray-500 mb-4">Aucune demande pour le moment</p>
-              {perms.canRequest && (
+              {perms?.canRequest && (
               <button 
                 onClick={() => setPage('new-request')}
                 className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
@@ -3638,7 +4074,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             <div className="p-12 text-center">
               <p className="text-4xl mb-3">🔧</p>
               <p className="text-gray-500 mb-4">Aucune demande de service</p>
-              {perms.canRequest && (
+              {perms?.canRequest && (
               <button 
                 onClick={() => setPage('new-request')}
                 className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium"
@@ -3696,7 +4132,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             <div className="p-12 text-center">
               <p className="text-4xl mb-3">📦</p>
               <p className="text-gray-500 mb-4">Aucune commande de pièces</p>
-              {perms.canRequest && (
+              {perms?.canRequest && (
               <button 
                 onClick={() => setPage('new-request')}
                 className="px-6 py-2 bg-amber-500 text-white rounded-lg font-medium"
@@ -3851,6 +4287,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           profile={profile} 
           setMessages={setMessages}
           setUnreadCount={setUnreadCount}
+          rentalThreadData={rentalThreadData}
         />
       )}
     </div>
@@ -3860,7 +4297,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
 // ============================================
 // MESSAGES PANEL COMPONENT
 // ============================================
-function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount }) {
+function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount, rentalThreadData = [] }) {
   const [selectedThread, setSelectedThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -3871,20 +4308,37 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Group messages by request
-  const messagesByRequest = requests.map(req => {
+  // Group messages by request (RMA + Parts)
+  const serviceThreads = requests.map(req => {
     const reqMessages = messages.filter(m => m.request_id === req.id);
     const unread = reqMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length;
     const lastMessage = reqMessages[0];
     return {
       request: req,
+      _type: req.request_type === 'parts' ? 'parts' : 'rma',
       messages: reqMessages,
       unreadCount: unread,
       lastMessage
     };
-  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed')
+  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed');
+
+  // Rental threads
+  const rentalThreads = rentalThreadData.map(rental => {
+    const rMsgs = messages.filter(m => m.rental_request_id === rental.id);
+    const unread = rMsgs.filter(m => !m.is_read && m.sender_id !== profile.id).length;
+    const lastMessage = rMsgs[0];
+    return {
+      request: { ...rental, request_number: rental.rental_number, id: rental.id },
+      _type: 'rental',
+      _rentalId: rental.id,
+      messages: rMsgs,
+      unreadCount: unread,
+      lastMessage
+    };
+  }).filter(t => t.messages.length > 0);
+
+  const messagesByRequest = [...serviceThreads, ...rentalThreads]
     .sort((a, b) => {
-      // Sort by unread first, then by last message date
       if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
       if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
       const dateA = a.lastMessage?.created_at || a.request.created_at;
@@ -3892,10 +4346,13 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
       return new Date(dateB) - new Date(dateA);
     });
 
-  const markAsRead = async (requestId) => {
-    const unreadMessages = messages.filter(m => 
-      m.request_id === requestId && !m.is_read && m.sender_id !== profile.id
-    );
+  const markAsRead = async (thread) => {
+    const threadId = thread._rentalId || thread.request?.id;
+    const isRental = thread._type === 'rental';
+    const unreadMessages = messages.filter(m => {
+      const matchesThread = isRental ? m.rental_request_id === threadId : m.request_id === threadId;
+      return matchesThread && !m.is_read && m.sender_id !== profile.id;
+    });
     
     if (unreadMessages.length === 0) return;
     
@@ -3920,31 +4377,43 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     if (!newMessage.trim() || !selectedThread) return;
     
     setSending(true);
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        request_id: selectedThread.request.id,
+    try {
+      const insertData = {
         sender_id: profile.id,
         sender_type: 'customer',
         sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
-      })
-      .select()
-      .single();
-    
-    if (!error && data) {
-      setMessages(prevMessages => [data, ...prevMessages]);
-      setNewMessage('');
-      // Scroll to bottom after sending
-      setTimeout(scrollToBottom, 100);
+      };
+      if (selectedThread._type === 'rental') {
+        insertData.rental_request_id = selectedThread._rentalId || selectedThread.request.id;
+      } else {
+        insertData.request_id = selectedThread.request.id;
+      }
+      
+      const { data, error } = await supabase
+        .from('messages')
+        .insert(insertData)
+        .select()
+        .single();
+      
+      if (!error && data) {
+        setMessages(prevMessages => [data, ...prevMessages]);
+        setNewMessage('');
+        setTimeout(scrollToBottom, 100);
+      } else if (error) {
+        console.error('Message send error:', error);
+        alert('Erreur envoi: ' + (error.message || error.details || JSON.stringify(error)));
+      }
+    } catch (err) {
+      console.error('Message send exception:', err);
+      alert('Erreur: ' + err.message);
     }
     setSending(false);
   };
 
   const openThread = (thread) => {
     setSelectedThread(thread);
-    markAsRead(thread.request.id);
-    // Scroll to bottom when opening thread
+    markAsRead(thread);
     setTimeout(scrollToBottom, 100);
   };
 
@@ -3971,19 +4440,23 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {messagesByRequest.map(thread => (
+              {messagesByRequest.map(thread => {
+                const threadKey = `${thread._type || 'rma'}-${thread.request.id}`;
+                const selectedKey = selectedThread ? `${selectedThread._type || 'rma'}-${selectedThread.request.id}` : null;
+                const typeIcon = thread._type === 'rental' ? '📅' : thread._type === 'parts' ? '🔩' : '🔧';
+                return (
                 <div
-                  key={thread.request.id}
+                  key={threadKey}
                   onClick={() => openThread(thread)}
                   className={`p-4 cursor-pointer transition-colors ${
-                    selectedThread?.request.id === thread.request.id 
+                    selectedKey === threadKey
                       ? 'bg-[#E8F2F8]' 
                       : 'hover:bg-gray-50'
                   }`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-mono font-medium text-[#3B7AB4] text-sm">
-                      {thread.request.request_number}
+                      {typeIcon} {thread.request.request_number}
                     </span>
                     {thread.unreadCount > 0 && (
                       <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
@@ -4003,7 +4476,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                     }
                   </p>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </div>
@@ -4013,16 +4486,17 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
           {selectedThread ? (
             (() => {
               // Get current messages for selected thread from state (not from cached selectedThread)
-              const currentMessages = messages.filter(m => m.request_id === selectedThread.request.id);
+              const currentMessages = selectedThread._type === 'rental'
+                ? messages.filter(m => m.rental_request_id === (selectedThread._rentalId || selectedThread.request.id))
+                : messages.filter(m => m.request_id === selectedThread.request.id);
               return (
                 <>
                   {/* Thread Header */}
                   <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
                     <h3 className="font-bold text-[#1E3A5F]">
-                      Demande {selectedThread.request.request_number}
+                      {selectedThread._type === 'rental' ? '📅 Location' : selectedThread._type === 'parts' ? '🔩 Commande Pièces' : '🔧 Demande'} {selectedThread.request.request_number}
                     </h3>
                     <p className="text-sm text-gray-500">
-                      {selectedThread.request.request_devices?.length || 0} appareil(s) • 
                       {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
                     </p>
                   </div>
@@ -4248,12 +4722,11 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
     parcels: 0
   });
-  const [billingChoice, setBillingChoice] = useState(''); // '', 'same', 'company', or 'other'
+  const [saving, setSaving] = useState(false);
+  const [billingChoice, setBillingChoice] = useState('');
   const [billingAddressId, setBillingAddressId] = useState('');
   const [showNewBillingForm, setShowNewBillingForm] = useState(false);
   const [newBillingAddress, setNewBillingAddress] = useState({ label: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '' });
-  const [saving, setSaving] = useState(false);
-  const [formStep, setFormStep] = useState('form'); // 'form' or 'success'
   const [showReviewModal, setShowReviewModal] = useState(false);
 
   // Load saved equipment on mount
@@ -4369,42 +4842,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     return data.id;
   };
 
-  // Validate form before submission
-  const validateForm = () => {
-    for (const d of devices) {
-      if (!d.device_type || !d.model || !d.serial_number || !d.service_type) {
-        notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
-        return false;
-      }
-      const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
-      if (needsNotes && !d.notes) {
-        notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
-        return false;
-      }
-      if (d.brand === 'other' && !d.brand_other) {
-        notify('Veuillez préciser la marque', 'error');
-        return false;
-      }
-      if (d.service_type === 'other' && !d.service_other) {
-        notify('Veuillez préciser le type de service', 'error');
-        return false;
-      }
-    }
-    if (!shipping.address_id && !shipping.showNewForm) {
-      notify('Veuillez sélectionner ou ajouter une adresse de retour', 'error');
-      return false;
-    }
-    if (!shipping.parcels || shipping.parcels < 1) {
-      notify('Veuillez indiquer le nombre de colis', 'error');
-      return false;
-    }
-    if (!billingChoice && !showNewBillingForm) {
-      notify('Veuillez sélectionner une adresse de facturation', 'error');
-      return false;
-    }
-    return true;
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -4448,12 +4885,16 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
 
+    // Validate billing
+    if (!billingChoice && !showNewBillingForm) {
+      notify('Veuillez sélectionner une adresse de facturation', 'error');
+      return;
+    }
+
     setSaving(true);
     
     try {
-      // No number assigned yet - will get FR-XXXXX after approval
-      // Contract detection happens on admin side when creating quote
-      // Save new billing address if creating one inline
+      // Handle billing address
       let finalBillingAddressId = billingChoice === 'same' ? addressId : billingChoice === 'other' ? (billingAddressId || null) : null;
       if (showNewBillingForm) {
         const ba = newBillingAddress;
@@ -4463,22 +4904,21 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           return;
         }
         const { data: baData, error: baErr } = await supabase.from('shipping_addresses').insert({
-          label: ba.label, address_line1: ba.address_line1, attention: ba.attention || null,
-          city: ba.city, postal_code: ba.postal_code, country: ba.country || 'France',
-          company_id: profile.company_id, is_billing: true, is_default: false
+          ...ba, company_id: profile.company_id, is_billing: true, is_default: false
         }).select().single();
-        if (baErr || !baData) {
-          notify('Erreur lors de la création de l\'adresse de facturation', 'error');
+        if (baErr) {
+          notify("Erreur lors de la création de l'adresse de facturation", 'error');
           setSaving(false);
           return;
         }
         finalBillingAddressId = baData.id;
       }
 
+      // No number assigned yet - will get FR-XXXXX after approval
       const { data: request, error: reqErr } = await supabase
         .from('service_requests')
         .insert({
-          request_number: null, // No number until approved
+          request_number: null,
           company_id: profile.company_id,
           submitted_by: profile.id,
           request_type: 'service',
@@ -4530,7 +4970,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       notify('Demande soumise avec succès! Numéro FR attribué après validation.');
       refresh();
-      setFormStep('success');
+      setPage('dashboard');
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
     }
@@ -4538,54 +4978,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setSaving(false);
   };
 
-
-  // === SUCCESS SCREEN ===
-  if (formStep === 'success') {
-    return (
-      <div className="max-w-lg mx-auto mt-8">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-6 py-5 border-b border-gray-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-[#1E3A5F]">Demande enregistrée</h1>
-                <p className="text-sm text-gray-500">{devices.length} appareil{devices.length > 1 ? 's' : ''} · {shipping.parcels} colis</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="px-6 py-5">
-            <p className="text-sm text-gray-600 mb-4">
-              Votre demande sera traitée sous 24h ouvrées. Vous recevrez un email de confirmation avec votre numéro de dossier.
-            </p>
-
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{"Adresse d'envoi"}</p>
-              <p className="font-semibold text-[#1E3A5F]">Lighthouse France SAS</p>
-              <p className="text-sm text-gray-600">16 Rue Paul Séjourné</p>
-              <p className="text-sm text-gray-600">94000 Créteil, France</p>
-              <p className="text-sm text-gray-400 mt-1">01 43 77 28 07</p>
-            </div>
-
-            <p className="text-xs text-gray-400 mb-5">
-              Merci d'indiquer le nom de votre société et les numéros de série sur chaque colis.
-            </p>
-
-            <button 
-              onClick={() => setPage('dashboard')} 
-              className="w-full py-2.5 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2a4f7a] text-sm"
-            >
-              Retour au tableau de bord
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // === MAIN FORM ===
   return (
     <div>
       <div className="flex items-center gap-4 mb-6">
@@ -4593,7 +4985,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande Étalonnage / Réparation</h1>
       </div>
       
-      <form onSubmit={(e) => { e.preventDefault(); if (validateForm()) setShowReviewModal(true); }}>
+      <form onSubmit={handleSubmit}>
         {/* Devices */}
         <div className="space-y-6 mb-8">
           {devices.map((device) => (
@@ -4632,7 +5024,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           refresh={refresh}
         />
 
-        {/* Billing Address - dropdown + new address */}
+        {/* Billing Address Section */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
           <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">💳 Adresse de facturation</h2>
           <select
@@ -4650,19 +5042,14 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
             <option value="same">{"Identique à l'adresse de retour"}</option>
             <option value="company">{profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city} (Siège)</option>
             {addresses.filter(a => a.is_billing).map(a => (
-              <option key={a.id} value={a.id}>
-                {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
-              </option>
+              <option key={a.id} value={a.id}>{a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}</option>
             ))}
             {addresses.filter(a => !a.is_billing && a.id !== shipping.address_id).map(a => (
-              <option key={a.id} value={a.id}>
-                {a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}
-              </option>
+              <option key={a.id} value={a.id}>{a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}</option>
             ))}
             <option value="__new__">+ Nouvelle adresse de facturation...</option>
           </select>
 
-          {/* Inline new billing address form */}
           {showNewBillingForm && (
             <div className="mt-4 p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4]">
               <h3 className="font-bold text-[#1E3A5F] mb-3 text-sm">Nouvelle adresse de facturation</h3>
@@ -4714,14 +5101,15 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           </button>
           <button
             type="submit"
-            className="flex-1 py-3 bg-[#1E3A5F] text-white rounded-lg font-bold hover:bg-[#2a4f7a] transition-colors text-lg"
+            disabled={saving}
+            className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors disabled:opacity-50"
           >
-            Vérifier et soumettre →
+            {saving ? 'Envoi en cours...' : 'Soumettre la Demande'}
           </button>
         </div>
       </form>
 
-      {/* ========== REVIEW MODAL OVERLAY ========== */}
+      {/* Review Modal */}
       {showReviewModal && (() => {
         const retAddr = shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id);
         const co = profile?.companies || {};
@@ -4737,14 +5125,10 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         return (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
             <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-              {/* Header */}
               <div className="px-6 py-4 border-b border-gray-200 shrink-0">
                 <h2 className="text-lg font-bold text-[#1E3A5F]">Récapitulatif de la demande</h2>
               </div>
-
-              {/* Scrollable body */}
               <div className="p-6 overflow-y-auto space-y-4 flex-1">
-                {/* Devices table */}
                 <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Appareils ({devices.length})</p>
                   <table className="w-full text-sm">
@@ -4775,10 +5159,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                     </tbody>
                   </table>
                 </div>
-
                 <hr className="border-gray-100" />
-
-                {/* Addresses */}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Adresse de retour</p>
@@ -4806,8 +5187,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                   </div>
                 </div>
               </div>
-
-              {/* Footer */}
               <div className="px-6 py-4 border-t border-gray-200 flex gap-3 shrink-0">
                 <button type="button" onClick={() => setShowReviewModal(false)} className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50">
                   Modifier
@@ -5674,108 +6053,240 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
       <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
-        📦 Expédition
+        Information de Livraison
       </h2>
 
-      {/* Parcels + Return Address in grid */}
-      <div className="grid md:grid-cols-2 gap-4 mb-4">
-        {/* Return Address Dropdown */}
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de retour *</label>
-          {addresses.filter(a => !a.is_billing).length > 0 ? (
-            <select
-              value={shipping.showNewForm ? '__new__' : (shipping.address_id || '')}
-              onChange={e => {
-                if (e.target.value === '__new__') {
-                  setShipping({ ...shipping, showNewForm: true, address_id: '' });
-                } else {
-                  setShipping({ ...shipping, address_id: e.target.value, showNewForm: false });
-                }
-              }}
-              className={`w-full px-3 py-2 border rounded-lg text-sm ${!shipping.address_id && !shipping.showNewForm ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
-            >
-              <option value="">-- Sélectionner --</option>
-              {addresses.filter(a => !a.is_billing).map(addr => (
-                <option key={addr.id} value={addr.id}>
-                  {addr.label || addr.company_name}{addr.is_default ? ' ⭐' : ''} — {addr.address_line1}, {addr.postal_code} {addr.city}
-                </option>
-              ))}
-              <option value="__new__">+ Nouvelle adresse...</option>
-            </select>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShipping({ ...shipping, showNewForm: true })}
-              className="w-full px-3 py-2 border-2 border-dashed border-[#3B7AB4] text-[#3B7AB4] rounded-lg text-sm font-medium hover:bg-[#E8F2F8]"
-            >
-              + Ajouter une adresse
-            </button>
-          )}
-          {/* Show selected address details */}
-          {selectedAddress && !shipping.showNewForm && (
-            <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-gray-600">
-              <p className="font-medium">{selectedAddress.company_name || selectedAddress.label}</p>
-              {selectedAddress.attention && <p>Attn: {selectedAddress.attention}</p>}
-              <p>{selectedAddress.address_line1}, {selectedAddress.postal_code} {selectedAddress.city}, {selectedAddress.country || 'France'}</p>
-            </div>
-          )}
+      {/* Number of Parcels - FIRST */}
+      <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
+        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
+          📦 Nombre de colis *
+        </label>
+        <p className="text-sm text-gray-600 mb-3">
+          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
+        </p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            −
+          </button>
+          <input
+            type="number"
+            min="0"
+            value={shipping.parcels || 0}
+            onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
+            className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
+              (shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })}
+            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
+          >
+            +
+          </button>
+          <span className="text-gray-600 ml-2">colis</span>
         </div>
-
-        {/* Number of Parcels */}
-        <div>
-          <label className="block text-sm font-bold text-gray-700 mb-2">Nombre de colis *</label>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })} className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50">−</button>
-            <input
-              type="number" min="0" value={shipping.parcels || 0}
-              onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
-              className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${(shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
-            />
-            <button type="button" onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })} className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50">+</button>
-            <span className="text-gray-500 text-sm">colis</span>
-          </div>
-          {(shipping.parcels || 0) === 0 && <p className="text-red-600 text-xs mt-1">⚠️ Requis</p>}
-        </div>
+        {(shipping.parcels || 0) === 0 && (
+          <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
+        )}
       </div>
 
-      {/* New Address Form (collapsible) */}
-      {shipping.showNewForm && (
-        <div className="p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4] mb-4">
-          <h3 className="font-bold text-[#1E3A5F] mb-3 text-sm">Nouvelle adresse</h3>
-          <div className="grid md:grid-cols-2 gap-3">
-            <div className="md:col-span-2">
-              <input type="text" value={shipping.newAddress.company_name || ''} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, company_name: e.target.value } })} placeholder="Nom de la société *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div className="md:col-span-2">
-              <input type="text" value={shipping.newAddress.address_line1} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, address_line1: e.target.value } })} placeholder="Adresse *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <input type="text" value={shipping.newAddress.attention || ''} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, attention: e.target.value } })} placeholder="Attn: destinataire *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <input type="text" value={shipping.newAddress.label} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, label: e.target.value } })} placeholder="Nom (ex: Bureau, Labo 2)" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <input type="text" value={shipping.newAddress.postal_code} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, postal_code: e.target.value } })} placeholder="Code postal *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <input type="text" value={shipping.newAddress.city} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, city: e.target.value } })} placeholder="Ville *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
+      {/* Existing Addresses */}
+      <div className="mb-4">
+        <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Retour *</label>
+        
+        {addresses.filter(a => !a.is_billing).length > 0 ? (
+          <div className="space-y-2 mb-4">
+            {addresses.filter(a => !a.is_billing).map(addr => {
+              const addrIsOutsideMetro = isOutsideFranceMetropolitan(addr.postal_code);
+              return (
+                <label 
+                  key={addr.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                    shipping.address_id === addr.id && !shipping.showNewForm
+                      ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="shipping_address"
+                    checked={shipping.address_id === addr.id && !shipping.showNewForm}
+                    onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-[#1E3A5F]">
+                      {addr.company_name || addr.label}
+                      {addr.is_default && (
+                        <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                          Par défaut
+                        </span>
+                      )}
+                      {addrIsOutsideMetro && (
+                        <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">
+                          Hors France métropolitaine
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {addr.address_line1}
+                    </div>
+                    {addr.attention && (
+                      <div className="text-sm text-gray-500">
+                        À l'attention de: {addr.attention}
+                      </div>
+                    )}
+                    <div className="text-sm text-gray-600">
+                      {addr.postal_code} {addr.city}, {addr.country || 'France'}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
           </div>
-          {newAddressIsOutsideMetro && (
-            <div className="mt-3 p-2 bg-amber-50 border border-amber-300 rounded text-xs text-amber-700">
-              ⚠️ Hors France métropolitaine — frais de transport à votre charge.
+        ) : (
+          <p className="text-gray-500 mb-4">Aucune adresse enregistrée</p>
+        )}
+
+        {/* Add New Address Option */}
+        <label 
+          className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+            shipping.showNewForm
+              ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
+              : 'border-dashed border-gray-300 hover:border-gray-400'
+          }`}
+        >
+          <input
+            type="radio"
+            name="shipping_address"
+            checked={shipping.showNewForm}
+            onChange={() => setShipping({ ...shipping, showNewForm: true, address_id: '' })}
+            className="mt-1"
+          />
+          <div className="flex-1">
+            <div className="font-medium text-[#3B7AB4]">+ Ajouter une nouvelle adresse</div>
+            <div className="text-sm text-gray-500">Cette adresse sera enregistrée pour vos futures demandes</div>
+          </div>
+        </label>
+      </div>
+
+      {/* New Address Form */}
+      {shipping.showNewForm && (
+        <div className="mt-4 p-4 bg-[#F5F5F5] rounded-lg border-l-4 border-[#3B7AB4]">
+          <h3 className="font-bold text-[#1E3A5F] mb-4">Nouvelle Adresse</h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de la Société *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.company_name || ''}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, company_name: e.target.value }
+                })}
+                placeholder="ex: Lighthouse France"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
             </div>
-          )}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.address_line1}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, address_line1: e.target.value }
+                })}
+                placeholder="ex: 16 Rue Paul Séjourne"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.attention || ''}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, attention: e.target.value }
+                })}
+                placeholder="Nom du destinataire"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.postal_code}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, postal_code: e.target.value }
+                })}
+                placeholder="ex: 94000"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Ville *</label>
+              <input
+                type="text"
+                value={shipping.newAddress.city}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, city: e.target.value }
+                })}
+                placeholder="ex: Créteil"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'adresse (pour référence)</label>
+              <input
+                type="text"
+                value={shipping.newAddress.label}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, label: e.target.value }
+                })}
+                placeholder="ex: Bureau Principal, Labo 2, etc."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+
+            {/* Warning for outside France Metropolitan in new address form */}
+            {newAddressIsOutsideMetro && (
+              <div className="md:col-span-2 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                <p className="text-amber-800 font-medium text-sm">⚠️ Adresse hors France métropolitaine</p>
+                <p className="text-amber-700 text-xs mt-1">
+                  Pour les adresses situées en dehors de la France métropolitaine, 
+                  les frais d'expédition sont à la charge du client. Vous serez contacté pour 
+                  organiser le transport.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Warning for outside France Metropolitan */}
+      {/* Warning for address outside France Metropolitan */}
       {(isOutsideMetro || newAddressIsOutsideMetro) && (
-        <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex gap-2 items-start">
-          <span>🚢</span>
-          <div className="text-xs text-amber-700">
-            <strong>Hors France métropolitaine</strong> — Les frais de retour seront à votre charge. Notre équipe vous contactera pour organiser le transport.
+        <div className="mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
+          <div className="flex gap-3">
+            <span className="text-2xl">🚢</span>
+            <div>
+              <p className="text-amber-800 font-bold">Expédition hors France métropolitaine</p>
+              <p className="text-amber-700 text-sm mt-1">
+                L'adresse sélectionnée est située en dehors de la France métropolitaine. 
+                Les frais d'expédition pour le retour de vos équipements seront à votre charge. 
+                Notre équipe vous contactera pour organiser le transport et vous communiquer les options disponibles.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -6163,16 +6674,13 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   
   // Company editing
   const [editingCompany, setEditingCompany] = useState(false);
-  const [editingIdentifiers, setEditingIdentifiers] = useState(false);
-  const [identifierConfirmText, setIdentifierConfirmText] = useState('');
   const [companyData, setCompanyData] = useState({
     name: profile?.companies?.name || '',
     billing_address: profile?.companies?.billing_address || '',
     billing_city: profile?.companies?.billing_city || '',
     billing_postal_code: profile?.companies?.billing_postal_code || '',
-    billing_country: profile?.companies?.country || 'France',
     siret: profile?.companies?.siret || '',
-    vat_number: profile?.companies?.tva_number || ''
+    tva_number: profile?.companies?.tva_number || ''
   });
   
   // Password change
@@ -6204,6 +6712,8 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   const [inviteData, setInviteData] = useState({ email: '', can_view: true, can_request: false, can_invoice: false });
   const [lastInviteLink, setLastInviteLink] = useState('');
   const [loadingTeam, setLoadingTeam] = useState(false);
+  const [editingIdentifiers, setEditingIdentifiers] = useState(false);
+  const [identifierConfirmText, setIdentifierConfirmText] = useState('');
   
   const [saving, setSaving] = useState(false);
   
@@ -6249,10 +6759,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     
     setSaving(true);
     
-    // Generate invite token
     const token = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+    expiresAt.setDate(expiresAt.getDate() + 7);
     
     const { error } = await supabase.from('team_invitations').insert({
       company_id: profile.company_id,
@@ -6279,14 +6788,12 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     
     notify(`Invitation créée pour ${inviteData.email}!`);
     
-    // Generate invite link
     const baseUrl = window.location.origin + window.location.pathname;
     const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
     setLastInviteLink(inviteLink);
     
     setInviteData({ email: '', can_view: true, can_request: false, can_invoice: false });
     
-    // Reload invites
     const { data: invites } = await supabase
       .from('team_invitations')
       .select('*')
@@ -6301,53 +6808,45 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       notify('Vous ne pouvez pas modifier vos propres permissions', 'error');
       return;
     }
-    
     const { error } = await supabase
       .from('profiles')
       .update({ [permKey]: newValue })
       .eq('id', memberId);
-    
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
     } else {
-      notify('Permission modifiée!');
+      notify('Permission mise à jour!');
       setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, [permKey]: newValue } : m));
     }
   };
 
   // Promote to admin
   const promoteToAdmin = async (memberId) => {
-    if (!confirm('Promouvoir cet utilisateur en administrateur? Il aura un accès complet incluant la gestion de l\'équipe.')) return;
-    
+    if (!confirm('Promouvoir ce membre en administrateur? Il pourra gérer toute l\'équipe.')) return;
     const { error } = await supabase
       .from('profiles')
       .update({ role: 'admin', can_view: true, can_request: true, can_invoice: true })
       .eq('id', memberId);
-    
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
     } else {
-      notify('Utilisateur promu administrateur!');
+      notify('Membre promu administrateur!');
       setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: 'admin', can_view: true, can_request: true, can_invoice: true } : m));
     }
   };
 
   // Demote from admin
   const demoteFromAdmin = async (memberId) => {
-    // Check there's at least one other admin
     const otherAdmins = teamMembers.filter(m => m.role === 'admin' && m.id !== memberId && m.invitation_status === 'active');
     if (otherAdmins.length === 0) {
       notify('Impossible: il doit rester au moins un administrateur', 'error');
       return;
     }
-    
     if (!confirm('Rétrograder cet administrateur? Il gardera ses permissions actuelles mais ne pourra plus gérer l\'équipe.')) return;
-    
     const { error } = await supabase
       .from('profiles')
       .update({ role: 'customer' })
       .eq('id', memberId);
-    
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
     } else {
@@ -6364,9 +6863,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     }
     
     const newStatus = currentStatus === 'active' ? 'deactivated' : 'active';
-    const member = teamMembers.find(m => m.id === memberId);
     
     // Prevent deactivating the last admin
+    const member = teamMembers.find(m => m.id === memberId);
     if (newStatus === 'deactivated' && member?.role === 'admin') {
       const otherActiveAdmins = teamMembers.filter(m => m.role === 'admin' && m.id !== memberId && m.invitation_status === 'active');
       if (otherActiveAdmins.length === 0) {
@@ -6421,28 +6920,17 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     }
   };
 
-  // Save company info (name + country only)
+  // Save company
   const saveCompany = async () => {
     setSaving(true);
-    const updateData = {
-      name: companyData.name,
-      country: companyData.billing_country
-    };
-    console.log('Saving company:', updateData, 'for company:', profile.company_id);
-    
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('companies')
-      .update(updateData)
-      .eq('id', profile.company_id)
-      .select();
+      .update(companyData)
+      .eq('id', profile.company_id);
     
-    console.log('Update result:', { data, error });
     setSaving(false);
-    
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
-    } else if (!data || data.length === 0) {
-      notify('Erreur: mise à jour refusée. Vérifiez vos permissions (RLS).', 'error');
     } else {
       notify('Entreprise mise à jour!');
       setEditingCompany(false);
@@ -6455,9 +6943,8 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     setSaving(true);
     const updateData = {
       siret: companyData.siret || null,
-      tva_number: companyData.vat_number || null
+      tva_number: companyData.tva_number || null
     };
-    console.log('Saving identifiers:', updateData, 'for company:', profile.company_id);
     
     const { data, error } = await supabase
       .from('companies')
@@ -6465,7 +6952,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       .eq('id', profile.company_id)
       .select();
     
-    console.log('Update result:', { data, error });
     setSaving(false);
     
     if (error) {
@@ -6584,8 +7070,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
 
   const sections = [
     { id: 'profile', label: lang === 'en' ? 'Profile' : 'Profil', icon: '👤' },
-    { id: 'company', label: lang === 'en' ? 'Company & Addresses' : 'Entreprise & Adresses', icon: '🏢' },
+    { id: 'company', label: lang === 'en' ? 'Company' : 'Entreprise', icon: '🏢' },
     ...(isAdmin ? [{ id: 'team', label: lang === 'en' ? 'Team' : 'Équipe', icon: '👥' }] : []),
+    { id: 'addresses', label: lang === 'en' ? 'Addresses' : 'Adresses', icon: '📍' },
     { id: 'language', label: lang === 'en' ? 'Language' : 'Langue', icon: '🌐' },
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
     { id: 'security', label: lang === 'en' ? 'Security' : 'Sécurité', icon: '🔒' }
@@ -6710,265 +7197,132 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
 
       {/* Company Section */}
       {activeSection === 'company' && (
-        <div className="space-y-6">
-          {/* Company Info */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F]">🏢 Informations de la société</h2>
-              </div>
-              {!editingCompany && isAdmin && (
-                <button
-                  onClick={() => setEditingCompany(true)}
-                  className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8] text-sm"
-                >
-                  ✏️ Modifier
-                </button>
-              )}
-            </div>
-            <div className="p-6">
-              {editingCompany ? (
-                <div className="space-y-4 max-w-lg">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{"Nom de l'entreprise *"}</label>
-                    <input type="text" value={companyData.name} onChange={e => setCompanyData({ ...companyData, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
-                    <input type="text" value={companyData.billing_country} onChange={e => setCompanyData({ ...companyData, billing_country: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]" />
-                  </div>
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      onClick={() => { setEditingCompany(false); setCompanyData(prev => ({ ...prev, name: profile?.companies?.name || '', billing_country: profile?.companies?.country || 'France' })); }}
-                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
-                    >
-                      Annuler
-                    </button>
-                    <button onClick={saveCompany} disabled={saving} className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50">
-                      {saving ? 'Enregistrement...' : 'Enregistrer'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div>
-                    <p className="text-sm text-gray-500">{"Nom de l'entreprise"}</p>
-                    <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Pays</p>
-                    <p className="font-medium text-[#1E3A5F]">{profile?.companies?.country || 'France'}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Shipping Addresses */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F]">📦 Adresses de livraison / retour</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Adresses pour la réception et le retour des équipements</p>
-              </div>
-              {isAdmin && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-[#1E3A5F]">Informations entreprise</h2>
+            {!editingCompany && (
               <button
-                onClick={() => {
-                  setEditingAddress(null);
-                  setAddingBillingAddress(false);
-                  setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false });
-                  setShowAddAddress(true);
-                }}
-                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+                onClick={() => setEditingCompany(true)}
+                className="px-4 py-2 text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
               >
-                + Ajouter
+                ✏️ Modifier
               </button>
-              )}
-            </div>
-            <div className="p-6">
-              {addresses.filter(a => !a.is_billing).length === 0 ? (
-                <div className="text-center py-6 text-gray-400">
-                  <p>Aucune adresse de livraison</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {addresses.filter(a => !a.is_billing).map(addr => (
-                    <div key={addr.id} className={`p-4 rounded-xl border-2 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
-                      <div className="flex justify-between items-start gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-bold text-[#1E3A5F]">{addr.label}</h3>
-                            {addr.is_default && <span className="px-2 py-0.5 bg-[#3B7AB4] text-white text-xs rounded-full">Par défaut</span>}
-                          </div>
-                          {addr.attention && <p className="text-sm text-gray-600">Attn: {addr.attention}</p>}
-                          <p className="text-sm text-gray-700">{addr.address_line1}</p>
-                          {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
-                          <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
-                          {addr.phone && <p className="text-sm text-gray-500 mt-1">📞 {addr.phone}</p>}
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <button onClick={() => openEditAddress(addr)} className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]">✏️</button>
-                          {!addr.is_default && <button onClick={() => setDefault(addr.id)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100">⭐</button>}
-                          <button onClick={() => deleteAddress(addr.id)} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">🗑️</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
-
-          {/* Billing Addresses - admin/canInvoice only */}
-          {(perms.isAdmin || perms.canInvoice) && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F]">💳 Adresses de facturation</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Adresses utilisées pour les devis et factures</p>
-              </div>
-              <button
-                onClick={() => {
-                  setEditingAddress(null);
-                  setAddingBillingAddress(true);
-                  setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: true });
-                  setShowAddAddress(true);
-                }}
-                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
-              >
-                + Ajouter
-              </button>
-            </div>
-            <div className="p-6">
-              {addresses.filter(a => a.is_billing).length === 0 ? (
-                <div className="text-center py-6 text-gray-400">
-                  <p>Aucune adresse de facturation</p>
-                  <p className="text-xs mt-1">{"L'adresse du siège sera utilisée par défaut"}</p>
+          <div className="p-6">
+            {editingCompany ? (
+              <div className="space-y-4 max-w-lg">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom de l'entreprise *</label>
+                  <input
+                    type="text"
+                    value={companyData.name}
+                    onChange={e => setCompanyData({ ...companyData, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {addresses.filter(a => a.is_billing).map(addr => (
-                    <div key={addr.id} className="p-4 rounded-xl border-2 border-gray-200 bg-gray-50">
-                      <div className="flex justify-between items-start gap-4">
-                        <div className="flex-1">
-                          <h3 className="font-bold text-[#1E3A5F] mb-1">{addr.label}</h3>
-                          {addr.attention && <p className="text-sm text-gray-600">Attn: {addr.attention}</p>}
-                          <p className="text-sm text-gray-700">{addr.address_line1}</p>
-                          {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
-                          <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <button onClick={() => openEditAddress(addr)} className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]">✏️</button>
-                          <button onClick={() => deleteAddress(addr.id)} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">🗑️</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse de facturation</label>
+                  <input
+                    type="text"
+                    value={companyData.billing_address}
+                    onChange={e => setCompanyData({ ...companyData, billing_address: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  />
                 </div>
-              )}
-            </div>
-          </div>
-          )}
-
-          {/* Company Identifiers - admin/canInvoice only */}
-          {(perms.isAdmin || perms.canInvoice) && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-lg font-bold text-[#1E3A5F]">🔒 Identifiants légaux</h2>
-                <p className="text-xs text-gray-400 mt-0.5">SIRET, TVA — modification protégée</p>
-              </div>
-              {!editingIdentifiers && isAdmin && (
-                <button
-                  onClick={() => setEditingIdentifiers(true)}
-                  className="px-4 py-2 text-gray-400 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm"
-                >
-                  🔒 Modifier
-                </button>
-              )}
-            </div>
-            <div className="p-6">
-              {editingIdentifiers ? (
-                <div className="space-y-4 max-w-lg">
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                    <p className="text-sm text-red-700">
-                      <strong>⚠️ Attention :</strong> La modification des identifiants légaux peut affecter votre facturation. 
-                      Veuillez vous assurer que les informations sont correctes.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
-                      <input
-                        type="text"
-                        value={companyData.siret}
-                        onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
-                        placeholder="123 456 789 00012"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
-                      <input
-                        type="text"
-                        value={companyData.vat_number}
-                        onChange={e => setCompanyData({ ...companyData, vat_number: e.target.value })}
-                        placeholder="FR12345678901"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
-                      />
-                    </div>
-                  </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Tapez <span className="font-bold text-red-600">CONFIRMER</span> pour valider la modification
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
                     <input
                       type="text"
-                      value={identifierConfirmText}
-                      onChange={e => setIdentifierConfirmText(e.target.value)}
-                      placeholder="CONFIRMER"
-                      className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 focus:ring-2 focus:ring-red-300 font-mono"
+                      value={companyData.billing_postal_code}
+                      onChange={e => setCompanyData({ ...companyData, billing_postal_code: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                     />
                   </div>
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      onClick={() => {
-                        setEditingIdentifiers(false);
-                        setIdentifierConfirmText('');
-                        setCompanyData(prev => ({
-                          ...prev,
-                          siret: profile?.companies?.siret || '',
-                          vat_number: profile?.companies?.tva_number || ''
-                        }));
-                      }}
-                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
-                    >
-                      Annuler
-                    </button>
-                    <button
-                      onClick={saveIdentifiers}
-                      disabled={saving || identifierConfirmText !== 'CONFIRMER'}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      {saving ? 'Enregistrement...' : '🔒 Mettre à jour les identifiants'}
-                    </button>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
+                    <input
+                      type="text"
+                      value={companyData.billing_city}
+                      onChange={e => setCompanyData({ ...companyData, billing_city: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
                   </div>
                 </div>
-              ) : (
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm text-gray-500">SIRET</p>
-                    <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.siret || '—'}</p>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                    <input
+                      type="text"
+                      value={companyData.siret}
+                      onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
+                      placeholder="123 456 789 00012"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">N° TVA</p>
-                    <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.tva_number || '—'}</p>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
+                    <input
+                      type="text"
+                      value={companyData.tva_number}
+                      onChange={e => setCompanyData({ ...companyData, tva_number: e.target.value })}
+                      placeholder="FR12345678901"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
                   </div>
                 </div>
-              )}
-            </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setEditingCompany(false);
+                      setCompanyData({
+                        name: profile?.companies?.name || '',
+                        billing_address: profile?.companies?.billing_address || '',
+                        billing_city: profile?.companies?.billing_city || '',
+                        billing_postal_code: profile?.companies?.billing_postal_code || '',
+                        siret: profile?.companies?.siret || '',
+                        tva_number: profile?.companies?.tva_number || ''
+                      });
+                    }}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={saveCompany}
+                    disabled={saving}
+                    className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {saving ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-500">Nom de l'entreprise</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Adresse de facturation</p>
+                  <p className="font-medium text-[#1E3A5F]">
+                    {profile?.companies?.billing_address || '—'}
+                    {profile?.companies?.billing_postal_code && `, ${profile?.companies?.billing_postal_code}`}
+                    {profile?.companies?.billing_city && ` ${profile?.companies?.billing_city}`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">SIRET</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.siret || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">N° TVA</p>
+                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.tva_number || '—'}</p>
+                </div>
+              </div>
+            )}
           </div>
-          )}
         </div>
       )}
 
@@ -7010,57 +7364,57 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                               <p className="font-medium text-[#1E3A5F]">
                                 {member.full_name}
                                 {member.id === profile.id && <span className="ml-2 text-xs text-gray-400">(vous)</span>}
-                                {member.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Admin</span>}
+                                {member.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">👑 Admin</span>}
                               </p>
                               <p className="text-sm text-gray-500">{member.email}</p>
                             </div>
                           </div>
                           {member.id !== profile.id && (
-                            <button
-                              onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
-                              className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                            >
-                              Désactiver
-                            </button>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Permission toggles */}
+                              {[
+                                { key: 'can_view', label: '👁 Voir', desc: 'Voir les demandes' },
+                                { key: 'can_request', label: '📝 Demander', desc: 'Créer des demandes' },
+                                { key: 'can_invoice', label: '💳 Facturer', desc: 'Voir contrats/factures' }
+                              ].map(perm => (
+                                <button
+                                  key={perm.key}
+                                  onClick={() => togglePermission(member.id, perm.key, !member[perm.key])}
+                                  title={perm.desc}
+                                  className={`px-2 py-1 text-xs rounded-lg border ${
+                                    member[perm.key] 
+                                      ? 'bg-green-50 border-green-300 text-green-700' 
+                                      : 'bg-gray-50 border-gray-200 text-gray-400'
+                                  }`}
+                                >
+                                  {perm.label}
+                                </button>
+                              ))}
+                              {member.role !== 'admin' && (
+                                <button
+                                  onClick={() => promoteToAdmin(member.id)}
+                                  className="px-2 py-1 text-xs text-purple-600 border border-purple-200 rounded-lg hover:bg-purple-50"
+                                >
+                                  👑 Promouvoir
+                                </button>
+                              )}
+                              {member.role === 'admin' && (
+                                <button
+                                  onClick={() => demoteFromAdmin(member.id)}
+                                  className="px-2 py-1 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100"
+                                >
+                                  Rétrograder
+                                </button>
+                              )}
+                              <button
+                                onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                                className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                              >
+                                Désactiver
+                              </button>
+                            </div>
                           )}
                         </div>
-                        {/* Permission toggles */}
-                        {member.id !== profile.id && member.role !== 'admin' && (
-                          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200">
-                            {[
-                              { key: 'can_view', label: '👁️ Consulter', on: 'bg-blue-100 border-blue-300 text-blue-700', off: 'bg-gray-100 border-gray-200 text-gray-400' },
-                              { key: 'can_request', label: '📋 Demandes', on: 'bg-green-100 border-green-300 text-green-700', off: 'bg-gray-100 border-gray-200 text-gray-400' },
-                              { key: 'can_invoice', label: '💳 Facturation', on: 'bg-amber-100 border-amber-300 text-amber-700', off: 'bg-gray-100 border-gray-200 text-gray-400' }
-                            ].map(perm => (
-                              <button
-                                key={perm.key}
-                                onClick={() => togglePermission(member.id, perm.key, !member[perm.key])}
-                                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                  member[perm.key] ? perm.on : perm.off
-                                }`}
-                              >
-                                {perm.label} {member[perm.key] ? '✓' : ''}
-                              </button>
-                            ))}
-                            <button
-                              onClick={() => promoteToAdmin(member.id)}
-                              className="px-3 py-1 rounded-full text-xs font-medium border border-purple-300 bg-purple-50 text-purple-600 hover:bg-purple-100"
-                            >
-                              👑 Promouvoir admin
-                            </button>
-                          </div>
-                        )}
-                        {member.role === 'admin' && member.id !== profile.id && (
-                          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200">
-                            <p className="text-xs text-purple-500">Admin — accès complet</p>
-                            <button
-                              onClick={() => demoteFromAdmin(member.id)}
-                              className="px-2 py-0.5 rounded text-xs text-red-500 hover:bg-red-50 border border-red-200"
-                            >
-                              Rétrograder
-                            </button>
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
@@ -7089,18 +7443,15 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                   </div>
                 )}
 
-                {/* GDPR Erased - no reactivation possible */}
+                {/* GDPR Erased Members */}
                 {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').length > 0 && (
                   <div>
                     <h3 className="font-medium text-gray-400 mb-3">Comptes supprimés (RGPD)</h3>
                     <div className="space-y-2">
                       {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').map(member => (
-                        <div key={member.id} className="p-3 rounded-lg bg-gray-50 border border-gray-100 flex justify-between items-center">
-                          <div>
-                            <p className="font-medium text-gray-400">{member.full_name}</p>
-                            <p className="text-xs text-gray-300">Données anonymisées — {member.gdpr_erased_at ? new Date(member.gdpr_erased_at).toLocaleDateString('fr-FR') : ''}</p>
-                          </div>
-                          <span className="text-xs text-gray-300 bg-gray-100 px-2 py-1 rounded">Irréversible</span>
+                        <div key={member.id} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+                          <p className="text-gray-400 text-sm">{member.full_name || 'Utilisateur supprimé'}</p>
+                          <p className="text-xs text-gray-300">Données anonymisées — {member.gdpr_erased_at ? new Date(member.gdpr_erased_at).toLocaleDateString('fr-FR') : ''}</p>
                         </div>
                       ))}
                     </div>
@@ -7137,32 +7488,260 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                   </div>
                 )}
 
-                {/* Role Explanation */}
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-medium text-gray-700 mb-2">Permissions disponibles</h4>
-                  <div className="grid md:grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <p className="font-medium text-blue-700">👁️ Consulter</p>
-                      <p className="text-gray-500">Voir le tableau de bord, les demandes et les équipements</p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-green-700">📋 Demandes</p>
-                      <p className="text-gray-500">Créer des demandes RMA, approuver les devis, commander des pièces</p>
-                    </div>
-                    <div>
-                      <p className="font-medium text-amber-700">💳 Facturation</p>
-                      <p className="text-gray-500">Voir les factures, contrats, adresses de facturation, SIRET/TVA</p>
+                {/* Last invite link */}
+                {lastInviteLink && (
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <p className="font-medium text-green-700 mb-2">🔗 Lien d'invitation</p>
+                    <p className="text-sm text-green-600 mb-2">Partagez ce lien avec le nouveau membre :</p>
+                    <div className="flex gap-2">
+                      <input type="text" readOnly value={lastInviteLink} className="flex-1 px-3 py-2 text-sm bg-white border border-green-300 rounded-lg font-mono" />
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(lastInviteLink); notify('Lien copié!'); }}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+                      >
+                        Copier
+                      </button>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-3">Les administrateurs ont automatiquement toutes les permissions + gestion de l{"'"}équipe et des paramètres.</p>
-                </div>
+                )}
               </div>
             )}
           </div>
         </div>
       )}
 
+      {/* Addresses Section */}
+      {activeSection === 'addresses' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">Adresses de livraison</h2>
+              <p className="text-sm text-gray-500">Gérez vos adresses pour la réception et le retour des équipements</p>
+            </div>
+            <button
+              onClick={() => {
+                setEditingAddress(null);
+                setAddingBillingAddress(false);
+                setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false });
+                setShowAddAddress(true);
+              }}
+              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              + Ajouter une adresse
+            </button>
+          </div>
+          
+          <div className="p-6">
+            {addresses.filter(a => !a.is_billing).length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <p className="text-4xl mb-2">📍</p>
+                <p>Aucune adresse de livraison</p>
+                <p className="text-sm">Ajoutez une adresse pour vos livraisons</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {addresses.filter(a => !a.is_billing).map(addr => (
+                  <div 
+                    key={addr.id}
+                    className={`p-4 rounded-xl border-2 ${addr.is_default ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}
+                  >
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-[#1E3A5F]">{addr.label}</h3>
+                          {addr.is_default && (
+                            <span className="px-2 py-0.5 bg-[#3B7AB4] text-white text-xs rounded-full">
+                              Par défaut
+                            </span>
+                          )}
+                        </div>
+                        {addr.attention && <p className="text-sm text-gray-600">À l'attention de: {addr.attention}</p>}
+                        <p className="text-sm text-gray-700">{addr.address_line1}</p>
+                        {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
+                        <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
+                        {addr.phone && <p className="text-sm text-gray-500 mt-1">📞 {addr.phone}</p>}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => openEditAddress(addr)}
+                          className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]"
+                        >
+                          ✏️ Modifier
+                        </button>
+                        {!addr.is_default && (
+                          <button
+                            onClick={() => setDefault(addr.id)}
+                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+                          >
+                            ⭐ Par défaut
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteAddress(addr.id)}
+                          className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                        >
+                          🗑️ Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
+        {/* Billing Addresses - admin/canInvoice only */}
+        {(perms?.isAdmin || perms?.canInvoice) && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">💳 Adresses de facturation</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Adresses utilisées pour les devis et factures</p>
+            </div>
+            <button
+              onClick={() => {
+                setEditingAddress(null);
+                setAddingBillingAddress(true);
+                setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: true });
+                setShowAddAddress(true);
+              }}
+              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              + Ajouter
+            </button>
+          </div>
+          <div className="p-6">
+            {addresses.filter(a => a.is_billing).length === 0 ? (
+              <div className="text-center py-6 text-gray-400">
+                <p>Aucune adresse de facturation</p>
+                <p className="text-xs mt-1">{"L'adresse du siège sera utilisée par défaut"}</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {addresses.filter(a => a.is_billing).map(addr => (
+                  <div key={addr.id} className="p-4 rounded-xl border-2 border-gray-200 bg-gray-50">
+                    <div className="flex justify-between items-start gap-4">
+                      <div className="flex-1">
+                        <h3 className="font-bold text-[#1E3A5F] mb-1">{addr.label}</h3>
+                        {addr.attention && <p className="text-sm text-gray-600">Attn: {addr.attention}</p>}
+                        <p className="text-sm text-gray-700">{addr.address_line1}</p>
+                        {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
+                        <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button onClick={() => openEditAddress(addr)} className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]">✏️</button>
+                        <button onClick={() => deleteAddress(addr.id)} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">🗑️</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        )}
+
+        {/* Company Identifiers - admin/canInvoice only */}
+        {(perms?.isAdmin || perms?.canInvoice) && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">🔒 Identifiants légaux</h2>
+              <p className="text-xs text-gray-400 mt-0.5">SIRET, TVA — modification protégée</p>
+            </div>
+            {!editingIdentifiers && isAdmin && (
+              <button
+                onClick={() => setEditingIdentifiers(true)}
+                className="px-4 py-2 text-gray-400 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm"
+              >
+                🔒 Modifier
+              </button>
+            )}
+          </div>
+          <div className="p-6">
+            {editingIdentifiers ? (
+              <div className="space-y-4 max-w-lg">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-red-700">
+                    <strong>⚠️ Attention :</strong> La modification des identifiants légaux peut affecter votre facturation. 
+                    Veuillez vous assurer que les informations sont correctes.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                    <input
+                      type="text"
+                      value={companyData.siret}
+                      onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
+                      placeholder="123 456 789 00012"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
+                    <input
+                      type="text"
+                      value={companyData.tva_number}
+                      onChange={e => setCompanyData({ ...companyData, tva_number: e.target.value })}
+                      placeholder="FR12345678901"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tapez <span className="font-bold text-red-600">CONFIRMER</span> pour valider la modification
+                  </label>
+                  <input
+                    type="text"
+                    value={identifierConfirmText}
+                    onChange={e => setIdentifierConfirmText(e.target.value)}
+                    placeholder="CONFIRMER"
+                    className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 focus:ring-2 focus:ring-red-300 font-mono"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setEditingIdentifiers(false);
+                      setIdentifierConfirmText('');
+                      setCompanyData(prev => ({
+                        ...prev,
+                        siret: profile?.companies?.siret || '',
+                        tva_number: profile?.companies?.tva_number || ''
+                      }));
+                    }}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={saveIdentifiers}
+                    disabled={saving || identifierConfirmText !== 'CONFIRMER'}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {saving ? 'Enregistrement...' : '🔒 Mettre à jour les identifiants'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <p className="text-sm text-gray-500">SIRET</p>
+                  <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.siret || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">N° TVA</p>
+                  <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.tva_number || '—'}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        )}
+      )}
 
       {/* Language Section */}
       {activeSection === 'language' && (
@@ -7339,7 +7918,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                 {new Date().toLocaleDateString('fr-FR')} à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
               </p>
             </div>
-
+            
             {/* GDPR / Data Rights */}
             <div className="border-t border-gray-200 pt-6">
               <h3 className="font-medium text-[#1E3A5F] mb-4">🔐 Données personnelles (RGPD)</h3>
@@ -7393,14 +7972,16 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
               </div>
 
               {/* Legal Links */}
-              <div className="flex flex-wrap gap-3">
-                <button onClick={() => setShowLegalPage('privacy')} className="text-sm text-[#3B7AB4] hover:underline">
-                  📄 Politique de confidentialité
-                </button>
-                <button onClick={() => setShowLegalPage('mentions')} className="text-sm text-[#3B7AB4] hover:underline">
-                  📋 Mentions légales
-                </button>
-              </div>
+              {setShowLegalPage && (
+                <div className="flex flex-wrap gap-3 mb-6">
+                  <button onClick={() => setShowLegalPage('privacy')} className="text-sm text-[#3B7AB4] hover:underline">
+                    📄 Politique de confidentialité
+                  </button>
+                  <button onClick={() => setShowLegalPage('mentions')} className="text-sm text-[#3B7AB4] hover:underline">
+                    📋 Mentions légales
+                  </button>
+                </div>
+              )}
             </div>
             
             {/* Danger Zone */}
@@ -7414,7 +7995,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                     if (!confirm('Êtes-vous sûr de vouloir désactiver votre compte? Vous ne pourrez plus vous connecter.')) return;
                     if (!confirm('Dernière confirmation: votre accès sera coupé immédiatement.')) return;
                     
-                    // If admin, check not the last one
                     if (profile?.role === 'admin') {
                       const { data: otherAdmins } = await supabase
                         .from('profiles')
@@ -7429,10 +8009,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                       }
                     }
                     
-                    // Soft-delete: mark profile as deactivated
                     await supabase.from('profiles').update({ invitation_status: 'deactivated' }).eq('id', profile.id);
-                    
-                    // Sign out
                     await supabase.auth.signOut({ scope: 'local' });
                     window.location.href = '/';
                   }}
@@ -7453,7 +8030,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                     if (!confirm('Êtes-vous sûr? Vos données personnelles seront anonymisées de façon irréversible. Les données liées à vos demandes de service, certificats et factures seront conservées conformément à la loi.')) return;
                     if (!confirm('Dernière confirmation: cette action est IRRÉVERSIBLE. Votre nom, email et téléphone seront supprimés.')) return;
                     
-                    // Admin check
                     if (profile?.role === 'admin') {
                       const { data: otherAdmins } = await supabase
                         .from('profiles')
@@ -7470,7 +8046,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                     
                     const anonId = profile.id.slice(0, 8);
                     
-                    // 1. Anonymize profile — keep company_id, role structure for record integrity
                     await supabase.from('profiles').update({
                       full_name: 'Utilisateur supprimé',
                       email: `supprime_${anonId}@anonymise.local`,
@@ -7479,12 +8054,10 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                       gdpr_erased_at: new Date().toISOString()
                     }).eq('id', profile.id);
                     
-                    // 2. Anonymize message sender names (keep message content for service record)
                     await supabase.from('request_messages').update({
                       sender_name: 'Utilisateur supprimé'
                     }).eq('sender_id', profile.id);
                     
-                    // 3. Sign out
                     await supabase.auth.signOut({ scope: 'local' });
                     window.location.href = '/';
                   }}
@@ -7601,15 +8174,15 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                 />
               </div>
               {!addingBillingAddress && (
-                <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                  <input
-                    type="checkbox"
-                    checked={newAddress.is_default}
-                    onChange={e => setNewAddress({ ...newAddress, is_default: e.target.checked })}
-                    className="w-4 h-4 text-[#3B7AB4]"
-                  />
-                  <span className="text-sm">Définir comme adresse par défaut</span>
-                </label>
+              <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  checked={newAddress.is_default}
+                  onChange={e => setNewAddress({ ...newAddress, is_default: e.target.checked })}
+                  className="w-4 h-4 text-[#3B7AB4]"
+                />
+                <span className="text-sm">Définir comme adresse par défaut</span>
+              </label>
               )}
               <div className="flex gap-3 pt-2">
                 <button
@@ -7617,7 +8190,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                   onClick={() => {
                     setShowAddAddress(false);
                     setEditingAddress(null);
-                    setAddingBillingAddress(false);
                   }}
                   className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
                 >
@@ -7652,9 +8224,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                   onChange={e => setPasswordData({ ...passwordData, new: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
                   required
-                  minLength={8}
+                  minLength={6}
                 />
-                <p className="text-xs text-gray-400 mt-1">Min. 8 caractères, 1 majuscule, 1 chiffre, 1 caractère spécial</p>
+                <p className="text-xs text-gray-400 mt-1">Minimum 6 caractères</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Confirmer le mot de passe *</label>
@@ -7699,112 +8271,76 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
 
       {/* Invite Team Member Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { setShowInviteModal(false); setLastInviteLink(''); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowInviteModal(false)}>
           <div className="bg-white rounded-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="px-6 py-4 border-b">
               <h3 className="font-bold text-lg text-[#1E3A5F]">Inviter un membre</h3>
             </div>
-            
-            {lastInviteLink ? (
-              <div className="p-6 space-y-4">
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="font-medium text-green-800 mb-2">Invitation créée!</p>
-                  <p className="text-sm text-green-700 mb-3">Partagez ce lien avec votre collègue pour qu{"'"}il puisse créer son compte:</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={lastInviteLink}
-                      readOnly
-                      className="flex-1 px-3 py-2 text-xs bg-white border border-green-300 rounded-lg font-mono select-all"
-                      onClick={e => e.target.select()}
-                    />
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(lastInviteLink);
-                        notify('Lien copié!');
-                      }}
-                      className="px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 whitespace-nowrap"
-                    >
-                      Copier
-                    </button>
-                  </div>
+            <form onSubmit={inviteTeamMember} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse email *</label>
+                <input
+                  type="email"
+                  value={inviteData.email}
+                  onChange={e => setInviteData({ ...inviteData, email: e.target.value })}
+                  placeholder="collegue@entreprise.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+                    <input type="checkbox" checked={inviteData.can_view} onChange={e => setInviteData({ ...inviteData, can_view: e.target.checked })} className="w-4 h-4" />
+                    <div>
+                      <p className="font-medium text-sm">👁 Voir les demandes</p>
+                      <p className="text-xs text-gray-500">Consulter toutes les demandes de l'entreprise</p>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+                    <input type="checkbox" checked={inviteData.can_request} onChange={e => setInviteData({ ...inviteData, can_request: e.target.checked })} className="w-4 h-4" />
+                    <div>
+                      <p className="font-medium text-sm">📝 Créer des demandes</p>
+                      <p className="text-xs text-gray-500">Soumettre de nouvelles demandes de service</p>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+                    <input type="checkbox" checked={inviteData.can_invoice} onChange={e => setInviteData({ ...inviteData, can_invoice: e.target.checked })} className="w-4 h-4" />
+                    <div>
+                      <p className="font-medium text-sm">💳 Facturation & contrats</p>
+                      <p className="text-xs text-gray-500">Voir les contrats, devis et factures</p>
+                    </div>
+                  </label>
                 </div>
-                <p className="text-xs text-gray-500">{"L'invitation expire dans 7 jours. Le lien contient un code unique — ne le partagez qu'avec la personne concernée."}</p>
+              </div>
+              
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-700">
+                  <strong>Note:</strong> Un lien d'invitation sera généré. Partagez-le avec le nouveau membre pour qu'il puisse créer son compte.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => { setShowInviteModal(false); setLastInviteLink(''); }}
-                  className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg"
+                  type="button"
+                  onClick={() => {
+                    setShowInviteModal(false);
+                    setInviteData({ email: '', can_view: true, can_request: false, can_invoice: false });
+                  }}
+                  className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
                 >
-                  Fermer
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {saving ? 'Création...' : "Créer l'invitation"}
                 </button>
               </div>
-            ) : (
-              <form onSubmit={inviteTeamMember} className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse email *</label>
-                  <input
-                    type="email"
-                    value={inviteData.email}
-                    onChange={e => setInviteData({ ...inviteData, email: e.target.value })}
-                    placeholder="collegue@entreprise.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Permissions *</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
-                      <input type="checkbox" checked={inviteData.can_view} onChange={e => setInviteData({ ...inviteData, can_view: e.target.checked })} className="w-4 h-4 text-[#3B7AB4]" />
-                      <div>
-                        <p className="font-medium text-sm text-gray-700">👁️ Consulter</p>
-                        <p className="text-xs text-gray-500">Voir le tableau de bord, les demandes, les équipements</p>
-                      </div>
-                    </label>
-                    <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
-                      <input type="checkbox" checked={inviteData.can_request} onChange={e => setInviteData({ ...inviteData, can_request: e.target.checked })} className="w-4 h-4 text-[#3B7AB4]" />
-                      <div>
-                        <p className="font-medium text-sm text-gray-700">📋 Demandes</p>
-                        <p className="text-xs text-gray-500">Créer des demandes RMA, approuver les devis</p>
-                      </div>
-                    </label>
-                    <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
-                      <input type="checkbox" checked={inviteData.can_invoice} onChange={e => setInviteData({ ...inviteData, can_invoice: e.target.checked })} className="w-4 h-4 text-[#3B7AB4]" />
-                      <div>
-                        <p className="font-medium text-sm text-gray-700">💳 Facturation</p>
-                        <p className="text-xs text-gray-500">Voir les factures, contrats, adresses de facturation, SIRET/TVA</p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-                
-                <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-700">
-                    Un lien {"d'inscription"} sera généré. Partagez-le avec votre collègue pour {"qu'il"} puisse créer son compte et rejoindre votre entreprise avec les permissions sélectionnées.
-                  </p>
-                </div>
-                
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowInviteModal(false);
-                      setInviteData({ email: '', can_view: true, can_request: false, can_invoice: false });
-                      setLastInviteLink('');
-                    }}
-                    className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="flex-1 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50"
-                  >
-                    {saving ? 'Création...' : 'Créer l\'invitation'}
-                  </button>
-                </div>
-              </form>
-            )}
+            </form>
           </div>
         </div>
       )}
@@ -8523,7 +9059,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
   // Quote approval/revision handlers
   const handleApproveQuote = async () => {
-    if (!perms.canRequest) {
+    if (!perms?.canRequest) {
       notify('Vous n\'avez pas la permission d\'effectuer cette action', 'error');
       return;
     }
@@ -8684,7 +9220,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
   // Submit BC / Approval
   const submitBonCommande = async () => {
-    if (!perms.canRequest) {
+    if (!perms?.canRequest) {
       notify('Vous n\'avez pas la permission d\'effectuer cette action', 'error');
       return;
     }
@@ -8711,7 +9247,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let fileUrl = null;
       if (bcFile) {
         try {
-          const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const fileName = `bons-commande/${request.request_number}/bc_${Date.now()}.${bcFile.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
@@ -8733,7 +9269,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         try {
           console.log('🖊️ Uploading signature...');
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
+          const signatureFileName = `signatures/${request.request_number}/sig_bc_${Date.now()}.png`;
           console.log('🖊️ Signature file name:', signatureFileName);
           
           const { data: sigUploadData, error: sigError } = await supabase.storage
@@ -8799,7 +9335,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
               signatureImage: signatureData
             });
-            pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
+            pdfFileName = `bons-commande/${request.request_number}/devis_signe_${Date.now()}.pdf`;
           }
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
@@ -8933,24 +9469,30 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     if (!newMessage.trim()) return;
     
     setSending(true);
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        request_id: request.id,
-        sender_id: profile.id,
-        sender_type: 'customer',
-        sender_name: profile.full_name || 'Client',
-        content: newMessage.trim()
-      })
-      .select()
-      .single();
-    
-    if (!error && data) {
-      setMessages([...messages, data]);
-      setNewMessage('');
-      notify('Message envoyé!');
-    } else if (error) {
-      notify('Erreur: ' + error.message, 'error');
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          request_id: request.id,
+          sender_id: profile.id,
+          sender_type: 'customer',
+          sender_name: profile.full_name || 'Client',
+          content: newMessage.trim()
+        })
+        .select()
+        .single();
+      
+      if (!error && data) {
+        setMessages([...messages, data]);
+        setNewMessage('');
+        notify('Message envoyé!');
+      } else if (error) {
+        console.error('Message send error:', error);
+        notify('Erreur: ' + (error.message || error.details || JSON.stringify(error)), 'error');
+      }
+    } catch (err) {
+      console.error('Message send exception:', err);
+      notify('Erreur: ' + err.message, 'error');
     }
     setSending(false);
   };
@@ -11752,11 +12294,11 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
 
   // Submit BC - COPIED FROM RMA (working version)
   const submitBonCommande = async () => {
-    if (!perms.canRequest) {
+    // Validation first - exactly like RMA
+    if (!perms?.canRequest) {
       notify('Vous n\'avez pas la permission d\'effectuer cette action', 'error');
       return;
     }
-    // Validation first - exactly like RMA
     if (!acceptTerms) {
       notify('Veuillez accepter les conditions générales', 'error');
       return;
@@ -11783,7 +12325,7 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
       let fileUrl = null;
       if (bcFile) {
         try {
-          const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const fileName = `bons-commande/contracts/${selectedContract.contract_number}/bc_${Date.now()}.${bcFile.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
@@ -11804,7 +12346,7 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
       if (signatureData) {
         try {
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const signatureFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
+          const signatureFileName = `signatures/contracts/${selectedContract.contract_number}/sig_bc_${Date.now()}.png`;
           const { error: sigError } = await supabase.storage
             .from('documents')
             .upload(signatureFileName, signatureBlob);
@@ -11836,7 +12378,7 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
             signatureImage: signatureData
           });
           
-          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number}_${Date.now()}.pdf`;
+          const pdfFileName = `bons-commande/contracts/${selectedContract.contract_number}/devis_signe_${Date.now()}.pdf`;
           const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -13254,7 +13796,7 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Mes Contrats</h1>
-        {perms.canRequest && (
+        {perms?.canRequest && (
         <button 
           onClick={() => setPage('new-request')}
           className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
@@ -13284,7 +13826,7 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
           <p className="text-gray-600 mb-4">
             Vous n'avez pas encore de contrat d'étalonnage. Demandez un devis pour bénéficier de tarifs préférentiels.
           </p>
-          {perms.canRequest && (
+          {perms?.canRequest && (
           <button 
             onClick={() => setPage('new-request')}
             className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44]"
@@ -13354,7 +13896,7 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
 // ============================================
 // RENTALS PAGE (Equipment Rental / Locations)
 // ============================================
-function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
+function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingRentalId, setPendingRentalId }) {
   const [rentals, setRentals] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [bundles, setBundles] = useState([]);
@@ -13362,6 +13904,42 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
   const [loading, setLoading] = useState(true);
   const [showNewRental, setShowNewRental] = useState(false);
   const [selectedRental, setSelectedRental] = useState(null);
+  
+  // Keep selectedRental in sync with reloaded data
+  useEffect(() => {
+    if (selectedRental) {
+      const updated = rentals.find(r => r.id === selectedRental.id);
+      if (updated && updated.status !== selectedRental.status) {
+        setSelectedRental(updated);
+      }
+    }
+  }, [rentals]);
+
+  const [rentalCommsLoaded, setRentalCommsLoaded] = useState(null); // tracks which rental id comms are loaded for
+
+  // Rental detail state
+  const [rentalTab, setRentalTab] = useState('overview');
+  const [rentalMessages, setRentalMessages] = useState([]);
+  const [rentalNewMsg, setRentalNewMsg] = useState('');
+  const [rentalSending, setRentalSending] = useState(false);
+  const [rentalDocs, setRentalDocs] = useState([]);
+  const [showRentalQuote, setShowRentalQuote] = useState(false);
+  const [showRentalRevision, setShowRentalRevision] = useState(false);
+  const [rentalRevisionNotes, setRentalRevisionNotes] = useState('');
+  const [rentalProcessing, setRentalProcessing] = useState(false);
+  
+  // BC Submission state (mirrors RMA exactly)
+  const [showBCModal, setShowBCModal] = useState(false);
+  const [bcFileUpload, setBcFileUpload] = useState(null);
+  const [signatureName, setSignatureName] = useState(profile?.full_name || '');
+  const [signatureDateDisplay] = useState(new Date().toLocaleDateString('fr-FR'));
+  const [signatureDateISO] = useState(new Date().toISOString().split('T')[0]);
+  const [luEtApprouve, setLuEtApprouve] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [submittingBC, setSubmittingBC] = useState(false);
+  const [signatureData, setSignatureData] = useState(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const canvasRef = useRef(null);
   
   // New rental form state
   const [startDate, setStartDate] = useState(null);
@@ -13377,15 +13955,41 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
     loadData();
   }, [profile?.company_id]);
 
+  // Auto-select rental if navigated from dashboard action
+  useEffect(() => {
+    if (pendingRentalId && rentals.length > 0 && !loading) {
+      const target = rentals.find(r => r.id === pendingRentalId);
+      if (target) {
+        setSelectedRental(target);
+        if (setPendingRentalId) setPendingRentalId(null);
+      }
+    }
+  }, [pendingRentalId, rentals, loading]);
+
   const loadData = async () => {
     setLoading(true);
     
     // Load rental requests for this company
-    const { data: rentalData } = await supabase
+    let rentalData = null;
+    const { data: rd, error: rentalError } = await supabase
       .from('rental_requests')
-      .select('*, rental_request_items(*), companies(*), shipping_addresses(*)')
+      .select('*, rental_request_items(*), companies(*), shipping_address:shipping_addresses!shipping_address_id(*)')
       .eq('company_id', profile.company_id)
       .order('created_at', { ascending: false });
+    
+    if (rentalError) {
+      console.error('Rental load error (with join):', rentalError);
+      // Fallback without shipping address join
+      const { data: rd2 } = await supabase
+        .from('rental_requests')
+        .select('*, rental_request_items(*), companies(*)')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      rentalData = rd2;
+    } else {
+      rentalData = rd;
+    }
+    if (rentalData) setRentals(rentalData);
     
     // Load available inventory
     const { data: invData } = await supabase
@@ -13412,7 +14016,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
       .gte('end_date', fromDate.toISOString().split('T')[0])
       .lte('start_date', toDate.toISOString().split('T')[0]);
     
-    if (rentalData) setRentals(rentalData);
     if (invData) setInventory(invData);
     if (bundleData) setBundles(bundleData);
     if (bookingData) setBookings(bookingData);
@@ -13502,9 +14105,34 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
     
     setSaving(true);
     try {
-      // Generate rental number
-      const { data: numberData } = await supabase.rpc('generate_rental_number');
-      const rentalNumber = numberData || `LOC-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
+      // Generate rental number from doc counter system (same as DEV/SUP/etc)
+      let rentalNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'LOC' });
+        if (!docNumError && docNumData) {
+          rentalNumber = docNumData;
+        }
+      } catch (e) {
+        console.error('Could not generate LOC number:', e);
+      }
+      if (!rentalNumber) {
+        // Fallback: LOC-MMYY-XXX
+        const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+        const yy = String(new Date().getFullYear()).slice(-2);
+        const { data: lastLoc } = await supabase.from('rental_requests').select('rental_number').like('rental_number', `LOC-${mm}${yy}-%`).order('rental_number', { ascending: false }).limit(1);
+        const lastNum = lastLoc?.[0]?.rental_number ? parseInt(lastLoc[0].rental_number.split('-').pop()) : 0;
+        rentalNumber = `LOC-${mm}${yy}-${String(lastNum + 1).padStart(3, '0')}`;
+      }
+      
+      // Check for duplicates and increment if needed
+      const { data: existing } = await supabase.from('rental_requests').select('rental_number').eq('rental_number', rentalNumber).maybeSingle();
+      if (existing) {
+        // Collision - find the true max and increment
+        const prefix = rentalNumber.substring(0, rentalNumber.lastIndexOf('-') + 1); // e.g. "LOC-0226-"
+        const { data: allExisting } = await supabase.from('rental_requests').select('rental_number').like('rental_number', `${prefix}%`).order('rental_number', { ascending: false }).limit(1);
+        const maxNum = allExisting?.[0]?.rental_number ? parseInt(allExisting[0].rental_number.split('-').pop()) : 0;
+        rentalNumber = `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+      }
       
       // Create rental request
       const { data: rental, error: rentalErr } = await supabase
@@ -13586,27 +14214,33 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
   const getStatusBadge = (status) => {
     const styles = {
       requested: 'bg-blue-100 text-blue-700',
-      quote_sent: 'bg-amber-100 text-amber-700',
+      pending_quote_review: 'bg-amber-100 text-amber-700',
+      quote_sent: 'bg-red-100 text-red-700',
       waiting_bc: 'bg-purple-100 text-purple-700',
       bc_review: 'bg-indigo-100 text-indigo-700',
       bc_approved: 'bg-teal-100 text-teal-700',
       shipped: 'bg-cyan-100 text-cyan-700',
-      in_rental: 'bg-green-100 text-green-700',
+      in_rental: 'bg-cyan-100 text-cyan-700',
       return_pending: 'bg-orange-100 text-orange-700',
-      returned: 'bg-gray-100 text-gray-700',
+      returned: 'bg-teal-100 text-teal-700',
+      inspection: 'bg-blue-100 text-blue-700',
+      inspection_issue: 'bg-red-100 text-red-700',
       completed: 'bg-emerald-100 text-emerald-700',
       cancelled: 'bg-red-100 text-red-700'
     };
     const labels = {
       requested: 'Demande envoyée',
-      quote_sent: 'Devis reçu',
+      pending_quote_review: 'Devis en préparation',
+      quote_sent: '⚠ Action requise',
       waiting_bc: 'En attente BC',
       bc_review: 'BC en révision',
       bc_approved: 'BC approuvé',
-      shipped: 'Expédié',
-      in_rental: 'En location',
+      shipped: 'Expédié / En location',
+      in_rental: 'Expédié / En location',
       return_pending: 'Retour en attente',
       returned: 'Retourné',
+      inspection: 'Inspection en cours',
+      inspection_issue: '⚠ Action requise',
       completed: 'Terminé',
       cancelled: 'Annulé'
     };
@@ -13899,7 +14533,1011 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
     );
   }
 
+  // Signature pad functions (identical to RMA)
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1E3A5F';
+    setIsDrawing(true);
+  };
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+  const stopDrawing = () => {
+    if (isDrawing) {
+      setIsDrawing(false);
+      const canvas = canvasRef.current;
+      if (canvas) setSignatureData(canvas.toDataURL('image/png'));
+    }
+  };
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setSignatureData(null);
+    }
+  };
+
+  const hasValidSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
+  const isSubmissionValid = signatureName.trim().length > 0 && acceptTerms && (bcFileUpload || hasValidSignature);
+
+  // Load messages and docs for selected rental
+  const loadRentalComms = async (rentalId) => {
+    const { data: msgs } = await supabase.from('messages').select('*').eq('rental_request_id', rentalId).order('created_at', { ascending: true });
+    if (msgs) setRentalMessages(msgs);
+    const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rentalId);
+    if (docs) setRentalDocs(docs);
+  };
+
+  const sendRentalMessage = async (e) => {
+    e?.preventDefault();
+    if (!rentalNewMsg.trim() || !selectedRental) return;
+    setRentalSending(true);
+    try {
+      const { data, error: sendErr } = await supabase.from('messages').insert({
+        rental_request_id: selectedRental.id,
+        sender_id: profile?.id,
+        sender_name: profile?.full_name || 'Client',
+        sender_type: 'customer',
+        content: rentalNewMsg.trim()
+      }).select().single();
+      if (sendErr) {
+        console.error('Rental message send error:', sendErr);
+        notify('Erreur: ' + (sendErr.message || sendErr.details || JSON.stringify(sendErr)), 'error');
+      } else {
+        setRentalNewMsg('');
+        setRentalMessages(prev => [...prev, data]);
+        notify('Message envoyé !');
+      }
+    } catch (err) {
+      console.error('Rental message exception:', err);
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setRentalSending(false);
+  };
+
+  const handleRentalRevision = async () => {
+    if (!rentalRevisionNotes.trim() || !selectedRental) { notify('Veuillez décrire les modifications', 'error'); return; }
+    setRentalProcessing(true);
+    await supabase.from('rental_requests').update({
+      status: 'requested',
+      quote_revision_notes: rentalRevisionNotes.trim(),
+      quote_revision_requested_at: new Date().toISOString()
+    }).eq('id', selectedRental.id);
+    notify('✅ Demande de modification envoyée !');
+    setShowRentalRevision(false);
+    setShowRentalQuote(false);
+    setRentalProcessing(false);
+    setSelectedRental(null);
+    loadData();
+  };
+
+  // BC submission (mirrors RMA exactly)
+  const submitRentalBC = async () => {
+    if (!selectedRental) return;
+    if (!acceptTerms) { notify('Veuillez accepter les conditions générales', 'error'); return; }
+    if (!signatureName.trim()) { notify('Veuillez entrer votre nom', 'error'); return; }
+    if (!bcFileUpload && !hasValidSignature) { notify('Veuillez télécharger un BC OU signer électroniquement', 'error'); return; }
+    
+    setSubmittingBC(true);
+    try {
+      // 1. Upload BC file if provided
+      let fileUrl = null;
+      if (bcFileUpload) {
+        try {
+          const fileName = `bons-commande/rentals/${selectedRental.rental_number}/bc_${Date.now()}.${bcFileUpload.name.split('.').pop()}`;
+          const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, bcFileUpload);
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage.from('documents').getPublicUrl(fileName);
+            fileUrl = publicUrl?.publicUrl;
+          }
+        } catch (e) { console.log('File upload skipped'); }
+      }
+      
+      // 2. Upload signature image
+      let signatureUrl = null;
+      if (signatureData) {
+        try {
+          const signatureBlob = await fetch(signatureData).then(r => r.blob());
+          const sigFileName = `signatures/rentals/${selectedRental.rental_number}/sig_bc_${Date.now()}.png`;
+          const { error: sigError } = await supabase.storage.from('documents').upload(sigFileName, signatureBlob);
+          if (!sigError) {
+            const { data: sigUrl } = supabase.storage.from('documents').getPublicUrl(sigFileName);
+            signatureUrl = sigUrl?.publicUrl;
+          }
+        } catch (e) { console.error('Signature upload error:', e); }
+      }
+      
+      // 3. Generate signed quote PDF if electronic signature
+      let signedQuotePdfUrl = null;
+      if (hasValidSignature) {
+        try {
+          const pdfBlob = await generateRentalQuotePDF({
+            rental: selectedRental,
+            isSigned: true,
+            signatureName: signatureName,
+            signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
+            signatureImage: signatureData
+          });
+          const pdfFileName = `bons-commande/rentals/${selectedRental.rental_number}/devis_signe_${Date.now()}.pdf`;
+          const { error: pdfUploadError } = await supabase.storage
+            .from('documents')
+            .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
+          if (!pdfUploadError) {
+            const { data: pdfUrl } = supabase.storage.from('documents').getPublicUrl(pdfFileName);
+            signedQuotePdfUrl = pdfUrl?.publicUrl;
+          }
+        } catch (e) { console.error('Signed rental PDF error:', e); }
+      }
+      
+      // 4. Update rental request
+      const updateData = {
+        status: 'bc_review',
+        bc_submitted_at: new Date().toISOString(),
+        bc_signed_by: signatureName,
+        bc_signature_date: signatureDateISO,
+        quote_approved_at: selectedRental.status === 'quote_sent' ? new Date().toISOString() : selectedRental.quote_approved_at
+      };
+      if (fileUrl) updateData.bc_file_url = fileUrl;
+      if (signatureUrl) updateData.bc_signature_url = signatureUrl;
+      if (signedQuotePdfUrl) updateData.signed_quote_url = signedQuotePdfUrl;
+      
+      await supabase.from('rental_requests').update(updateData).eq('id', selectedRental.id);
+      
+      // 5. Save BC as attachment
+      if (fileUrl) {
+        await supabase.from('request_attachments').insert({
+          rental_request_id: selectedRental.id,
+          file_name: `Bon_de_Commande_${selectedRental.rental_number}.pdf`,
+          file_url: fileUrl,
+          file_type: bcFileUpload?.type || 'application/pdf',
+          file_size: bcFileUpload?.size || 0,
+          uploaded_by: profile.id,
+          category: 'bon_commande'
+        });
+      }
+      
+      // 6. Save signed quote PDF as attachment
+      if (signedQuotePdfUrl) {
+        await supabase.from('request_attachments').insert({
+          rental_request_id: selectedRental.id,
+          file_name: `Devis_Signe_${selectedRental.rental_number}.pdf`,
+          file_url: signedQuotePdfUrl,
+          file_type: 'application/pdf',
+          uploaded_by: profile.id,
+          category: 'devis_signe'
+        });
+      }
+      
+      notify('✅ Bon de commande soumis avec succès !');
+      setShowBCModal(false);
+      setBcFileUpload(null);
+      setLuEtApprouve('');
+      setAcceptTerms(false);
+      clearSignature();
+      setSelectedRental(null);
+      loadData();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSubmittingBC(false);
+  };
+
+  // Detail view for selected rental
+  if (selectedRental) {
+    const rental = selectedRental;
+    const rentalDaysDisplay = rental.rental_days || Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000 * 60 * 60 * 24)) + 1;
+    const needsAction = rental.status === 'quote_sent';
+    const qd = rental.quote_data || {};
+    const items = qd.quoteItems || qd.items || rental.rental_request_items || [];
+    const hasQuote = !!(rental.quote_total_ht || qd.totalHT);
+    const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: rentalDaysDisplay };
+    const company = rental.companies || {};
+
+    // Load comms once per rental (not on every render)
+    if (rentalCommsLoaded !== rental.id) {
+      setRentalCommsLoaded(rental.id);
+      loadRentalComms(rental.id);
+    }
+
+    return (
+      <div>
+        <button onClick={() => { setSelectedRental(null); setRentalTab('overview'); setRentalMessages([]); setRentalDocs([]); setRentalCommsLoaded(null); }} className="text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-2">
+          ← Retour aux locations
+        </button>
+        
+        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+          {/* Header - identical to RMA */}
+          <div className="bg-[#1a1a2e] text-white p-6">
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-2xl font-bold">{rental.rental_number}</h2>
+                <p className="text-gray-300 text-sm mt-1">
+                  Du {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')} ({rentalDaysDisplay} jours)
+                </p>
+                <p className="text-gray-400 text-xs mt-1">{company.name || ''}</p>
+              </div>
+              {getStatusBadge(rental.status)}
+            </div>
+            
+            {/* Progress Bar */}
+            <StepProgress status={rental.status} serviceType="rental" />
+          </div>
+
+          {/* Action Required Banner (quote_sent) */}
+          {needsAction && (
+            <div className="bg-red-50 border-b border-red-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                    <span className="text-red-600 font-bold text-lg">!</span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-red-800">Action requise</p>
+                    <p className="text-sm text-red-600">Veuillez consulter le devis et soumettre votre bon de commande</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {hasQuote && (
+                    <button onClick={() => setShowRentalQuote(true)} className="px-4 py-2 border border-[#3B7AB4] text-[#3B7AB4] rounded-lg font-medium hover:bg-blue-50">
+                      👁️ Voir le Devis
+                    </button>
+                  )}
+                  <button onClick={() => setShowBCModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">
+                    📄 Soumettre BC
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* BC Review - Pending */}
+          {(rental.status === 'bc_review' || rental.bc_submitted_at) && rental.status !== 'bc_approved' && !['shipped', 'in_rental', 'return_pending', 'returned', 'inspection', 'inspection_issue', 'completed'].includes(rental.status) && (
+            <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📋</span>
+                <div>
+                  <p className="font-bold text-blue-800">Bon de commande en cours de vérification</p>
+                  <p className="text-sm text-blue-600">Soumis le {rental.bc_submitted_at ? new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR') : '—'} par {rental.bc_signed_by || '—'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Waiting BC (approved but no file) */}
+          {rental.status === 'waiting_bc' && !rental.bc_file_url && (
+            <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">✅</span>
+                  <div>
+                    <p className="font-bold text-amber-800">Devis approuvé — En attente de votre bon de commande</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowBCModal(true)} className="px-4 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-green-600">📄 Soumettre BC</button>
+              </div>
+            </div>
+          )}
+
+          {/* BC Rejected */}
+          {rental.bc_rejection_reason && (
+            <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                    <span className="text-white text-2xl">❌</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-red-800 text-lg">Bon de commande rejeté — Action requise</p>
+                    <p className="text-sm text-red-600">Votre bon de commande a été rejeté. Veuillez corriger et soumettre à nouveau.</p>
+                    <div className="mt-2 p-3 bg-white rounded-lg border-2 border-red-300">
+                      <p className="text-xs text-red-600 font-medium uppercase">Raison du rejet :</p>
+                      <p className="text-sm text-red-800 font-medium mt-1">{rental.bc_rejection_reason}</p>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setShowBCModal(true)} className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700">📄 Resoumettre BC</button>
+              </div>
+            </div>
+          )}
+
+          {/* Tabs - identical structure to RMA */}
+          <div className="flex gap-1 px-6 pt-4 bg-gray-50 border-b overflow-x-auto">
+            {[
+              { id: 'overview', label: 'Aperçu', icon: '📋' },
+              { id: 'documents', label: 'Documents', icon: '📄', badge: rentalDocs.filter(d => !(d.category||'').startsWith('internal_') && !(d.category||'').startsWith('archived_') && !d.archived_at).length + [rental.quote_url, rental.signed_quote_url, rental.bc_file_url, (rental.quote_data||{}).bl_url || ((rental.quote_data||{}).shippingInfo||{}).bl_url, (rental.quote_data||{}).ups_label_url || ((rental.quote_data||{}).shippingInfo||{}).ups_label_url].filter(Boolean).length },
+              { id: 'messages', label: 'Messages', icon: '💬', badge: rentalMessages.filter(m => m.sender_type !== 'customer' && !m.is_read).length }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setRentalTab(tab.id)}
+                className={`px-4 py-2.5 rounded-t-lg font-medium transition-colors flex items-center gap-2 ${
+                  rentalTab === tab.id ? 'bg-white border border-b-0 border-gray-200 text-[#1E3A5F]' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span>{tab.icon}</span> {tab.label}
+                {tab.badge > 0 && <span className={`text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center ${tab.id === 'messages' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-600'}`}>{tab.badge}</span>}
+              </button>
+            ))}
+          </div>
+
+          <div className="p-6">
+            {/* ========== OVERVIEW TAB ========== */}
+            {rentalTab === 'overview' && (() => {
+              const shipping = qd.shippingInfo || {};
+              const trackingNum = rental.outbound_tracking || shipping.outbound_tracking || qd.outbound_tracking || '';
+              const shippedAt = rental.outbound_shipped_at || shipping.outbound_shipped_at || qd.outbound_shipped_at || '';
+              const blNum = rental.bl_number || shipping.bl_number || qd.bl_number || '';
+
+              return (
+              <div className="space-y-6">
+                {/* Rental period */}
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex items-center gap-4 flex-wrap text-sm">
+                    <span className="font-bold text-purple-800">📅 Période de location</span>
+                    <span className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span>
+                    <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-xs font-bold">{rentalDaysDisplay} jours</span>
+                    {['in_rental', 'shipped'].includes(rental.status) && (() => {
+                      const daysLeft = Math.ceil((new Date(rental.end_date) - new Date()) / (1000*60*60*24));
+                      return daysLeft < 0 
+                        ? <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold">{Math.abs(daysLeft)}j de retard</span>
+                        : daysLeft <= 5
+                          ? <span className="px-2 py-0.5 bg-orange-400 text-white rounded-full text-xs font-bold">{daysLeft}j restant{daysLeft > 1 ? 's' : ''}</span>
+                          : <span className="px-2 py-0.5 bg-green-500 text-white rounded-full text-xs font-bold">{daysLeft}j restants</span>;
+                    })()}
+                  </div>
+                </div>
+
+                {/* Shipping / Tracking */}
+                {trackingNum && (
+                  <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-2xl">🚚</span>
+                      <div className="flex-1">
+                        <p className="font-bold text-cyan-800">
+                          {['shipped', 'in_rental'].includes(rental.status) ? 'Votre équipement a été expédié' : 'Suivi d\'expédition'}
+                        </p>
+                        {shippedAt && <p className="text-xs text-cyan-600">Expédié le {new Date(shippedAt).toLocaleDateString('fr-FR')}</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 mt-3">
+                      <a href={`https://www.ups.com/track?tracknum=${trackingNum}`} target="_blank" rel="noopener noreferrer"
+                         className="flex items-center gap-2 px-4 py-2 bg-[#FFB500] hover:bg-[#E5A300] text-[#351C15] rounded-lg font-bold text-sm transition-colors">
+                        <span>📦</span> Suivre sur UPS
+                      </a>
+                      <span className="font-mono text-sm text-cyan-700">{trackingNum}</span>
+                    </div>
+                    {blNum && <p className="text-xs text-gray-500 mt-2">BL N° {blNum}</p>}
+                  </div>
+                )}
+
+                {/* Equipment List */}
+                <div>
+                  <h3 className="font-bold text-gray-800 mb-3">📦 Équipements</h3>
+                  <div className="space-y-3">
+                    {items.map((item, idx) => (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-4 border">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-gray-800">{item.item_name || item.equipment_model || '—'}</p>
+                            {item.serial_number && !(item.item_name || '').includes(item.serial_number) && <p className="text-xs text-gray-500 font-mono">S/N: {item.serial_number}</p>}
+                          </div>
+                          {(item.line_total || 0) > 0 && (
+                            <span className="font-bold text-[#8B5CF6] text-lg">{parseFloat(item.line_total).toFixed(2)} € HT</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quote Summary */}
+                {hasQuote && (
+                  <div>
+                    <h3 className="font-bold text-gray-800 mb-3">💰 Résumé du Devis</h3>
+                    <div className="bg-gray-50 rounded-lg p-4 border space-y-2">
+                      {(qd.discount || 0) > 0 && <>
+                        <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
+                        <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
+                      </>}
+                      {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{parseFloat(qd.shipping || 0).toFixed(2)} €</span></div>}
+                      <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>Total HT</span><span className="text-[#00A651]">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</span></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Insurance Notice */}
+                {hasQuote && (
+                  <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                    <p className="font-bold text-sm text-amber-800 mb-1">Conditions générales de location</p>
+                    <p className="text-xs text-amber-700 leading-relaxed">Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution. Utilisation conforme à sa destination par un personnel qualifié ; sous-location interdite sans accord écrit. Le client doit souscrire une assurance « Bien Confié ». Tout incident, dommage ou perte signalé sous 48h. Matériel restitué en bon état ; dommages facturés. Retard facturé au tarif journalier +50%.</p>
+                    {(qd.totalRetailValue || 0) > 0 && <p className="font-bold text-xs text-amber-800 mt-2">Valeur à assurer : {qd.totalRetailValue.toFixed(2)} € HT</p>}
+                  </div>
+                )}
+
+                {/* Inspection Status - Customer View */}
+                {rental.status === 'inspection' && (
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🔍</span>
+                      <div>
+                        <p className="font-bold text-blue-800">Inspection en cours</p>
+                        <p className="text-sm text-blue-600">Votre appareil a été reçu et est en cours d'inspection par notre équipe technique.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {rental.status === 'inspection_issue' && (
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-300">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">⚠️</span>
+                      <div>
+                        <p className="font-bold text-red-800">Action requise — Dommages constatés</p>
+                        <p className="text-sm text-red-600">Lors de la réception de votre appareil, nous avons constaté des problèmes nécessitant une intervention. Veuillez consulter le devis de réparation dans vos messages ou documents.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Customer Notes */}
+                {rental.customer_notes && (
+                  <div className="bg-gray-50 rounded-lg p-4 border">
+                    <h3 className="font-bold text-gray-800 mb-2">📝 Vos notes</h3>
+                    <p className="text-sm text-gray-600">{rental.customer_notes}</p>
+                  </div>
+                )}
+              </div>
+              );
+            })()}
+
+            {/* ========== DOCUMENTS TAB ========== */}
+            {rentalTab === 'documents' && (() => {
+              const shipping = qd.shippingInfo || {};
+              const blUrl = rental.bl_url || shipping.bl_url || qd.bl_url || '';
+              const blNumber = rental.bl_number || shipping.bl_number || qd.bl_number || '';
+              const upsLabelUrl = rental.ups_label_url || shipping.ups_label_url || qd.ups_label_url || '';
+              const outboundTracking = rental.outbound_tracking || shipping.outbound_tracking || qd.outbound_tracking || '';
+              // Filter out internal docs and duplicates
+              const visibleDocs = rentalDocs.filter(d => 
+                d.file_url && 
+                !(d.category || '').startsWith('internal_') && 
+                !(d.category || '').startsWith('archived_') &&
+                !d.archived_at &&
+                d.file_url !== rental.quote_url && 
+                d.file_url !== rental.signed_quote_url && 
+                d.file_url !== rental.bc_file_url &&
+                d.file_url !== blUrl &&
+                d.file_url !== upsLabelUrl
+              );
+              const getCategoryIcon = (cat) => ({ bon_commande: '📝', bon_livraison: '📄', ups_label: '🏷️', signed_quote: '✅', devis: '💰' }[cat] || '📎');
+
+              return (
+              <div className="space-y-6">
+                <h3 className="font-bold text-[#1E3A5F]">📁 Documents</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Devis Location */}
+                  {rental.quote_url && (
+                    <a href={rental.quote_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 transition-colors border-purple-200">
+                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Devis Location</p>
+                        <p className="text-sm text-purple-600">N° {rental.rental_number}</p>
+                        {rental.quote_sent_at && <p className="text-xs text-gray-400 mt-0.5">Envoyé le {new Date(rental.quote_sent_at).toLocaleDateString('fr-FR')}</p>}
+                      </div>
+                    </a>
+                  )}
+
+                  {/* Signed Quote */}
+                  {rental.signed_quote_url && (
+                    <a href={rental.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Devis Signé</p>
+                        <p className="text-sm text-green-600">N° {rental.rental_number}</p>
+                        {rental.quote_approved_at && <p className="text-xs text-gray-400 mt-0.5">Signé le {new Date(rental.quote_approved_at).toLocaleDateString('fr-FR')}</p>}
+                      </div>
+                    </a>
+                  )}
+
+                  {/* Bon de Commande */}
+                  {rental.bc_file_url && (
+                    <a href={rental.bc_file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors border-amber-200">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Commande</p>
+                        <p className="text-sm text-amber-600">N° {rental.bc_number || rental.rental_number}</p>
+                        {rental.bc_submitted_at && <p className="text-xs text-gray-400 mt-0.5">Soumis le {new Date(rental.bc_submitted_at).toLocaleDateString('fr-FR')} par {rental.bc_signed_by || '—'}</p>}
+                      </div>
+                    </a>
+                  )}
+
+                  {/* Bon de Livraison */}
+                  {blUrl && (
+                    <a href={blUrl} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
+                      <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Bon de Livraison</p>
+                        <p className="text-sm text-cyan-600">{blNumber ? `N° ${blNumber}` : 'BL'}</p>
+                      </div>
+                    </a>
+                  )}
+
+                  {/* UPS Label */}
+                  {upsLabelUrl && (
+                    <a href={upsLabelUrl} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
+                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
+                      <div>
+                        <p className="font-medium text-gray-800">Étiquette UPS</p>
+                        <p className="text-sm text-amber-600">{outboundTracking || "Label d'expédition"}</p>
+                      </div>
+                    </a>
+                  )}
+
+                  {/* Additional visible attachments (admin-uploaded, non-internal) */}
+                  {visibleDocs.map(doc => (
+                    <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer"
+                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">
+                        {getCategoryIcon(doc.category)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{doc.file_name || doc.category || 'Document'}</p>
+                        <p className="text-sm text-gray-500">{new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+
+                {/* UPS Tracking link */}
+                {outboundTracking && (
+                  <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                    <p className="text-sm text-blue-800">
+                      📦 Suivi UPS : <a href={`https://www.ups.com/track?tracknum=${outboundTracking}`} target="_blank" rel="noopener noreferrer" className="font-mono font-bold text-blue-600 hover:underline">{outboundTracking}</a>
+                    </p>
+                  </div>
+                )}
+
+                {/* No docs fallback */}
+                {!rental.quote_url && !rental.signed_quote_url && !rental.bc_file_url && !blUrl && !upsLabelUrl && visibleDocs.length === 0 && (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg">
+                    <p className="text-4xl mb-2">📄</p>
+                    <p className="font-medium text-gray-500">Aucun document</p>
+                    <p className="text-sm text-gray-400 mt-1">Les documents seront disponibles ici</p>
+                  </div>
+                )}
+              </div>
+              );
+            })()}
+
+            {/* ========== MESSAGES TAB (identical to RMA) ========== */}
+            {rentalTab === 'messages' && (
+              <div>
+                <div className="h-[400px] overflow-y-auto mb-4 space-y-4">
+                  {rentalMessages.length === 0 ? (
+                    <div className="text-center text-gray-400 py-12">
+                      <p className="text-4xl mb-2">💬</p>
+                      <p>Aucun message</p>
+                      <p className="text-sm">Envoyez un message à notre équipe</p>
+                    </div>
+                  ) : (
+                    rentalMessages.map(msg => {
+                      const isMe = msg.sender_id === profile?.id;
+                      return (
+                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[70%] rounded-lg p-3 ${isMe ? 'bg-[#3B7AB4] text-white' : 'bg-gray-100 text-gray-800'}`}>
+                            <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#3B7AB4]'}`}>
+                              {isMe ? 'Vous' : (msg.sender_name || 'Lighthouse France')}
+                            </p>
+                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            {msg.attachment_url && (
+                              <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80 hover:text-white' : 'text-blue-600 hover:underline'}`}>
+                                📎 {msg.attachment_name || 'Fichier joint'}
+                              </a>
+                            )}
+                            <p className={`text-xs mt-1 ${isMe ? 'text-white/60' : 'text-gray-400'}`}>
+                              {new Date(msg.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                <form onSubmit={sendRentalMessage} className="flex gap-2">
+                  <input type="text" value={rentalNewMsg} onChange={e => setRentalNewMsg(e.target.value)} placeholder="Écrivez votre message..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B7AB4]" />
+                  <button type="submit" disabled={!rentalNewMsg.trim() || rentalSending} className="px-6 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium disabled:opacity-50">{rentalSending ? '...' : 'Envoyer'}</button>
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+
+
+        {/* ========== FULL QUOTE MODAL (identical layout to RMA) ========== */}
+        {showRentalQuote && hasQuote && (() => {
+          const totalRetailValue = qd.totalRetailValue || items.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
+          return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
+                <div>
+                  <h2 className="text-xl font-bold">Devis Location</h2>
+                  <p className="text-gray-400">{rental.rental_number}</p>
+                </div>
+                <button onClick={() => setShowRentalQuote(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+              </div>
+
+              {/* Quote Document - PDF Style */}
+              <div id="rental-quote-print" style={{fontFamily:'Helvetica,Arial,sans-serif'}}>
+                {/* Header: Logo left, Title right, navy line */}
+                <div style={{padding:'32px 32px 0 32px'}}>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'80px', width:'auto'}} />
+                    <div style={{textAlign:'right'}}>
+                      <p style={{fontSize:'24px', fontWeight:'bold', color:'#2D5A7B', margin:0}}>DEVIS LOCATION</p>
+                      <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>N° {rental.rental_number}</p>
+                    </div>
+                  </div>
+                  <div style={{height:'4px', background:'#2D5A7B', marginTop:'16px'}} />
+                </div>
+
+                {/* Info Bar */}
+                <div style={{display:'flex', background:'#f5f5f5', margin:'10px 32px 0 32px', padding:'10px 16px'}}>
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Date</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{formatDateWrittenFR(rental.quote_sent_at || new Date())}</p>
+                  </div>
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Validité</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>30 jours</p>
+                  </div>
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Conditions</p>
+                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{qd.paymentTerms || 'À réception de facture'}</p>
+                  </div>
+                </div>
+
+                {/* Client */}
+                <div style={{padding:'16px 32px 0 32px'}}>
+                  <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Client</p>
+                  <p style={{fontSize:'17px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>{company.name || qd.clientName || 'Client'}</p>
+                  {(qd.clientAddress || company.billing_address || company.address) && <p style={{fontSize:'12px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientAddress || company.billing_address || company.address}</p>}
+                  {(qd.clientPostalCode || company.billing_postal_code || company.postal_code || qd.clientCity || company.billing_city || company.city) && <p style={{fontSize:'12px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientPostalCode || company.billing_postal_code || company.postal_code} {qd.clientCity || company.billing_city || company.city}</p>}
+                </div>
+
+                {/* Location de Materiel block with purple left border */}
+                <div style={{margin:'16px 32px 0 32px', borderLeft:'3px solid #8B5CF6', paddingLeft:'12px'}}>
+                  <p style={{fontSize:'15px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Location de Matériel</p>
+                  <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Période : du {formatDateWrittenFR(period.start || rental.start_date)} au {formatDateWrittenFR(period.end || rental.end_date)} ({period.days || rentalDaysDisplay} jours)</p>
+                  {qd.deliveryTerms && <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Délai de livraison : {qd.deliveryTerms}</p>}
+                  <p style={{fontSize:'11px', color:'#505050', margin:0}}>- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
+                </div>
+
+                {/* Récapitulatif des Prix */}
+                <div style={{padding:'20px 32px 0 32px'}}>
+                  <p style={{fontSize:'16px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Récapitulatif des Prix</p>
+                  <table style={{width:'100%', borderCollapse:'collapse', fontSize:'11px'}}>
+                    <thead>
+                      <tr style={{background:'#1a1a2e'}}>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'left', fontWeight:'bold', width:'5%'}}>Qté</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'left', fontWeight:'bold', width:'45%'}}>Désignation</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'18%'}}>Tarif</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'12%'}}>Durée</th>
+                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'20%'}}>Total HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, idx) => {
+                        const rawName = item.item_name || 'Équipement';
+                        const serial = item.serial_number || '';
+                        const nameHasSerial = serial && rawName.includes(serial);
+                        const displayName = nameHasSerial ? rawName : (serial ? rawName + ' (SN: ' + serial + ')' : rawName);
+                        const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : '/jour';
+                        const appliedRate = parseFloat(item.applied_rate) || 0;
+                        const retailVal = parseFloat(item.retail_value) || 0;
+                        return (
+                        <Fragment key={idx}>
+                        {/* Device name bar - darker gray strip across full width */}
+                        <tr style={{background:'#e2e8f0', borderTop: idx > 0 ? '2px solid #cbd5e1' : 'none'}}>
+                          <td style={{padding:'8px 10px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>1</td>
+                          <td style={{padding:'8px 10px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>{displayName}</td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontSize:'11px', color:'#505050'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontSize:'11px', color:'#505050'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontWeight:'bold', fontSize:'12px', color:'#1a1a2e'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
+                        </tr>
+                        {/* Detail row: specs, insurance */}
+                        {(item.specs || retailVal > 0) && (
+                        <tr style={{background: idx % 2 === 0 ? '#fff' : '#fafafa'}}>
+                          <td style={{padding:'2px 10px 6px'}}></td>
+                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}} colSpan={2}>
+                            {item.specs && <p style={{fontSize:'10px', color:'#828282', margin:'0 0 2px 0'}}>{item.specs}</p>}
+                            {retailVal > 0 && <p style={{fontSize:'10px', color:'#828282', fontStyle:'italic', margin:'0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
+                          </td>
+                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}}></td>
+                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}}></td>
+                        </tr>
+                        )}
+                        </Fragment>);
+                      })}
+                      {(qd.shipping || 0) > 0 && (
+                        <tr style={{background:'#f5f5f5'}}>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}>1</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}>Frais de port</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right'}}>{parseFloat(qd.shipping).toFixed(2)} EUR</td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}></td>
+                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', fontWeight:'bold'}}>{parseFloat(qd.shipping).toFixed(2)} EUR</td>
+                        </tr>
+                      )}
+                      {(qd.discountAmount || 0) > 0 && (
+                        <tr style={{background:'#fffbeb'}}>
+                          <td style={{padding:'8px'}}>1</td>
+                          <td style={{padding:'8px', color:'#b41e1e'}}>{qd.discountType === 'percent' ? 'Remise (' + qd.discount + '%)' : 'Remise'}</td>
+                          <td style={{padding:'8px'}}></td>
+                          <td style={{padding:'8px'}}></td>
+                          <td style={{padding:'8px', textAlign:'right', fontWeight:'bold', color:'#b41e1e'}}>-{(qd.discountAmount || 0).toFixed(2)} EUR</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+
+                  {/* Navy Total Bar */}
+                  <div style={{background:'#2D5A7B', display:'flex', justifyContent:'flex-end', alignItems:'center', padding:'10px 16px', marginTop:'0'}}>
+                    <span style={{color:'white', fontWeight:'bold', fontSize:'14px', marginRight:'20px'}}>TOTAL HT</span>
+                    <span style={{color:'white', fontWeight:'bold', fontSize:'22px'}}>{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} EUR</span>
+                  </div>
+                </div>
+
+                {/* Conditions */}
+                <div style={{padding:'16px 32px 0 32px'}}>
+                  <p style={{fontSize:'11px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 6px 0'}}>Conditions Générales de Location</p>
+                  <div style={{fontSize:'11px', color:'#505050', lineHeight:'1.6'}}>
+                    <p style={{margin:'0 0 3px 0'}}>1. Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution.</p>
+                    <p style={{margin:'0 0 3px 0'}}>2. Utilisation conforme par personnel qualifié. Sous-location interdite sans accord écrit. Tout incident doit être signalé sous 48h par écrit.</p>
+                    <p style={{margin:'0 0 3px 0'}}>3. Le client doit souscrire une assurance « Bien Confié » couvrant : vol, incendie, dégâts des eaux, bris accidentel.</p>
+                    <p style={{margin:'0 0 3px 0'}}>4. Le matériel doit être restitué en bon état à la date convenue. Les dommages ou pièces manquantes seront facturés au coût de remise en état.</p>
+                    <p style={{margin:'0 0 3px 0'}}>5. Les jours de retard seront facturés au tarif journalier majoré de 50%. Lighthouse France pourra récupérer le matériel à tout moment.</p>
+                    <p style={{margin:0}}>6. Le non-respect des conditions peut entraîner la résiliation immédiate du contrat de location.</p>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {qd.notes && (
+                  <div style={{padding:'12px 32px 0 32px'}}>
+                    <p style={{fontSize:'11px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Notes</p>
+                    <p style={{fontSize:'11px', color:'#505050', margin:0}}>{qd.notes}</p>
+                  </div>
+                )}
+
+                {/* Signature Section */}
+                <div style={{margin:'20px 32px 0 32px', borderTop:'1px solid #ccc', paddingTop:'12px', display:'flex', alignItems:'flex-start'}}>
+                  <div style={{marginRight:'12px'}}>
+                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Établi par</p>
+                    <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:0}}>{qd.businessSettings?.quote_signatory || 'M. Meleney'}</p>
+                    <p style={{fontSize:'11px', color:'#505050', margin:'2px 0 0 0'}}>{qd.businessSettings?.company_name || 'Lighthouse France SAS'}</p>
+                  </div>
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'85px', height:'85px'}} />
+                  <div style={{marginLeft:'auto', textAlign:'center'}}>
+                    <p style={{fontSize:'10px', color:'#828282', margin:'0 0 4px 0'}}>Signature client</p>
+                    <div style={{width:'160px', height:'60px', border:'2px dashed #b4b4b4', borderRadius:'6px'}} />
+                    <p style={{fontSize:'9px', color:'#828282', margin:'4px 0 0 0'}}>Lu et approuvé</p>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{background:'#1a1a2e', padding:'8px 0', marginTop:'16px', textAlign:'center'}}>
+                  <p style={{color:'white', fontSize:'10px', fontWeight:'bold', margin:0}}>Lighthouse France SAS</p>
+                  <p style={{color:'#b4b4b4', fontSize:'9px', margin:'2px 0 0 0'}}>16, rue Paul Séjourné - 94000 CRÉTEIL - Tél. 01 43 77 28 07</p>
+                </div>
+              </div>
+
+              {/* Action Footer */}
+              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    const content = document.getElementById('rental-quote-print');
+                    if (!content) return;
+                    const printWindow = window.open('', '_blank');
+                    printWindow.document.write('<!DOCTYPE html><html><head><title>Devis ' + rental.rental_number + '</title><style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:Helvetica,Arial,sans-serif; } @media print { body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }</style></head><body>' + content.innerHTML + '</body></html>');
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
+                    Imprimer
+                  </button>
+                  <button onClick={async () => {
+                    try {
+                      const blob = await generateRentalQuotePDF({ rental, isSigned: false });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = rental.rental_number + '_devis.pdf';
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (err) { console.error('PDF download error:', err); }
+                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
+                    Telecharger PDF
+                  </button>
+                </div>
+                <div className="flex gap-3">
+                  {(rental.status === 'quote_sent') && (
+                    <>
+                      <button onClick={() => setShowRentalRevision(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">
+                        Demander modification
+                      </button>
+                      <button onClick={() => { setShowRentalQuote(false); setShowBCModal(true); }} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold">
+                        ✅ Approuver et soumettre BC
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Revision Sub-Modal */}
+              {showRentalRevision && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                    <textarea value={rentalRevisionNotes} onChange={e => setRentalRevisionNotes(e.target.value)} className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="Ex: modifier le tarif, changer la durée, retirer les frais de transport, etc." />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button onClick={() => setShowRentalRevision(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+                      <button onClick={handleRentalRevision} disabled={rentalProcessing || !rentalRevisionNotes.trim()} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
+                        {rentalProcessing ? 'Envoi...' : 'Envoyer la demande'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ); })()}
+
+        {/* ========== BC SUBMISSION MODAL (identical to RMA) ========== */}
+        {showBCModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-[#1E3A5F]">Soumettre Bon de Commande</h2>
+                  <button onClick={() => setShowBCModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-500">Référence location</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{rental.rental_number}</p>
+                  <p className="text-sm text-gray-500 mt-1">Total: {(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} € HT</p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Télécharger votre Bon de Commande (optionnel)
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#3B7AB4] transition-colors">
+                    <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(e) => setBcFileUpload(e.target.files?.[0] || null)} className="hidden" id="rental-bc-file" />
+                    <label htmlFor="rental-bc-file" className="cursor-pointer">
+                      {bcFileUpload ? (
+                        <div className="flex items-center justify-center gap-2 text-[#3B7AB4]">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          <span className="font-medium">{bcFileUpload.name}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                          <p className="text-sm text-gray-600">Cliquez pour télécharger ou glissez-déposez</p>
+                          <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (max 10MB)</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* OR Divider */}
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                  <span className="text-sm text-gray-500">ou</span>
+                  <div className="flex-1 h-px bg-gray-200"></div>
+                </div>
+
+                {/* Electronic Signature */}
+                <div className="bg-[#F5F9FC] rounded-lg p-4 border border-[#3B7AB4]/20">
+                  <h3 className="font-semibold text-[#1E3A5F] mb-4">Signature électronique</h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Nom complet du signataire *</label>
+                        <input type="text" value={signatureName} onChange={(e) => setSignatureName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent" placeholder="Prénom et Nom" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                        <input type="text" value={signatureDateDisplay} readOnly className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600" />
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tapez "Lu et approuvé" *</label>
+                      <input type="text" value={luEtApprouve} onChange={(e) => setLuEtApprouve(e.target.value)} className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent font-medium ${luEtApprouve.toLowerCase().trim() === 'lu et approuvé' ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-300'}`} placeholder="Lu et approuvé" />
+                    </div>
+                    
+                    {/* Signature Pad */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-gray-700">Signature manuscrite *</label>
+                        <button type="button" onClick={clearSignature} className="text-xs text-red-600 hover:text-red-700">Effacer</button>
+                      </div>
+                      <div className={`border-2 rounded-lg bg-white ${signatureData ? 'border-green-500' : 'border-gray-300 border-dashed'}`}>
+                        <canvas ref={canvasRef} width={400} height={150} className="w-full cursor-crosshair touch-none" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} />
+                      </div>
+                      {!signatureData && <p className="text-xs text-gray-500 mt-1">Dessinez votre signature ci-dessus</p>}
+                      {signatureData && <p className="text-xs text-green-600 mt-1">✓ Signature enregistrée</p>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Legal Terms */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="mt-1 w-4 h-4 text-[#3B7AB4] border-gray-300 rounded focus:ring-[#3B7AB4]" />
+                    <span className="text-sm text-gray-700">
+                      Je soussigné(e), <strong>{signatureName || '[Nom]'}</strong>, 
+                      accepte les conditions générales de location de Lighthouse France. Je reconnais que la garde du matériel me sera transférée dès réception et m'engage à souscrire une assurance « Bien Confié », à régler la facture selon les modalités convenues, et à restituer le matériel en bon état à la date convenue.
+                      Cette validation électronique a valeur de signature manuscrite conformément aux articles 1366 et 1367 du Code civil français.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+                <button onClick={() => setShowBCModal(false)} className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors">
+                  Annuler
+                </button>
+                <button onClick={submitRentalBC} disabled={submittingBC || !isSubmissionValid} className={`flex-1 py-3 rounded-lg font-medium transition-colors ${isSubmissionValid ? 'bg-[#1E3A5F] text-white hover:bg-[#2a4a6f]' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>
+                  {submittingBC ? 'Envoi en cours...' : 'Valider et soumettre'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Main Rentals List
+  const actionRequired = rentals.filter(r => r.status === 'quote_sent' || (r.status === 'waiting_bc' && r.bc_rejection_reason));
+  
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -13909,6 +15547,32 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
           + Nouvelle Location
         </button>
       </div>
+
+      {/* Action Required Banner */}
+      {actionRequired.length > 0 && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 mb-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+              <span className="text-red-600 font-bold text-lg">!</span>
+            </div>
+            <div>
+              <p className="font-bold text-red-800">Action requise — {actionRequired.length} location(s)</p>
+              <p className="text-sm text-red-600">Devis reçu(s), veuillez soumettre votre bon de commande</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {actionRequired.map(r => (
+              <button key={r.id} onClick={() => setSelectedRental(r)} className="w-full text-left bg-white rounded-lg p-3 border border-red-200 hover:bg-red-50 flex justify-between items-center">
+                <div>
+                  <span className="font-bold text-red-800">{r.rental_number}</span>
+                  <span className="text-sm text-gray-500 ml-3">{r.rental_request_items?.length || 0} équipement(s)</span>
+                </div>
+                <span className="font-bold text-red-700">{(r.quote_total_ht || 0).toFixed(2)} € HT →</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {rentals.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border">
@@ -13922,29 +15586,40 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh }) {
         </div>
       ) : (
         <div className="space-y-4">
-          {rentals.map(rental => (
-            <div key={rental.id} className="bg-white rounded-xl p-6 shadow-sm border hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-bold text-lg text-[#1E3A5F]">{rental.rental_number}</h3>
-                  <p className="text-sm text-gray-500">
-                    Du {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')}
-                    {' '}({rental.rental_days || Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000 * 60 * 60 * 24)) + 1} jours)
-                  </p>
+          {rentals.map(rental => {
+            const isAction = rental.status === 'quote_sent';
+            return (
+              <div key={rental.id} 
+                onClick={() => setSelectedRental(rental)}
+                className={`bg-white rounded-xl p-6 shadow-sm border cursor-pointer hover:shadow-md transition-shadow ${isAction ? 'border-red-300 bg-red-50/30' : ''}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold text-lg text-[#1E3A5F]">{rental.rental_number}</h3>
+                    <p className="text-sm text-gray-500">
+                      Du {new Date(rental.start_date).toLocaleDateString('fr-FR')} au {new Date(rental.end_date).toLocaleDateString('fr-FR')}
+                      {' '}({rental.rental_days || Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000 * 60 * 60 * 24)) + 1} jours)
+                    </p>
+                  </div>
+                  {getStatusBadge(rental.status)}
                 </div>
-                {getStatusBadge(rental.status)}
+                
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    {rental.rental_request_items?.length || 0} équipement(s)
+                    {rental.rental_request_items?.slice(0, 2).map((item, i) => (
+                      <span key={i} className="ml-2 text-xs bg-gray-100 px-2 py-0.5 rounded">{item.item_name}</span>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {(rental.quote_total_ht || 0) > 0 && (
+                      <span className="text-lg font-bold text-[#8B5CF6]">{parseFloat(rental.quote_total_ht).toFixed(2)} € HT</span>
+                    )}
+                    <span className="text-gray-400">→</span>
+                  </div>
+                </div>
               </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">
-                  {rental.rental_request_items?.length || 0} équipement(s)
-                </div>
-                <div className="text-lg font-bold text-[#8B5CF6]">
-                  €{(rental.quote_total_ht || rental.quote_subtotal || 0).toFixed(2)} HT
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -14244,12 +15919,14 @@ function HomePage({ t, setPage, setShowLegalPage }) {
               </div>
             </div>
             <div className="border-t border-white/10 pt-8 text-center">
-              <p className="text-white/40 text-sm">© 2025 Lighthouse France SAS. Tous droits réservés.</p>
-              <div className="flex justify-center gap-4 mt-2">
-                <button onClick={() => setShowLegalPage('mentions')} className="text-white/30 text-xs hover:text-white/60">Mentions légales</button>
-                <span className="text-white/20">|</span>
-                <button onClick={() => setShowLegalPage('privacy')} className="text-white/30 text-xs hover:text-white/60">Politique de confidentialité</button>
-              </div>
+              <p className="text-white/40 text-sm">© 2025 Lighthouse France SAS. Tous droits reserves.</p>
+              {setShowLegalPage && (
+                <div className="mt-2 flex justify-center gap-4">
+                  <button onClick={() => setShowLegalPage('mentions')} className="text-white/30 text-xs hover:text-white/60">Mentions légales</button>
+                  <span className="text-white/20">|</span>
+                  <button onClick={() => setShowLegalPage('privacy')} className="text-white/30 text-xs hover:text-white/60">Politique de confidentialité</button>
+                </div>
+              )}
             </div>
           </div>
         </footer>
@@ -14261,194 +15938,14 @@ function HomePage({ t, setPage, setShowLegalPage }) {
 // ============================================
 // LOGIN PAGE
 // ============================================
-// ============================================
-// PASSWORD RECOVERY PAGE
-// ============================================
-function PasswordRecoveryPage({ supabase, notify, onComplete }) {
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  const hasMinLength = newPassword.length >= 8;
-  const hasUppercase = /[A-Z]/.test(newPassword);
-  const hasNumber = /[0-9]/.test(newPassword);
-  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword);
-  const passwordsMatch = newPassword === confirmPassword && confirmPassword.length > 0;
-  const allValid = hasMinLength && hasUppercase && hasNumber && hasSpecial && passwordsMatch;
-
-  const handleReset = async (e) => {
-    e.preventDefault();
-    if (!allValid) {
-      notify('Le mot de passe ne respecte pas les exigences', 'error');
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setLoading(false);
-    if (error) {
-      notify(`Erreur: ${error.message}`, 'error');
-    } else {
-      setDone(true);
-    }
-  };
-
-  const Check = ({ ok, text }) => (
-    <div className={`flex items-center gap-2 text-xs ${ok ? 'text-green-400' : 'text-white/40'}`}>
-      <span>{ok ? '✓' : '○'}</span><span>{text}</span>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen">
-      {/* Fixed Background — same as login */}
-      <div className="fixed inset-0 z-0">
-        <img 
-          src="/images/products/hero-background.png" 
-          alt="" 
-          className="w-full h-full object-cover"
-          onError={(e) => { e.target.style.display = 'none'; }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
-      </div>
-
-      {/* Content */}
-      <div className="relative z-10">
-        {/* Header */}
-        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center gap-3">
-                <img 
-                  src="/images/logos/lighthouse-logo.png" 
-                  alt="Lighthouse France" 
-                  className="h-10 w-auto invert brightness-0 invert"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'flex';
-                  }}
-                />
-                <div className="items-center gap-2 hidden text-white">
-                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
-                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Reset Form */}
-        <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
-          <div className="w-full max-w-md">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
-              <div className="px-6 py-8 text-center border-b border-white/10">
-                <img 
-                  src="/images/logos/lighthouse-logo.png" 
-                  alt="Lighthouse France" 
-                  className="h-14 w-auto mx-auto mb-3 invert brightness-0 invert"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'block';
-                  }}
-                />
-                <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
-                <p className="text-white/60 mt-2">Réinitialisation du mot de passe</p>
-              </div>
-
-              {done ? (
-                <div className="p-6 text-center">
-                  <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <h2 className="text-lg font-bold text-white mb-2">Mot de passe modifié !</h2>
-                  <p className="text-white/60 text-sm mb-6">Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.</p>
-                  <button
-                    onClick={onComplete}
-                    className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors"
-                  >
-                    Se connecter
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleReset} className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-white/80 mb-1">Nouveau mot de passe *</label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={newPassword}
-                        onChange={e => setNewPassword(e.target.value)}
-                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="••••••••"
-                        required
-                      />
-                      <button 
-                        type="button" 
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 text-sm"
-                      >
-                        {showPassword ? 'Cacher' : 'Voir'}
-                      </button>
-                    </div>
-                    {/* Password requirements */}
-                    {newPassword.length > 0 && (
-                      <div className="mt-3 space-y-1 bg-white/5 rounded-lg p-3">
-                        <Check ok={hasMinLength} text="8 caractères minimum" />
-                        <Check ok={hasUppercase} text="Une lettre majuscule" />
-                        <Check ok={hasNumber} text="Un chiffre" />
-                        <Check ok={hasSpecial} text="Un caractère spécial (!@#$...)" />
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-white/80 mb-1">Confirmer *</label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      className={`w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent ${
-                        confirmPassword && !passwordsMatch ? 'border-red-400/50' : 'border-white/20'
-                      }`}
-                      placeholder="••••••••"
-                      required
-                    />
-                    {confirmPassword && !passwordsMatch && (
-                      <p className="text-xs text-red-400 mt-1">Les mots de passe ne correspondent pas</p>
-                    )}
-                    {passwordsMatch && (
-                      <p className="text-xs text-green-400 mt-1">✓ Les mots de passe correspondent</p>
-                    )}
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={loading || !allValid}
-                    className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loading ? 'Modification...' : 'Réinitialiser le mot de passe'}
-                  </button>
-                </form>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// LOGIN PAGE
-// ============================================
-function LoginPage({ t, login, setPage, supabase, notify }) {
+function LoginPage({ t, login, setPage }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [forgotMode, setForgotMode] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -14459,25 +15956,21 @@ function LoginPage({ t, login, setPage, supabase, notify }) {
     setLoading(false);
   };
 
-  const handleForgotPassword = async (e) => {
+  const handleResetPassword = async (e) => {
     e.preventDefault();
-    if (!email) {
-      setError('Veuillez entrer votre adresse email');
-      return;
-    }
-    setLoading(true);
+    if (!email) { setError('Veuillez entrer votre adresse email'); return; }
+    setResetLoading(true);
     setError('');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/customer?recovery=1'
-    });
-    setLoading(false);
-    if (error) {
-      setError(error.message);
-    } else {
-      // Set flag so we know this is a recovery when we come back
-      try { localStorage.setItem('lhf_password_recovery', 'pending'); } catch {}
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/customer#reset'
+      });
+      if (resetError) throw resetError;
       setResetSent(true);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de l\'envoi');
     }
+    setResetLoading(false);
   };
 
   return (
@@ -14539,106 +16032,96 @@ function LoginPage({ t, login, setPage, supabase, notify }) {
                 <p className="text-white/60 mt-2">Portail de Service</p>
               </div>
               
-              {forgotMode ? (
-                resetSent ? (
-                  <div className="p-6 text-center">
-                    <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-2">Email envoyé</h3>
-                    <p className="text-white/60 text-sm mb-6">
-                      Si un compte existe pour <span className="text-white font-medium">{email}</span>, vous recevrez un lien de réinitialisation.
-                    </p>
-                    <button
-                      onClick={() => { setForgotMode(false); setResetSent(false); setError(''); }}
-                      className="text-[#00A651] font-semibold hover:text-[#00c564]"
-                    >
-                      Retour à la connexion
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={handleForgotPassword} className="p-6 space-y-4">
-                    <p className="text-white/60 text-sm mb-2">Entrez votre adresse email pour recevoir un lien de réinitialisation.</p>
-                    <div>
-                      <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="votre@email.com"
-                        required
-                      />
-                    </div>
-                    {error && (
-                      <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
-                        {error}
-                      </div>
-                    )}
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
-                    >
-                      {loading ? 'Envoi...' : 'Envoyer le lien'}
-                    </button>
-                    <div className="text-center">
-                      <button type="button" onClick={() => { setForgotMode(false); setError(''); }} className="text-white/60 hover:text-white text-sm">
-                        Retour à la connexion
-                      </button>
-                    </div>
-                  </form>
-                )
-              ) : (
-                <>
-                  <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="votre@email.com"
-                        required
-                      />
-                    </div>
-                    
-                    <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="block text-sm font-medium text-white/80">Mot de passe</label>
-                        <button type="button" onClick={() => { setForgotMode(true); setError(''); }} className="text-xs text-[#00A651] hover:text-[#00c564]">
-                          Mot de passe oublié?
+              <form onSubmit={resetMode ? handleResetPassword : handleSubmit} className="p-6 space-y-4">
+                {resetMode ? (
+                  <>
+                    {resetSent ? (
+                      <div className="text-center py-4">
+                        <p className="text-4xl mb-3">📧</p>
+                        <p className="text-white font-bold text-lg mb-2">Email envoyé !</p>
+                        <p className="text-white/60 text-sm">Si un compte existe avec l'adresse <strong className="text-white">{email}</strong>, vous recevrez un lien de réinitialisation.</p>
+                        <button type="button" onClick={() => { setResetMode(false); setResetSent(false); setError(''); }} className="mt-4 text-[#00A651] font-semibold hover:text-[#00c564]">
+                          ← Retour à la connexion
                         </button>
                       </div>
-                      <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="••••••••"
-                        required
-                      />
-                    </div>
-                    
-                    {error && (
-                      <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
-                        {error}
-                      </div>
+                    ) : (
+                      <>
+                        <div className="text-center mb-2">
+                          <p className="text-white font-bold text-lg">Mot de passe oublié ?</p>
+                          <p className="text-white/60 text-sm">Entrez votre email pour recevoir un lien de réinitialisation</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                            placeholder="votre@email.com"
+                            required
+                          />
+                        </div>
+                        {error && (
+                          <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">{error}</div>
+                        )}
+                        <button type="submit" disabled={resetLoading} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50">
+                          {resetLoading ? 'Envoi...' : 'Envoyer le lien'}
+                        </button>
+                        <div className="text-center">
+                          <button type="button" onClick={() => { setResetMode(false); setError(''); }} className="text-white/60 hover:text-white text-sm">
+                            ← Retour à la connexion
+                          </button>
+                        </div>
+                      </>
                     )}
-                    
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
-                    >
-                      {loading ? 'Connexion...' : 'Se connecter'}
+                  </>
+                ) : (
+                  <>
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="votre@email.com"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-white/80">Mot de passe</label>
+                    <button type="button" onClick={() => { setResetMode(true); setError(''); }} className="text-xs text-[#00A651] hover:text-[#00c564] font-medium">
+                      Mot de passe oublié ?
                     </button>
-                  </form>
-                </>
-              )}
+                  </div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+                
+                {error && (
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
+                    {error}
+                  </div>
+                )}
+                
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Connexion...' : 'Se connecter'}
+                </button>
+                  </>
+                )}
+              </form>
               
               <div className="px-6 pb-6 text-center">
                 <p className="text-white/60">
@@ -14659,8 +16142,7 @@ function LoginPage({ t, login, setPage, supabase, notify }) {
 // ============================================
 // REGISTER PAGE
 // ============================================
-function RegisterPage({ t, register, setPage, supabase, notify }) {
-  // Check for invite token in URL
+function RegisterPage({ t, register, setPage, notify }) {
   const urlParams = new URLSearchParams(window.location.search);
   const inviteToken = urlParams.get('invite') || '';
   const inviteEmail = urlParams.get('email') || '';
@@ -14705,177 +16187,90 @@ function RegisterPage({ t, register, setPage, supabase, notify }) {
 
   return (
     <div className="min-h-screen">
-      {/* Fixed Background */}
       <div className="fixed inset-0 z-0">
-        <img 
-          src="/images/products/hero-background.png" 
-          alt="" 
-          className="w-full h-full object-cover"
-          onError={(e) => { e.target.style.display = 'none'; }}
-        />
+        <img src="/images/products/hero-background.png" alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
         <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
       </div>
-
-      {/* Content */}
       <div className="relative z-10">
-        {/* Header */}
         <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <div className="flex justify-between items-center h-16">
               <button onClick={() => setPage('home')} className="flex items-center gap-3">
-                <img 
-                  src="/images/logos/lighthouse-logo.png" 
-                  alt="Lighthouse France" 
-                  className="h-10 w-auto invert brightness-0 invert"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'flex';
-                  }}
-                />
+                <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse France" className="h-10 w-auto invert brightness-0 invert" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
                 <div className="items-center gap-2 hidden text-white">
                   <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
                   <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
                 </div>
               </button>
-              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">
-                ← Retour
-              </button>
+              <button onClick={() => setPage('home')} className="text-white/70 hover:text-white font-medium transition-colors">← Retour</button>
             </div>
           </div>
         </header>
-
-        {/* Register Form */}
         <div className="py-12 px-4">
           <div className="max-w-2xl mx-auto">
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
               <div className="bg-[#00A651]/20 backdrop-blur-sm px-6 py-6 border-b border-white/10">
                 <h1 className="text-xl font-bold text-white">{inviteMode ? 'Rejoindre une équipe' : 'Créer un compte'}</h1>
-                <p className="text-white/60 text-sm mt-1">{inviteMode ? 'Vous avez été invité à rejoindre une équipe existante' : 'Enregistrez votre société pour accéder au portail'}</p>
+                <p className="text-white/60 text-sm mt-1">{inviteMode ? "Vous avez été invité à rejoindre une équipe existante" : 'Enregistrez votre société pour accéder au portail'}</p>
               </div>
               
               <form onSubmit={handleSubmit} className="p-6 space-y-6">
                 {/* Company/Address/ID Sections - hide for invite mode */}
                 {!inviteMode && (<>
                 <div>
-                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
-                    Information Société
-                  </h2>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">Information Société</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-white/80 mb-1">Nom de la société *</label>
-                      <input
-                        type="text"
-                        value={formData.companyName}
-                        onChange={(e) => updateField('companyName', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        required={!inviteMode}
-                      />
+                      <input type="text" value={formData.companyName} onChange={(e) => updateField('companyName', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" required={!inviteMode} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Nom du contact *</label>
-                      <input
-                        type="text"
-                        value={formData.contactName}
-                        onChange={(e) => updateField('contactName', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        required
-                      />
+                      <input type="text" value={formData.contactName} onChange={(e) => updateField('contactName', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" required />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Téléphone</label>
-                      <input
-                        type="tel"
-                        value={formData.phone}
-                        onChange={(e) => updateField('phone', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="+33 1 23 45 67 89"
-                      />
+                      <input type="tel" value={formData.phone} onChange={(e) => updateField('phone', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="+33 1 23 45 67 89" />
                     </div>
                   </div>
                 </div>
 
-                {/* Address Section */}
                 <div>
-                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
-                    Adresse
-                  </h2>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">Adresse</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-white/80 mb-1">Adresse *</label>
-                      <input
-                        type="text"
-                        value={formData.address}
-                        onChange={(e) => updateField('address', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="16 Rue de la République"
-                        required
-                      />
+                      <input type="text" value={formData.address} onChange={(e) => updateField('address', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="16 Rue de la République" required />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Code Postal *</label>
-                      <input
-                        type="text"
-                        value={formData.postalCode}
-                        onChange={(e) => updateField('postalCode', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="75001"
-                        required
-                      />
+                      <input type="text" value={formData.postalCode} onChange={(e) => updateField('postalCode', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="75001" required />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Ville *</label>
-                      <input
-                        type="text"
-                        value={formData.city}
-                        onChange={(e) => updateField('city', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="Paris"
-                        required
-                      />
+                      <input type="text" value={formData.city} onChange={(e) => updateField('city', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="Paris" required />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Pays *</label>
-                      <input
-                        type="text"
-                        value={formData.country}
-                        onChange={(e) => updateField('country', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="France"
-                        required
-                      />
+                      <input type="text" value={formData.country} onChange={(e) => updateField('country', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="France" required />
                     </div>
                   </div>
                 </div>
 
-                {/* Company Identification */}
                 <div>
-                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
-                    Identification Société
-                  </h2>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">Identification Société</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">
                         {(formData.country || 'France').toLowerCase() === 'france' ? 'N° SIRET' : 'Company Registration Number'}
                       </label>
-                      <input
-                        type="text"
-                        value={formData.siret}
-                        onChange={(e) => updateField('siret', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder={(formData.country || 'France').toLowerCase() === 'france' ? 'XXX XXX XXX XXXXX' : 'Optional'}
-                      />
+                      <input type="text" value={formData.siret} onChange={(e) => updateField('siret', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder={(formData.country || 'France').toLowerCase() === 'france' ? 'XXX XXX XXX XXXXX' : 'Optional'} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">
                         {(formData.country || 'France').toLowerCase() === 'france' ? 'N° TVA Intracommunautaire' : 'VAT Number'}
                       </label>
-                      <input
-                        type="text"
-                        value={formData.vatNumber}
-                        onChange={(e) => updateField('vatNumber', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder={(formData.country || 'France').toLowerCase() === 'france' ? 'FR XX XXXXXXXXX' : 'e.g. DE123456789'}
-                      />
+                      <input type="text" value={formData.vatNumber} onChange={(e) => updateField('vatNumber', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder={(formData.country || 'France').toLowerCase() === 'france' ? 'FR XX XXXXXXXXX' : 'e.g. DE123456789'} />
                     </div>
                   </div>
                   <p className="text-white/40 text-xs mt-2">
@@ -14884,14 +16279,12 @@ function RegisterPage({ t, register, setPage, supabase, notify }) {
                       : 'These details will be used for invoicing. Leave blank if not applicable.'}
                   </p>
                 </div>
-                </>)} {/* end !inviteMode */}
+                </>)}
 
                 {/* Contact info for invite mode */}
                 {inviteMode && (
                   <div>
-                    <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
-                      Vos informations
-                    </h2>
+                    <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">Vos informations</h2>
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-white/80 mb-1">Votre nom complet *</label>
@@ -14907,79 +16300,39 @@ function RegisterPage({ t, register, setPage, supabase, notify }) {
 
                 {/* Account Section */}
                 <div>
-                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">
-                    Identifiants
-                  </h2>
+                  <h2 className="text-lg font-bold text-white mb-4 pb-2 border-b border-white/20">Identifiants</h2>
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-white/80 mb-1">Email *</label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => updateField('email', e.target.value)}
-                        className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent ${inviteMode ? 'opacity-70' : ''}`}
-                        required
-                        readOnly={inviteMode}
-                      />
+                      <input type="email" value={formData.email} onChange={(e) => updateField('email', e.target.value)} className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent ${inviteMode ? 'opacity-70' : ''}`} required readOnly={inviteMode} />
                       {inviteMode && <p className="text-xs text-white/40 mt-1">{"L'email doit correspondre à celui de l'invitation"}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Mot de passe *</label>
-                      <input
-                        type="password"
-                        value={formData.password}
-                        onChange={(e) => updateField('password', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        placeholder="Min. 8 car., 1 majuscule, 1 chiffre, 1 spécial"
-                        required
-                      />
+                      <input type="password" value={formData.password} onChange={(e) => updateField('password', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="Min. 8 car., 1 majuscule, 1 chiffre, 1 spécial" required />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-white/80 mb-1">Confirmer *</label>
-                      <input
-                        type="password"
-                        value={formData.confirmPassword}
-                        onChange={(e) => updateField('confirmPassword', e.target.value)}
-                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                        required
-                      />
+                      <input type="password" value={formData.confirmPassword} onChange={(e) => updateField('confirmPassword', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" required />
                     </div>
                   </div>
                 </div>
                 
                 {/* GDPR Consent */}
                 <label className="flex items-start gap-3 p-3 bg-white/5 border border-white/10 rounded-lg cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={gdprConsent}
-                    onChange={e => setGdprConsent(e.target.checked)}
-                    className="mt-1 w-4 h-4"
-                    required
-                  />
+                  <input type="checkbox" checked={gdprConsent} onChange={e => setGdprConsent(e.target.checked)} className="mt-1 w-4 h-4" required />
                   <span className="text-sm text-white/70">
                     {"J'accepte"} que Lighthouse France collecte et traite mes données personnelles conformément à sa politique de confidentialité. Mes données seront utilisées uniquement pour la gestion de mon compte et le suivi des demandes de service. *
                   </span>
                 </label>
                 
                 {error && (
-                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
-                    {error}
-                  </div>
+                  <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">{error}</div>
                 )}
                 
                 <div className="flex gap-4 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setPage('login')}
-                    className="flex-1 py-3 bg-white/10 border border-white/20 text-white rounded-lg font-medium hover:bg-white/20 transition-colors"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50"
-                  >
+                  <button type="button" onClick={() => setPage('login')} className="flex-1 py-3 bg-white/10 border border-white/20 text-white rounded-lg font-medium hover:bg-white/20 transition-colors">Annuler</button>
+                  <button type="submit" disabled={loading} className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50">
                     {loading ? 'Création...' : 'Créer le compte'}
                   </button>
                 </div>
@@ -14988,9 +16341,7 @@ function RegisterPage({ t, register, setPage, supabase, notify }) {
               <div className="px-6 pb-6 text-center">
                 <p className="text-white/60">
                   Déjà un compte?{' '}
-                  <button onClick={() => setPage('login')} className="text-[#00A651] font-semibold hover:text-[#00c564]">
-                    Se connecter
-                  </button>
+                  <button onClick={() => setPage('login')} className="text-[#00A651] font-semibold hover:text-[#00c564]">Se connecter</button>
                 </p>
               </div>
             </div>
@@ -15002,25 +16353,133 @@ function RegisterPage({ t, register, setPage, supabase, notify }) {
 }
 
 // ============================================
-// COOKIE CONSENT BANNER (CNIL/RGPD)
+// PASSWORD RECOVERY PAGE
+// ============================================
+function PasswordRecoveryPage({ supabase, notify, onComplete }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const hasMinLength = newPassword.length >= 8;
+  const hasUppercase = /[A-Z]/.test(newPassword);
+  const hasNumber = /[0-9]/.test(newPassword);
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword);
+  const passwordsMatch = newPassword === confirmPassword && confirmPassword.length > 0;
+  const allValid = hasMinLength && hasUppercase && hasNumber && hasSpecial && passwordsMatch;
+
+  const handleReset = async (e) => {
+    e.preventDefault();
+    if (!allValid) { notify('Le mot de passe ne respecte pas les exigences', 'error'); return; }
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setLoading(false);
+    if (error) { notify(`Erreur: ${error.message}`, 'error'); }
+    else { setDone(true); }
+  };
+
+  const Check = ({ ok, text }) => (
+    <div className={`flex items-center gap-2 text-xs ${ok ? 'text-green-400' : 'text-white/40'}`}>
+      <span>{ok ? '✓' : '○'}</span><span>{text}</span>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen">
+      <div className="fixed inset-0 z-0">
+        <img src="/images/products/hero-background.png" alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+      </div>
+      <div className="relative z-10">
+        <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center gap-3">
+                <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse France" className="h-10 w-auto invert brightness-0 invert" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                <div className="items-center gap-2 hidden text-white">
+                  <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                  <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+        <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+              <div className="px-6 py-8 text-center border-b border-white/10">
+                <img src="/images/logos/lighthouse-logo.png" alt="Lighthouse France" className="h-14 w-auto mx-auto mb-3 invert brightness-0 invert" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+                <h1 className="text-2xl font-bold text-white hidden">LIGHTHOUSE FRANCE</h1>
+                <p className="text-white/60 mt-2">Réinitialisation du mot de passe</p>
+              </div>
+              {done ? (
+                <div className="p-6 text-center">
+                  <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <h2 className="text-lg font-bold text-white mb-2">Mot de passe modifié !</h2>
+                  <p className="text-white/60 text-sm mb-6">Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.</p>
+                  <button onClick={onComplete} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors">
+                    Se connecter
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleReset} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-1">Nouveau mot de passe *</label>
+                    <div className="relative">
+                      <input type={showPassword ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="••••••••" required />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 text-sm">
+                        {showPassword ? 'Cacher' : 'Voir'}
+                      </button>
+                    </div>
+                    {newPassword.length > 0 && (
+                      <div className="mt-3 space-y-1 bg-white/5 rounded-lg p-3">
+                        <Check ok={hasMinLength} text="8 caractères minimum" />
+                        <Check ok={hasUppercase} text="Une lettre majuscule" />
+                        <Check ok={hasNumber} text="Un chiffre" />
+                        <Check ok={hasSpecial} text="Un caractère spécial (!@#$...)" />
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-1">Confirmer *</label>
+                    <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={`w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent ${confirmPassword && !passwordsMatch ? 'border-red-400/50' : 'border-white/20'}`} placeholder="••••••••" required />
+                    {confirmPassword && !passwordsMatch && <p className="text-xs text-red-400 mt-1">Les mots de passe ne correspondent pas</p>}
+                    {passwordsMatch && <p className="text-xs text-green-400 mt-1">✓ Les mots de passe correspondent</p>}
+                  </div>
+                  <button type="submit" disabled={loading || !allValid} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-semibold hover:bg-[#008f45] transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    {loading ? 'Modification...' : 'Réinitialiser le mot de passe'}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// COOKIE BANNER
 // ============================================
 function CookieBanner({ onAccept, onShowPolicy }) {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[90] bg-[#1E3A5F] border-t border-white/20 shadow-2xl">
-      <div className="max-w-5xl mx-auto px-4 py-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div className="flex-1">
-          <p className="text-white text-sm font-medium mb-1">🍪 Ce site utilise des cookies</p>
-          <p className="text-white/70 text-xs">
-            Nous utilisons uniquement des cookies essentiels au fonctionnement du service (authentification, session).
-            Aucun cookie publicitaire ou de suivi n{"'"}est utilisé.{' '}
-            <button onClick={onShowPolicy} className="text-[#00A651] underline hover:text-[#00c564]">
-              En savoir plus
-            </button>
+    <div className="fixed bottom-0 left-0 right-0 z-[90] bg-[#1E3A5F] text-white p-4 shadow-2xl border-t border-white/20">
+      <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center gap-4">
+        <div className="flex-1 text-sm text-white/80">
+          <p>
+            🍪 Ce site utilise des cookies strictement nécessaires au fonctionnement du portail (authentification, préférences). Aucun cookie publicitaire ni de traçage.{' '}
+            <button onClick={onShowPolicy} className="underline hover:text-white">En savoir plus</button>
           </p>
         </div>
         <button
           onClick={onAccept}
-          className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45] whitespace-nowrap text-sm"
+          className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45] transition-colors whitespace-nowrap"
         >
           Accepter
         </button>
@@ -15030,174 +16489,108 @@ function CookieBanner({ onAccept, onShowPolicy }) {
 }
 
 // ============================================
-// LEGAL PAGE MODAL (Privacy + Mentions Légales)
+// LEGAL PAGE MODAL
 // ============================================
 function LegalPageModal({ page, onClose }) {
   return (
-    <div className="fixed inset-0 z-[95] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b flex justify-between items-center bg-[#1E3A5F] text-white">
-          <h2 className="font-bold text-lg">
+    <div className="fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b flex justify-between items-center sticky top-0 bg-white rounded-t-2xl">
+          <h2 className="font-bold text-lg text-[#1E3A5F]">
             {page === 'privacy' ? 'Politique de confidentialité' : 'Mentions légales'}
           </h2>
-          <button onClick={onClose} className="text-white/70 hover:text-white text-xl">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
         </div>
-        <div className="p-6 overflow-y-auto prose prose-sm max-w-none">
-          {page === 'privacy' ? <PrivacyContent /> : <MentionsContent />}
+        <div className="p-6 overflow-y-auto text-sm text-gray-700 space-y-4">
+          {page === 'privacy' ? (
+            <>
+              <h3 className="font-bold text-[#1E3A5F] text-base">1. Responsable du traitement</h3>
+              <p>Lighthouse France SAS, 16 Rue Paul Séjourné, 94000 Créteil, France. Email : France@golighthouse.com</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">2. Données collectées</h3>
+              <p>Nous collectons les données suivantes lors de votre inscription et utilisation du portail :</p>
+              <p>— Données d'identification : nom, prénom, adresse email, numéro de téléphone</p>
+              <p>— Données d'entreprise : raison sociale, SIRET, numéro de TVA, adresses</p>
+              <p>— Données de service : demandes de service, historique des équipements, certificats</p>
+              <p>— Données techniques : logs de connexion, préférences de langue</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">3. Finalités du traitement</h3>
+              <p>Vos données sont traitées pour :</p>
+              <p>— La gestion de votre compte et l'authentification</p>
+              <p>— Le suivi des demandes de service (étalonnage, réparation)</p>
+              <p>— La facturation et la gestion commerciale</p>
+              <p>— La communication relative à vos demandes en cours</p>
+              <p>— Le respect de nos obligations légales (traçabilité ISO 17025, Code de Commerce)</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">4. Base légale</h3>
+              <p>Le traitement est fondé sur : l'exécution du contrat de service (Art. 6.1.b RGPD), le respect de nos obligations légales (Art. 6.1.c), et votre consentement pour les communications marketing (Art. 6.1.a).</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">5. Durée de conservation</h3>
+              <ul className="list-disc pl-5 space-y-1">
+                <li><strong>Données {"d'identification"} (nom, email, téléphone) :</strong> durée de la relation commerciale. Anonymisées sur demande via le portail.</li>
+                <li><strong>Données de facturation :</strong> 10 ans (Article L123-22 du Code de Commerce)</li>
+                <li><strong>Données {"d'étalonnage"} et certificats :</strong> 10 ans minimum (traçabilité métrologique ISO 17025)</li>
+                <li><strong>Historique des demandes de service :</strong> 10 ans (obligations contractuelles et qualité)</li>
+                <li><strong>Logs de connexion :</strong> 1 an</li>
+              </ul>
+              <p>
+                En cas de demande {"d'effacement"} (Article 17 RGPD), vos données personnelles sont anonymisées. Les enregistrements liés aux obligations légales, comptables et de traçabilité métrologique sont conservés sous forme anonymisée conformément à {"l'Article"} 17(3)(b) et (e) du RGPD.
+              </p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">6. Vos droits</h3>
+              <p>Conformément au RGPD, vous disposez des droits suivants :</p>
+              <p>— Droit d'accès (Art. 15), de rectification (Art. 16), d'effacement (Art. 17)</p>
+              <p>— Droit à la portabilité (Art. 20), d'opposition (Art. 21)</p>
+              <p>— Droit de limitation du traitement (Art. 18)</p>
+              <p>Pour exercer ces droits, utilisez les fonctions disponibles dans Paramètres {'>'} Sécurité, ou contactez-nous à France@golighthouse.com.</p>
+              <p>Vous pouvez également introduire une réclamation auprès de la CNIL (www.cnil.fr).</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">7. Cookies</h3>
+              <p>Ce portail utilise uniquement des cookies strictement nécessaires au fonctionnement (authentification, session, préférences de langue). Aucun cookie publicitaire ou de traçage n'est utilisé.</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">8. Transferts de données</h3>
+              <p>Vos données sont hébergées au sein de l'Union Européenne. En cas de transfert hors UE (services cloud), des garanties appropriées sont mises en place (clauses contractuelles types).</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">9. Sécurité</h3>
+              <p>Nous mettons en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données : chiffrement des communications (TLS), authentification sécurisée, contrôle {"d'accès"} basé sur les rôles, et sauvegardes régulières.</p>
+            </>
+          ) : (
+            <>
+              <h3 className="font-bold text-[#1E3A5F] text-base">1. Éditeur du site</h3>
+              <p>Lighthouse France SAS</p>
+              <p>Capital social : [à compléter]</p>
+              <p>Siège social : 16 Rue Paul Séjourné, 94000 Créteil, France</p>
+              <p>RCS Créteil — SIRET : [à compléter]</p>
+              <p>TVA Intracommunautaire : [à compléter]</p>
+              <p>Directeur de la publication : [à compléter]</p>
+              <p>Email : France@golighthouse.com</p>
+              <p>Téléphone : +33 (1) 43 77 28 07</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">2. Hébergeur</h3>
+              <p>Ce site est hébergé par Vercel Inc., 340 S Lemon Ave #4133, Walnut, CA 91789, USA.</p>
+              <p>Les données applicatives sont hébergées par Supabase Inc. au sein de l'Union Européenne.</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">3. Propriété intellectuelle</h3>
+              <p>L'ensemble du contenu de ce site (textes, images, logos, logiciels) est protégé par le droit de la propriété intellectuelle. Toute reproduction, même partielle, est interdite sans autorisation préalable.</p>
+              <p>LIGHTHOUSE® est une marque déposée de Lighthouse Worldwide Solutions, Inc.</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">4. Limitation de responsabilité</h3>
+              <p>Lighthouse France s'efforce d'assurer l'exactitude des informations diffusées sur ce portail mais ne saurait être tenue responsable des erreurs, omissions ou résultats obtenus suite à l'utilisation de ces informations.</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">5. Loi applicable</h3>
+              <p>Le présent site est soumis au droit français. En cas de litige, les tribunaux français seront seuls compétents. Conformément à la loi n° 2004-575 du 21 juin 2004 pour la confiance dans {"l'économie"} numérique, ces mentions légales sont accessibles à tout moment sur ce site.</p>
+
+              <h3 className="font-bold text-[#1E3A5F] text-base">6. Contact DPO</h3>
+              <p>Pour toute question relative à la protection de vos données personnelles :<br />Email : <strong>france@golighthouse.com</strong><br />Objet : « Protection des données personnelles »</p>
+            </>
+          )}
         </div>
-        <div className="px-6 py-3 border-t bg-gray-50 text-right">
-          <button onClick={onClose} className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg text-sm">Fermer</button>
+        <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl">
+          <button onClick={onClose} className="w-full py-2 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2a4f7a]">
+            Fermer
+          </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function PrivacyContent() {
-  return (
-    <div className="space-y-4 text-gray-700 text-sm">
-      <p className="text-xs text-gray-400">Dernière mise à jour : février 2025</p>
-      
-      <h3 className="font-bold text-[#1E3A5F] text-base">1. Responsable du traitement</h3>
-      <p>
-        Lighthouse France (Lighthouse Worldwide Solutions)<br />
-        16 Rue Paul Séjourné, 94000 Créteil, France<br />
-        Email : france@golighthouse.com
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">2. Données collectées</h3>
-      <p>Dans le cadre de nos services, nous collectons les données suivantes :</p>
-      <ul className="list-disc pl-5 space-y-1">
-        <li><strong>Données {"d'identification"} :</strong> nom, prénom, adresse email, numéro de téléphone</li>
-        <li><strong>Données professionnelles :</strong> nom de la société, adresse, SIRET, numéro de TVA</li>
-        <li><strong>Données de service :</strong> demandes de service (RMA), historique des équipements, correspondances</li>
-        <li><strong>Données techniques :</strong> adresse IP, données de connexion (logs de sécurité)</li>
-      </ul>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">3. Finalités du traitement</h3>
-      <p>Vos données sont traitées pour :</p>
-      <ul className="list-disc pl-5 space-y-1">
-        <li>La gestion de votre compte client et {"l'authentification"}</li>
-        <li>Le suivi de vos demandes de service (étalonnage, réparation)</li>
-        <li>{"L'établissement"} de devis et la facturation</li>
-        <li>La gestion des contrats {"d'étalonnage"}</li>
-        <li>La communication relative à vos commandes</li>
-      </ul>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">4. Base légale</h3>
-      <p>
-        Le traitement de vos données repose sur : {"l'exécution"} du contrat de service (Article 6.1.b du RGPD),
-        votre consentement (Article 6.1.a), et nos obligations légales (Article 6.1.c), notamment en matière de facturation et de traçabilité métrologique.
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">5. Durée de conservation</h3>
-      <ul className="list-disc pl-5 space-y-1">
-        <li><strong>Données {"d'identification"} (nom, email, téléphone) :</strong> durée de la relation commerciale. Anonymisées sur demande via le portail.</li>
-        <li><strong>Données de facturation :</strong> 10 ans (Article L123-22 du Code de Commerce)</li>
-        <li><strong>Données {"d'étalonnage"} et certificats :</strong> 10 ans minimum (traçabilité métrologique ISO 17025)</li>
-        <li><strong>Historique des demandes de service :</strong> 10 ans (obligations contractuelles et qualité)</li>
-        <li><strong>Logs de connexion :</strong> 1 an</li>
-      </ul>
-      <p>
-        En cas de demande {"d'effacement"} (Article 17 RGPD), vos données personnelles sont anonymisées. Les enregistrements liés aux obligations légales, comptables et de traçabilité métrologique sont conservés sous forme anonymisée conformément à {"l'Article"} 17(3)(b) et (e) du RGPD.
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">6. Vos droits</h3>
-      <p>Conformément au RGPD, vous disposez des droits suivants :</p>
-      <ul className="list-disc pl-5 space-y-1">
-        <li><strong>Droit {"d'accès"} :</strong> obtenir une copie de vos données personnelles</li>
-        <li><strong>Droit de rectification :</strong> corriger vos données inexactes</li>
-        <li><strong>Droit à {"l'effacement"} :</strong> demander {"l'anonymisation"} de vos données personnelles (nom, email, téléphone). Note importante : conformément à {"l'Article"} 17(3)(b) et (e) du RGPD, les données liées aux obligations légales et à la traçabilité métrologique sont conservées (factures : 10 ans — Code de Commerce Art. L123-22 ; certificats {"d'étalonnage"} : 10 ans — ISO 17025 ; historique des demandes de service). {"L'anonymisation"} est disponible dans Paramètres {">"} Sécurité.</li>
-        <li><strong>Droit à la portabilité :</strong> recevoir vos données dans un format structuré (disponible dans Paramètres {">"} Sécurité)</li>
-        <li><strong>Droit {"d'opposition"} :</strong> vous opposer au traitement de vos données</li>
-        <li><strong>Droit de limitation :</strong> demander la restriction du traitement</li>
-      </ul>
-      <p>
-        Pour exercer vos droits, contactez-nous à : <strong>france@golighthouse.com</strong>
-      </p>
-      <p>
-        Vous pouvez également déposer une réclamation auprès de la CNIL (Commission Nationale de {"l'Informatique"} et des Libertés) : <strong>www.cnil.fr</strong>
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">7. Cookies</h3>
-      <p>
-        Ce site utilise uniquement des <strong>cookies essentiels</strong> nécessaires au fonctionnement du service :
-      </p>
-      <ul className="list-disc pl-5 space-y-1">
-        <li><strong>Cookie {"d'authentification"} Supabase :</strong> maintien de votre session de connexion (durée : session)</li>
-        <li><strong>Préférence cookies :</strong> enregistrement de votre choix concernant les cookies (durée : 1 an)</li>
-      </ul>
-      <p>Aucun cookie publicitaire, analytique ou de suivi {"n'est"} utilisé.</p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">8. Transferts de données</h3>
-      <p>
-        Vos données sont hébergées au sein de {"l'Union"} Européenne. Dans le cadre de notre activité au sein du groupe
-        Lighthouse Worldwide Solutions, certaines données peuvent être partagées avec notre siège (États-Unis)
-        dans le respect des garanties appropriées (clauses contractuelles types de la Commission européenne).
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">9. Sécurité</h3>
-      <p>
-        Nous mettons en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données :
-        chiffrement des communications (TLS), authentification sécurisée, contrôle {"d'accès"} basé sur les rôles,
-        et sauvegardes régulières.
-      </p>
-    </div>
-  );
-}
-
-function MentionsContent() {
-  return (
-    <div className="space-y-4 text-gray-700 text-sm">
-      <h3 className="font-bold text-[#1E3A5F] text-base">1. Éditeur du site</h3>
-      <p>
-        <strong>Lighthouse France</strong> (filiale de Lighthouse Worldwide Solutions, Inc.)<br />
-        16 Rue Paul Séjourné<br />
-        94000 Créteil, France<br />
-        Email : france@golighthouse.com<br />
-        Téléphone : +33 (0)1 XX XX XX XX
-      </p>
-      <p>
-        Directeur de la publication : Marshall Meleney<br />
-        SIRET : disponible sur demande<br />
-        N° TVA Intracommunautaire : disponible sur demande
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">2. Hébergeur</h3>
-      <p>
-        Ce site est hébergé par :<br />
-        <strong>Vercel Inc.</strong><br />
-        340 S Lemon Ave #4133, Walnut, CA 91789, USA<br />
-        Les données sont stockées par <strong>Supabase Inc.</strong> (infrastructure cloud UE).
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">3. Propriété intellectuelle</h3>
-      <p>
-        {"L'ensemble"} du contenu de ce site (textes, images, logos, logiciels) est la propriété de
-        Lighthouse Worldwide Solutions ou de ses partenaires. Toute reproduction, même partielle,
-        est interdite sans autorisation préalable écrite.
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">4. Limitation de responsabilité</h3>
-      <p>
-        Lighthouse France {"s'efforce"} de fournir des informations aussi précises que possible sur ce portail.
-        Toutefois, la société ne saurait être tenue responsable des omissions, inexactitudes ou carences
-        dans la mise à jour des informations.
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">5. Loi applicable</h3>
-      <p>
-        Le présent site est soumis au droit français. En cas de litige, les tribunaux français seront
-        seuls compétents. Conformément à la loi n° 2004-575 du 21 juin 2004 pour la confiance dans
-        {"l'économie"} numérique, ces mentions légales sont accessibles à tout moment sur ce site.
-      </p>
-
-      <h3 className="font-bold text-[#1E3A5F] text-base">6. Contact DPO</h3>
-      <p>
-        Pour toute question relative à la protection de vos données personnelles :<br />
-        Email : <strong>france@golighthouse.com</strong><br />
-        Objet : « Protection des données personnelles »
-      </p>
     </div>
   );
 }
