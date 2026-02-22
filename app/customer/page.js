@@ -3031,6 +3031,7 @@ export default function CustomerPortal() {
   const [page, setPage] = useState('dashboard');
   const [previousPage, setPreviousPage] = useState('dashboard');
   const [pendingRentalId, setPendingRentalId] = useState(null);
+  const [pendingContractId, setPendingContractId] = useState(null);
   const [toast, setToast] = useState(null);
   const [cookieConsent, setCookieConsent] = useState(() => {
     try { return localStorage.getItem('lhf_cookie_consent') === 'accepted'; } catch { return false; }
@@ -3361,16 +3362,14 @@ export default function CustomerPortal() {
                 {t('newRequest')}
               </button>
               )}
-              {perms.canInvoice && (
-              <button onClick={() => setPage('contracts')} className={`font-medium ${page === 'contracts' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
-                Contrats
-              </button>
-              )}
-              <button onClick={() => setPage('rentals')} className={`font-medium ${page === 'rentals' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
-                Locations
+              <button onClick={() => setPage('my-orders')} className={`font-medium ${page === 'my-orders' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {lang === 'en' ? 'My Orders' : 'Mes Commandes'}
               </button>
               <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
+              </button>
+              <button onClick={() => setPage('invoices')} className={`font-medium ${page === 'invoices' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+                {lang === 'en' ? 'Invoices' : 'Factures'}
               </button>
               <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('settings')}
@@ -3399,7 +3398,7 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', ...(perms.canRequest ? ['new-request'] : []), ...(perms.canInvoice ? ['contracts'] : []), 'rentals', 'equipment', 'settings'].map(p => (
+            {['dashboard', ...(perms.canRequest ? ['new-request'] : []), 'my-orders', 'equipment', 'invoices', 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -3407,7 +3406,7 @@ export default function CustomerPortal() {
                   page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
                 }`}
               >
-                {p === 'new-request' ? t('newRequest') : p === 'contracts' ? 'Contrats' : p === 'rentals' ? 'Locations' : t(p)}
+                {p === 'new-request' ? t('newRequest') : p === 'my-orders' ? (lang === 'en' ? 'My Orders' : 'Mes Commandes') : p === 'invoices' ? (lang === 'en' ? 'Invoices' : 'Factures') : t(p)}
               </button>
             ))}
           </nav>
@@ -3426,6 +3425,7 @@ export default function CustomerPortal() {
             setSelectedRequest={setSelectedRequest}
             setPreviousPage={setPreviousPage}
             setPendingRentalId={setPendingRentalId}
+            setPendingContractId={setPendingContractId}
             perms={perms}
           />
         )}
@@ -3492,13 +3492,40 @@ export default function CustomerPortal() {
           />
         )}
         
-        {page === 'contracts' && perms.canInvoice && (
+        {page === 'my-orders' && (
+          <MyOrdersPage 
+            profile={profile}
+            requests={requests}
+            contracts={contracts}
+            t={t}
+            lang={lang}
+            setPage={setPage}
+            setSelectedRequest={setSelectedRequest}
+            setPreviousPage={setPreviousPage}
+            setPendingRentalId={setPendingRentalId}
+            setPendingContractId={setPendingContractId}
+            perms={perms}
+          />
+        )}
+
+        {page === 'invoices' && (
+          <InvoicesPage 
+            profile={profile}
+            t={t}
+            lang={lang}
+            notify={notify}
+          />
+        )}
+
+        {page === 'contracts' && (
           <ContractsPage 
             profile={profile}
             t={t}
             notify={notify}
             setPage={setPage}
             perms={perms}
+            pendingContractId={pendingContractId}
+            setPendingContractId={setPendingContractId}
           />
         )}
         
@@ -3537,7 +3564,8 @@ export default function CustomerPortal() {
               <h4 className="font-bold text-lg mb-3">Liens rapides</h4>
               <div className="space-y-2">
                 <button onClick={() => setPage('dashboard')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Tableau de bord</button>
-                <button onClick={() => setPage('new-request')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Nouvelle demande</button>
+                <button onClick={() => setPage('my-orders')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Mes Commandes</button>
+                <button onClick={() => setPage('invoices')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Factures</button>
                 <a href="https://golighthouse.fr" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse France</a>
               </div>
             </div>
@@ -3564,7 +3592,7 @@ export default function CustomerPortal() {
 // ============================================
 // DASHBOARD COMPONENT (Enhanced)
 // ============================================
-function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage, setPendingRentalId, perms }) {
+function Dashboard({ profile, requests, contracts, t, setPage, setSelectedRequest, setPreviousPage, setPendingRentalId, setPendingContractId, perms }) {
   const [messages, setMessages] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
@@ -3862,7 +3890,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                   .map(contract => (
                   <div 
                     key={contract.id}
-                    onClick={() => setPage('contracts')}
+                    onClick={() => { if (setPendingContractId) setPendingContractId(contract.id); setPage('contracts'); }}
                     className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
                   >
                     <div className="flex items-center gap-3">
@@ -5003,8 +5031,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           shipping_address_id: d.shipping_address_id || null
         });
 
-        // Save to equipment if checkbox is checked and not already from saved
-        if (d.saveDevice && !d.fromSaved) {
+        // Auto-save device to equipment (always, so customer can track history)
+        if (!d.fromSaved) {
           await supabase.from('equipment').upsert({
             company_id: profile.company_id,
             serial_number: d.serial_number,
@@ -5013,7 +5041,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
             brand: d.brand === 'other' ? d.brand_other : 'Lighthouse',
             equipment_type: d.device_type || 'particle_counter',
             added_by: profile.id
-          }, { onConflict: 'serial_number' });
+          }, { onConflict: 'serial_number' }).then(() => {});
         }
       }
 
@@ -12146,7 +12174,7 @@ function EditContractModal({ contract, notify, onClose, onSaved }) {
 // ============================================
 // CONTRACTS PAGE (Customer View)
 // ============================================
-function ContractsPage({ profile, t, notify, setPage, perms }) {
+function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, setPendingContractId }) {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedContract, setSelectedContract] = useState(null);
@@ -12196,6 +12224,17 @@ function ContractsPage({ profile, t, notify, setPage, perms }) {
   useEffect(() => {
     loadContracts();
   }, [loadContracts]);
+
+  // Auto-select contract from MyOrders navigation
+  useEffect(() => {
+    if (pendingContractId && contracts.length > 0 && !loading) {
+      const target = contracts.find(c => c.id === pendingContractId);
+      if (target) {
+        setSelectedContract(target);
+        if (setPendingContractId) setPendingContractId(null);
+      }
+    }
+  }, [pendingContractId, contracts, loading]);
 
   // Signature pad functions - IDENTICAL to RMA
   const startDrawing = (e) => {
@@ -15592,6 +15631,517 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// MY ORDERS PAGE (Unified view of all orders)
+// ============================================
+function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelectedRequest, setPreviousPage, setPendingRentalId, setPendingContractId, perms }) {
+  const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [rentals, setRentals] = useState([]);
+  const [loadingRentals, setLoadingRentals] = useState(true);
+
+  // Fetch rentals
+  useEffect(() => {
+    const fetchRentals = async () => {
+      if (!profile?.company_id) return;
+      const { data } = await supabase
+        .from('rental_requests')
+        .select('*, rental_request_items(*), companies(*)')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setRentals(data);
+      setLoadingRentals(false);
+    };
+    fetchRentals();
+  }, [profile?.company_id]);
+
+  // Separate RMAs and Parts orders
+  const rmas = (requests || []).filter(r => r.request_type !== 'parts');
+  const partsOrders = (requests || []).filter(r => r.request_type === 'parts');
+
+  // Status helpers
+  const getStatusColor = (status) => {
+    const colors = {
+      submitted: 'bg-blue-100 text-blue-700',
+      quote_sent: 'bg-amber-100 text-amber-700',
+      approved: 'bg-green-100 text-green-700',
+      shipped: 'bg-purple-100 text-purple-700',
+      received: 'bg-indigo-100 text-indigo-700',
+      in_progress: 'bg-cyan-100 text-cyan-700',
+      calibration: 'bg-cyan-100 text-cyan-700',
+      completed: 'bg-green-100 text-green-700',
+      invoiced: 'bg-emerald-100 text-emerald-700',
+      cancelled: 'bg-red-100 text-red-700',
+      active: 'bg-green-100 text-green-700',
+      expired: 'bg-gray-100 text-gray-500',
+      pending: 'bg-amber-100 text-amber-700',
+      confirmed: 'bg-green-100 text-green-700',
+      delivered: 'bg-blue-100 text-blue-700',
+      return_pending: 'bg-orange-100 text-orange-700',
+      returned: 'bg-gray-100 text-gray-600',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-600';
+  };
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      submitted: 'Soumise', rma_created: 'RMA créé', quote_sent: 'Devis envoyé', approved: 'Approuvée',
+      waiting: 'En attente', shipped: 'Expédiée', received: 'Reçue', in_queue: 'En file', 
+      calibration: 'En calibration', in_progress: 'En cours', qc: 'Contrôle qualité',
+      ready: 'Prête', return_shipped: 'Retour expédié', completed: 'Terminée', invoiced: 'Facturée',
+      cancelled: 'Annulée', active: 'Actif', expired: 'Expiré', quote: 'Devis',
+      pending: 'En attente', confirmed: 'Confirmée', delivered: 'Livrée',
+      return_pending: 'Retour en attente', returned: 'Retournée',
+    };
+    return labels[status] || status;
+  };
+
+  const isActive = (status) => !['completed', 'invoiced', 'cancelled', 'expired', 'returned'].includes(status);
+
+  // Search filter
+  const matchesSearch = (text) => {
+    if (!searchQuery) return true;
+    return (text || '').toLowerCase().includes(searchQuery.toLowerCase());
+  };
+
+  // Navigate to detail views
+  const openRMA = (request) => {
+    setSelectedRequest(request);
+    setPreviousPage('my-orders');
+    setPage('request-detail');
+  };
+
+  const openContract = (contract) => {
+    setPendingContractId(contract.id);
+    setPage('contracts');
+  };
+
+  const openRental = (rental) => {
+    setPendingRentalId(rental.id);
+    setPage('rentals');
+  };
+
+  // Filter chips
+  const filters = [
+    { id: 'all', label: 'Tout', icon: '📊', count: rmas.length + partsOrders.length + (contracts || []).length + rentals.length },
+    { id: 'rma', label: 'Étalonnage / Réparation', icon: '🔧', count: rmas.length },
+    { id: 'parts', label: 'Commandes de Pièces', icon: '📦', count: partsOrders.length },
+    { id: 'contracts', label: 'Contrats', icon: '📋', count: (contracts || []).length },
+    { id: 'rentals', label: 'Locations', icon: '📅', count: rentals.length },
+  ];
+
+  // Render an order card
+  const OrderCard = ({ item, type, onClick }) => {
+    const typeConfig = {
+      rma: { badge: '🔧 Étalonnage/Réparation', color: 'border-l-blue-500', bg: 'bg-blue-50' },
+      parts: { badge: '📦 Commande de Pièces', color: 'border-l-amber-500', bg: 'bg-amber-50' },
+      contract: { badge: '📋 Contrat', color: 'border-l-green-500', bg: 'bg-green-50' },
+      rental: { badge: '📅 Location', color: 'border-l-purple-500', bg: 'bg-purple-50' },
+    };
+    const cfg = typeConfig[type];
+
+    let ref = '';
+    let date = '';
+    let status = '';
+    let summary = '';
+    let active = false;
+
+    if (type === 'rma' || type === 'parts') {
+      ref = item.request_number || `#${item.id?.slice(0, 8)}`;
+      date = item.created_at;
+      status = item.status;
+      active = isActive(item.status);
+      if (type === 'rma') {
+        const deviceCount = item.request_devices?.length || 0;
+        summary = `${deviceCount} appareil${deviceCount > 1 ? 's' : ''} — ${item.requested_service || 'Service'}`;
+      } else {
+        summary = item.problem_description?.split('\n')[0]?.slice(0, 80) || 'Commande de pièces';
+      }
+    } else if (type === 'contract') {
+      ref = item.contract_number || `CTR-${item.id?.slice(0, 6)}`;
+      date = item.created_at;
+      status = item.status;
+      active = !['expired', 'cancelled', 'completed'].includes(item.status);
+      const deviceCount = item.contract_devices?.length || 0;
+      summary = `${deviceCount} appareil${deviceCount > 1 ? 's' : ''} — ${item.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
+    } else if (type === 'rental') {
+      ref = item.rental_number || `LOC-${item.id?.slice(0, 6)}`;
+      date = item.created_at;
+      status = item.status;
+      active = !['returned', 'cancelled', 'completed'].includes(item.status);
+      const itemCount = item.rental_request_items?.length || 0;
+      summary = `${itemCount} appareil${itemCount > 1 ? 's' : ''}`;
+    }
+
+    return (
+      <button
+        onClick={onClick}
+        className={`w-full bg-white rounded-xl shadow-sm border-l-4 ${cfg.color} p-5 hover:shadow-md transition-all text-left group`}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-2">
+              <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${cfg.bg}`}>{cfg.badge}</span>
+              {active && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
+            </div>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="font-bold text-[#1E3A5F] text-lg">{ref}</span>
+              <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${getStatusColor(status)}`}>
+                {getStatusLabel(status)}
+              </span>
+            </div>
+            <p className="text-gray-600 text-sm truncate">{summary}</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-xs text-gray-400">{date ? new Date(date).toLocaleDateString('fr-FR') : '—'}</p>
+            <span className="text-gray-300 group-hover:text-[#3B7AB4] transition-colors text-xl mt-2 block">→</span>
+          </div>
+        </div>
+      </button>
+    );
+  };
+
+  // Render a section
+  const renderSection = (title, icon, items, type) => {
+    if (items.length === 0) return null;
+    const filteredItems = items.filter(item => {
+      if (type === 'rma' || type === 'parts') {
+        return matchesSearch(item.request_number) || matchesSearch(item.problem_description) || 
+               matchesSearch(item.requested_service) || matchesSearch(item.serial_number) ||
+               item.request_devices?.some(d => matchesSearch(d.serial_number) || matchesSearch(d.model_name));
+      }
+      if (type === 'contract') {
+        return matchesSearch(item.contract_number) || matchesSearch(item.contract_type) ||
+               item.contract_devices?.some(d => matchesSearch(d.serial_number) || matchesSearch(d.model_name));
+      }
+      if (type === 'rental') {
+        return matchesSearch(item.rental_number) || 
+               item.rental_request_items?.some(ri => matchesSearch(ri.equipment_name));
+      }
+      return true;
+    });
+    if (filteredItems.length === 0) return null;
+
+    const activeItems = filteredItems.filter(i => isActive(i.status));
+    const completedItems = filteredItems.filter(i => !isActive(i.status));
+
+    return (
+      <div className="mb-8">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-2xl">{icon}</span>
+          <h2 className="text-lg font-bold text-[#1E3A5F]">{title}</h2>
+          <span className="text-sm text-gray-400">({filteredItems.length})</span>
+        </div>
+        
+        {activeItems.length > 0 && (
+          <div className="space-y-3 mb-4">
+            {activeItems.map(item => (
+              <OrderCard 
+                key={item.id} 
+                item={item} 
+                type={type} 
+                onClick={() => type === 'rma' || type === 'parts' ? openRMA(item) : type === 'contract' ? openContract(item) : openRental(item)} 
+              />
+            ))}
+          </div>
+        )}
+
+        {completedItems.length > 0 && (
+          <details className="group">
+            <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 mb-3 flex items-center gap-2">
+              <span className="group-open:rotate-90 transition-transform">▶</span>
+              Historique ({completedItems.length})
+            </summary>
+            <div className="space-y-3 opacity-75">
+              {completedItems.map(item => (
+                <OrderCard 
+                  key={item.id} 
+                  item={item} 
+                  type={type} 
+                  onClick={() => type === 'rma' || type === 'parts' ? openRMA(item) : type === 'contract' ? openContract(item) : openRental(item)} 
+                />
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">{lang === 'en' ? 'My Orders' : 'Mes Commandes'}</h1>
+          <p className="text-gray-500 text-sm mt-1">{lang === 'en' ? 'All your requests, contracts, and rentals in one place' : 'Toutes vos demandes, contrats et locations en un seul endroit'}</p>
+        </div>
+        {perms?.canRequest && (
+          <button onClick={() => setPage('new-request')} className="px-5 py-2.5 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008C44] shadow-sm">
+            + {lang === 'en' ? 'New Request' : 'Nouvelle demande'}
+          </button>
+        )}
+      </div>
+
+      {/* Search */}
+      <div className="mb-6">
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder={lang === 'en' ? 'Search by reference, serial number, model...' : 'Rechercher par référence, n° série, modèle...'}
+            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
+        {filters.map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+              filter === f.id 
+                ? 'bg-[#1E3A5F] text-white shadow-md' 
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            <span>{f.icon}</span>
+            <span>{f.label}</span>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === f.id ? 'bg-white/20' : 'bg-gray-100'}`}>{f.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      {loadingRentals ? (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3B7AB4] mx-auto mb-4" />
+          <p className="text-gray-400">{lang === 'en' ? 'Loading...' : 'Chargement...'}</p>
+        </div>
+      ) : (
+        <div>
+          {(filter === 'all' || filter === 'rma') && renderSection('Étalonnage / Réparation', '🔧', rmas, 'rma')}
+          {(filter === 'all' || filter === 'parts') && renderSection('Commandes de Pièces', '📦', partsOrders, 'parts')}
+          {(filter === 'all' || filter === 'contracts') && renderSection('Contrats', '📋', contracts || [], 'contract')}
+          {(filter === 'all' || filter === 'rentals') && renderSection('Locations', '📅', rentals, 'rental')}
+          
+          {/* Empty state */}
+          {rmas.length === 0 && partsOrders.length === 0 && (contracts || []).length === 0 && rentals.length === 0 && (
+            <div className="text-center py-16">
+              <div className="text-6xl mb-4">📋</div>
+              <h3 className="text-xl font-bold text-gray-400 mb-2">{lang === 'en' ? 'No orders yet' : 'Aucune commande'}</h3>
+              <p className="text-gray-400 mb-6">{lang === 'en' ? 'Submit your first request to get started' : 'Soumettez votre première demande pour commencer'}</p>
+              {perms?.canRequest && (
+                <button onClick={() => setPage('new-request')} className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008C44]">
+                  + {lang === 'en' ? 'New Request' : 'Nouvelle demande'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// INVOICES PAGE
+// ============================================
+function InvoicesPage({ profile, t, lang, notify }) {
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      if (!profile?.company_id) return;
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false });
+      if (data) setInvoices(data);
+      if (error) console.log('Invoices table may not exist yet:', error.message);
+      setLoading(false);
+    };
+    fetchInvoices();
+  }, [profile?.company_id]);
+
+  const getStatusColor = (status) => {
+    const colors = {
+      draft: 'bg-gray-100 text-gray-600',
+      sent: 'bg-blue-100 text-blue-700',
+      pending: 'bg-amber-100 text-amber-700',
+      paid: 'bg-green-100 text-green-700',
+      overdue: 'bg-red-100 text-red-700',
+      cancelled: 'bg-gray-100 text-gray-500',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-600';
+  };
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      draft: 'Brouillon', sent: 'Envoyée', pending: 'En attente', 
+      paid: 'Payée', overdue: 'En retard', cancelled: 'Annulée',
+    };
+    return labels[status] || status;
+  };
+
+  const filters = [
+    { id: 'all', label: 'Toutes', count: invoices.length },
+    { id: 'pending', label: 'En attente', count: invoices.filter(i => ['sent', 'pending'].includes(i.status)).length },
+    { id: 'overdue', label: 'En retard', count: invoices.filter(i => i.status === 'overdue').length },
+    { id: 'paid', label: 'Payées', count: invoices.filter(i => i.status === 'paid').length },
+  ];
+
+  const filteredInvoices = invoices.filter(inv => {
+    if (filter === 'pending') return ['sent', 'pending'].includes(inv.status);
+    if (filter === 'overdue') return inv.status === 'overdue';
+    if (filter === 'paid') return inv.status === 'paid';
+    return true;
+  }).filter(inv => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (inv.invoice_number || '').toLowerCase().includes(q) ||
+           (inv.description || '').toLowerCase().includes(q);
+  });
+
+  // Summary stats
+  const totalDue = invoices.filter(i => ['sent', 'pending', 'overdue'].includes(i.status)).reduce((sum, i) => sum + (i.total_amount || 0), 0);
+  const totalOverdue = invoices.filter(i => i.status === 'overdue').reduce((sum, i) => sum + (i.total_amount || 0), 0);
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1E3A5F]">{lang === 'en' ? 'Invoices' : 'Factures'}</h1>
+          <p className="text-gray-500 text-sm mt-1">{lang === 'en' ? 'View and manage your invoices' : 'Consultez et gérez vos factures'}</p>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Total Due' : 'Total dû'}</p>
+          <p className="text-2xl font-bold text-[#1E3A5F]">{totalDue.toFixed(2)} €</p>
+        </div>
+        <div className={`rounded-xl p-5 shadow-sm border ${totalOverdue > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
+          <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Overdue' : 'En retard'}</p>
+          <p className={`text-2xl font-bold ${totalOverdue > 0 ? 'text-red-600' : 'text-[#1E3A5F]'}`}>{totalOverdue.toFixed(2)} €</p>
+        </div>
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Total Invoices' : 'Total factures'}</p>
+          <p className="text-2xl font-bold text-[#1E3A5F]">{invoices.length}</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="mb-6">
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder={lang === 'en' ? 'Search invoices...' : 'Rechercher une facture...'}
+            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+          />
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+        {filters.map(f => (
+          <button
+            key={f.id}
+            onClick={() => setFilter(f.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+              filter === f.id 
+                ? 'bg-[#1E3A5F] text-white shadow-md' 
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            {f.label}
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === f.id ? 'bg-white/20' : 'bg-gray-100'}`}>{f.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Invoice list */}
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3B7AB4] mx-auto mb-4" />
+          <p className="text-gray-400">{lang === 'en' ? 'Loading...' : 'Chargement...'}</p>
+        </div>
+      ) : filteredInvoices.length > 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">{lang === 'en' ? 'Invoice' : 'Facture'}</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">{lang === 'en' ? 'Date' : 'Date'}</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">{lang === 'en' ? 'Description' : 'Description'}</th>
+                <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase">{lang === 'en' ? 'Amount' : 'Montant'}</th>
+                <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">{lang === 'en' ? 'Status' : 'Statut'}</th>
+                <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">{lang === 'en' ? 'Due Date' : 'Échéance'}</th>
+                <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">PDF</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filteredInvoices.map(inv => (
+                <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-4">
+                    <span className="font-bold text-[#1E3A5F]">{inv.invoice_number || '—'}</span>
+                  </td>
+                  <td className="px-5 py-4 text-sm text-gray-500 hidden sm:table-cell">
+                    {inv.created_at ? new Date(inv.created_at).toLocaleDateString('fr-FR') : '—'}
+                  </td>
+                  <td className="px-5 py-4 text-sm text-gray-600 hidden md:table-cell truncate max-w-[250px]">
+                    {inv.description || '—'}
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <span className="font-bold text-[#1E3A5F]">{(inv.total_amount || 0).toFixed(2)} €</span>
+                    {inv.tax_amount > 0 && <p className="text-xs text-gray-400">TVA: {inv.tax_amount.toFixed(2)} €</p>}
+                  </td>
+                  <td className="px-5 py-4 text-center">
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${getStatusColor(inv.status)}`}>
+                      {getStatusLabel(inv.status)}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 text-sm text-center hidden sm:table-cell">
+                    {inv.due_date ? (
+                      <span className={inv.status === 'overdue' ? 'text-red-600 font-medium' : 'text-gray-500'}>
+                        {new Date(inv.due_date).toLocaleDateString('fr-FR')}
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td className="px-5 py-4 text-center">
+                    {inv.pdf_url ? (
+                      <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="text-[#3B7AB4] hover:text-[#1E3A5F]" title="Télécharger">
+                        📄
+                      </a>
+                    ) : <span className="text-gray-300">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="text-center py-16">
+          <div className="text-6xl mb-4">🧾</div>
+          <h3 className="text-xl font-bold text-gray-400 mb-2">{lang === 'en' ? 'No invoices' : 'Aucune facture'}</h3>
+          <p className="text-gray-400">{lang === 'en' ? 'Your invoices will appear here once generated' : 'Vos factures apparaîtront ici une fois générées'}</p>
         </div>
       )}
     </div>
