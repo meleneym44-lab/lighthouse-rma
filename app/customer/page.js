@@ -3095,93 +3095,64 @@ export default function CustomerPortal() {
   // Auth check
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: p } = await supabase.from('profiles')
-          .select('*, companies(*)')
-          .eq('id', session.user.id)
-          .single();
-        if (p) {
-          if (p.role === 'lh_admin' || p.role === 'lh_employee') {
-            window.location.href = '/admin';
-            return;
-          }
-          if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
-            await supabase.auth.signOut({ scope: 'local' });
-            setLoading(false);
-            return;
-          }
-          setUser(session.user);
-          setProfile(p);
-          if (p.preferred_language) setLang(p.preferred_language);
-          else setLang('fr');
-          await loadData(p);
-        } else {
-          // No profile - try processing pending invite or registration
-          const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
-          if (processed) {
-            const { data: newP } = await supabase.from('profiles')
-              .select('*, companies(*)')
-              .eq('id', session.user.id)
-              .single();
-            if (newP) {
-              setUser(session.user);
-              setProfile(newP);
-              if (newP.preferred_language) setLang(newP.preferred_language);
-              else setLang('fr');
-              setNeedsSetup(true); // New invite user needs to set name + password
-              await loadData(newP);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: p } = await supabase.from('profiles')
+            .select('*, companies(*)')
+            .eq('id', session.user.id)
+            .single();
+          if (p) {
+            if (p.role === 'lh_admin' || p.role === 'lh_employee') {
+              window.location.href = '/admin';
+              return;
+            }
+            if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
+              await supabase.auth.signOut({ scope: 'local' });
               setLoading(false);
               return;
             }
+            setUser(session.user);
+            setProfile(p);
+            if (p.preferred_language) setLang(p.preferred_language);
+            else setLang('fr');
+            await loadData(p);
+          } else {
+            // No profile - try processing pending invite or registration
+            try {
+              const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
+              if (processed) {
+                const { data: newP } = await supabase.from('profiles')
+                  .select('*, companies(*)')
+                  .eq('id', session.user.id)
+                  .single();
+                if (newP) {
+                  setUser(session.user);
+                  setProfile(newP);
+                  setNeedsSetup(true);
+                  await loadData(newP);
+                  setLoading(false);
+                  return;
+                }
+              }
+            } catch (inviteErr) {
+              console.error('Invite processing error:', inviteErr);
+            }
+            await supabase.auth.signOut({ scope: 'local' });
           }
-          await supabase.auth.signOut({ scope: 'local' });
         }
+      } catch (err) {
+        console.error('Auth check error:', err);
       }
       setLoading(false);
     };
     checkAuth();
 
-    // Listen for auth events (password recovery)
+    // Listen for auth events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
-        setLoading(false);
-      }
-      if (event === 'SIGNED_IN' && session?.user && !profile) {
-        // User just verified email or signed in - check for profile
-        const { data: p } = await supabase.from('profiles')
-          .select('*, companies(*)')
-          .eq('id', session.user.id)
-          .single();
-        if (p) {
-          if (p.role === 'lh_admin' || p.role === 'lh_employee') {
-            window.location.href = '/admin';
-            return;
-          }
-          setUser(session.user);
-          setProfile(p);
-          if (p.preferred_language) setLang(p.preferred_language);
-          else setLang('fr');
-          setPage('dashboard');
-          await loadData(p);
-        } else {
-          // No profile - process invite
-          const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
-          if (processed) {
-            const { data: newP } = await supabase.from('profiles')
-              .select('*, companies(*)')
-              .eq('id', session.user.id)
-              .single();
-            if (newP) {
-              setUser(session.user);
-              setProfile(newP);
-              setNeedsSetup(true); // New invite user needs to set name + password
-              await loadData(newP);
-            }
-          }
-        }
         setLoading(false);
       }
     });
