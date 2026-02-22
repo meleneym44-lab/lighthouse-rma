@@ -3040,7 +3040,6 @@ export default function CustomerPortal() {
   const [showLegalPage, setShowLegalPage] = useState(null); // 'privacy' | 'mentions' | null
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
-  const authProcessedRef = useRef(false);
   
   // Data
   const [requests, setRequests] = useState([]);
@@ -3117,7 +3116,6 @@ export default function CustomerPortal() {
             setProfile(p);
             if (p.preferred_language) setLang(p.preferred_language);
             else setLang('fr');
-            authProcessedRef.current = true;
             await loadData(p);
           } else {
             // No profile - try processing pending invite or registration
@@ -3132,7 +3130,6 @@ export default function CustomerPortal() {
                   setUser(session.user);
                   setProfile(newP);
                   setNeedsSetup(true);
-                  authProcessedRef.current = true;
                   await loadData(newP);
                   setLoading(false);
                   return;
@@ -3156,43 +3153,6 @@ export default function CustomerPortal() {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
-        setLoading(false);
-      }
-      // Handle invite email link click (user arrives with session from email token)
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
-        // Only process if checkAuth hasn't already handled this
-        if (authProcessedRef.current) return;
-        authProcessedRef.current = true;
-        try {
-          const { data: p } = await supabase.from('profiles')
-            .select('*, companies(*)')
-            .eq('id', session.user.id)
-            .single();
-          if (p) {
-            setUser(session.user);
-            setProfile(p);
-            if (p.preferred_language) setLang(p.preferred_language);
-            else setLang('fr');
-            setPage('dashboard');
-            await loadData(p);
-          } else {
-            const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
-            if (processed) {
-              const { data: newP } = await supabase.from('profiles')
-                .select('*, companies(*)')
-                .eq('id', session.user.id)
-                .single();
-              if (newP) {
-                setUser(session.user);
-                setProfile(newP);
-                setNeedsSetup(true);
-                await loadData(newP);
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Auth state change error:', err);
-        }
         setLoading(false);
       }
     });
