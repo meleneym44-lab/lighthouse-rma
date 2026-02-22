@@ -21146,7 +21146,8 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
       )}
     </div>
   );
-}({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-commande/manual' }) {
+}
+function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-commande/manual' }) {
   const t = k => k;
   const [uploading, setUploading] = useState(false);
   const [urlMode, setUrlMode] = useState(false);
