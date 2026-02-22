@@ -3214,7 +3214,7 @@ export default function CustomerPortal() {
           id: authData.user.id,
           email: formData.email,
           full_name: formData.contactName,
-          role: 'customer',
+          role: invite.role || 'customer',
           company_id: invite.company_id,
           phone: formData.phone || null,
           invitation_status: 'active',
@@ -3384,6 +3384,7 @@ export default function CustomerPortal() {
               <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
               </button>
+              {perms.canInvoice && (
               <button onClick={() => setPage('invoices')} className={`font-medium relative ${page === 'invoices' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {lang === 'en' ? 'Invoices' : 'Factures'}
                 {unseenInvoiceCount > 0 && (
@@ -3392,6 +3393,7 @@ export default function CustomerPortal() {
                   </span>
                 )}
               </button>
+              )}
               <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('settings')}
               </button>
@@ -3419,7 +3421,7 @@ export default function CustomerPortal() {
 
           {/* Mobile nav */}
           <nav className="md:hidden flex gap-2 pb-3 overflow-x-auto">
-            {['dashboard', ...(perms.canRequest ? ['new-request'] : []), 'my-orders', 'equipment', 'invoices', 'settings'].map(p => (
+            {['dashboard', ...(perms.canRequest ? ['new-request'] : []), 'my-orders', 'equipment', ...(perms.canInvoice ? ['invoices'] : []), 'settings'].map(p => (
               <button
                 key={p}
                 onClick={() => setPage(p)}
@@ -3534,7 +3536,7 @@ export default function CustomerPortal() {
           />
         )}
 
-        {page === 'invoices' && (
+        {page === 'invoices' && perms.canInvoice && (
           <InvoicesPage 
             profile={profile}
             t={t}
@@ -3847,6 +3849,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                 <span className="animate-pulse">⚠</span> Action requise
               </h3>
               <p className="text-sm text-red-600 mb-3">Les demandes suivantes nécessitent votre attention</p>
+              {!perms?.canRequest && (
+                <p className="text-xs text-red-400 mb-3 italic">🔒 Contactez votre administrateur pour approuver ces demandes</p>
+              )}
               <div className="space-y-2">
                 {/* RMA Requests */}
                 {serviceRequests
@@ -6927,7 +6932,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   const [teamMembers, setTeamMembers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [inviteData, setInviteData] = useState({ email: '', can_view: true, can_request: false, can_invoice: false });
+  const [inviteData, setInviteData] = useState({ email: '', access_level: 'viewer' });
   const [lastInviteLink, setLastInviteLink] = useState('');
   const [loadingTeam, setLoadingTeam] = useState(false);
   const [editingIdentifiers, setEditingIdentifiers] = useState(false);
@@ -6968,6 +6973,30 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   }, [profile?.company_id, isAdmin]);
 
   // Invite team member
+  // Map access level to permissions
+  const accessLevelToPerms = (level) => {
+    switch (level) {
+      case 'admin': return { role: 'admin', can_view: true, can_request: true, can_invoice: true };
+      case 'billing': return { role: 'customer', can_view: true, can_request: true, can_invoice: true };
+      case 'requester': return { role: 'customer', can_view: true, can_request: true, can_invoice: false };
+      case 'viewer': default: return { role: 'customer', can_view: true, can_request: false, can_invoice: false };
+    }
+  };
+
+  const getAccessLevel = (member) => {
+    if (member.role === 'admin') return 'admin';
+    if (member.can_invoice) return 'billing';
+    if (member.can_request) return 'requester';
+    return 'viewer';
+  };
+
+  const accessLevelLabels = {
+    viewer: { label: '👁 Consultation', desc: 'Voir les demandes et l\'historique, sans pouvoir soumettre ou approuver', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+    requester: { label: '📝 Demandes', desc: 'Consulter + soumettre et approuver des demandes de service', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+    billing: { label: '💳 Facturation', desc: 'Consulter + soumettre des demandes + accès aux factures', color: 'bg-amber-100 text-amber-700 border-amber-300' },
+    admin: { label: '👑 Administrateur', desc: 'Accès complet : gestion de l\'équipe, factures, demandes', color: 'bg-purple-100 text-purple-700 border-purple-300' }
+  };
+
   const inviteTeamMember = async (e) => {
     e.preventDefault();
     if (!inviteData.email) {
@@ -6980,14 +7009,15 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     const token = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
+    const permsForLevel = accessLevelToPerms(inviteData.access_level);
     
     const { error } = await supabase.from('team_invitations').insert({
       company_id: profile.company_id,
       email: inviteData.email.toLowerCase(),
-      role: 'customer',
-      can_view: inviteData.can_view,
-      can_request: inviteData.can_request,
-      can_invoice: inviteData.can_invoice,
+      role: permsForLevel.role,
+      can_view: permsForLevel.can_view,
+      can_request: permsForLevel.can_request,
+      can_invoice: permsForLevel.can_invoice,
       invited_by: profile.id,
       token,
       expires_at: expiresAt.toISOString()
@@ -7010,7 +7040,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
     setLastInviteLink(inviteLink);
     
-    setInviteData({ email: '', can_view: true, can_request: false, can_invoice: false });
+    setInviteData({ email: '', access_level: 'viewer' });
     
     const { data: invites } = await supabase
       .from('team_invitations')
@@ -7021,55 +7051,26 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   };
 
   // Toggle member permission
-  const togglePermission = async (memberId, permKey, newValue) => {
+  const setMemberAccessLevel = async (memberId, level) => {
     if (memberId === profile.id) {
       notify('Vous ne pouvez pas modifier vos propres permissions', 'error');
       return;
     }
-    const { error } = await supabase
-      .from('profiles')
-      .update({ [permKey]: newValue })
-      .eq('id', memberId);
-    if (error) {
-      notify(`Erreur: ${error.message}`, 'error');
-    } else {
-      notify('Permission mise à jour!');
-      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, [permKey]: newValue } : m));
+    const permsForLevel = accessLevelToPerms(level);
+    
+    if (level === 'admin') {
+      if (!confirm('Promouvoir ce membre en administrateur? Il pourra gérer toute l\'équipe.')) return;
     }
-  };
 
-  // Promote to admin
-  const promoteToAdmin = async (memberId) => {
-    if (!confirm('Promouvoir ce membre en administrateur? Il pourra gérer toute l\'équipe.')) return;
     const { error } = await supabase
       .from('profiles')
-      .update({ role: 'admin', can_view: true, can_request: true, can_invoice: true })
+      .update(permsForLevel)
       .eq('id', memberId);
     if (error) {
       notify(`Erreur: ${error.message}`, 'error');
     } else {
-      notify('Membre promu administrateur!');
-      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: 'admin', can_view: true, can_request: true, can_invoice: true } : m));
-    }
-  };
-
-  // Demote from admin
-  const demoteFromAdmin = async (memberId) => {
-    const otherAdmins = teamMembers.filter(m => m.role === 'admin' && m.id !== memberId && m.invitation_status === 'active');
-    if (otherAdmins.length === 0) {
-      notify('Impossible: il doit rester au moins un administrateur', 'error');
-      return;
-    }
-    if (!confirm('Rétrograder cet administrateur? Il gardera ses permissions actuelles mais ne pourra plus gérer l\'équipe.')) return;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: 'customer' })
-      .eq('id', memberId);
-    if (error) {
-      notify(`Erreur: ${error.message}`, 'error');
-    } else {
-      notify('Administrateur rétrogradé');
-      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, role: 'customer' } : m));
+      notify('Niveau d\'accès mis à jour!');
+      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, ...permsForLevel } : m));
     }
   };
 
@@ -7820,41 +7821,32 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                           </div>
                           {member.id !== profile.id && (
                             <div className="flex items-center gap-2 flex-wrap">
-                              {/* Permission toggles */}
-                              {[
-                                { key: 'can_view', label: '👁 Voir', desc: 'Voir les demandes' },
-                                { key: 'can_request', label: '📝 Demander', desc: 'Créer des demandes' },
-                                { key: 'can_invoice', label: '💳 Facturer', desc: 'Voir contrats/factures' }
-                              ].map(perm => (
-                                <button
-                                  key={perm.key}
-                                  onClick={() => togglePermission(member.id, perm.key, !member[perm.key])}
-                                  title={perm.desc}
-                                  className={`px-2 py-1 text-xs rounded-lg border ${
-                                    member[perm.key] 
-                                      ? 'bg-green-50 border-green-300 text-green-700' 
-                                      : 'bg-gray-50 border-gray-200 text-gray-400'
-                                  }`}
-                                >
-                                  {perm.label}
-                                </button>
-                              ))}
-                              {member.role !== 'admin' && (
-                                <button
-                                  onClick={() => promoteToAdmin(member.id)}
-                                  className="px-2 py-1 text-xs text-purple-600 border border-purple-200 rounded-lg hover:bg-purple-50"
-                                >
-                                  👑 Promouvoir
-                                </button>
-                              )}
-                              {member.role === 'admin' && (
-                                <button
-                                  onClick={() => demoteFromAdmin(member.id)}
-                                  className="px-2 py-1 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100"
-                                >
-                                  Rétrograder
-                                </button>
-                              )}
+                              {/* Access level selector */}
+                              <select
+                                value={getAccessLevel(member)}
+                                onChange={e => {
+                                  const newLevel = e.target.value;
+                                  if (newLevel === 'admin' && getAccessLevel(member) !== 'admin') {
+                                    setMemberAccessLevel(member.id, newLevel);
+                                  } else if (newLevel !== 'admin' && getAccessLevel(member) === 'admin') {
+                                    const otherAdmins = teamMembers.filter(m => m.role === 'admin' && m.id !== member.id && m.invitation_status === 'active');
+                                    if (otherAdmins.length === 0) {
+                                      notify('Impossible: il doit rester au moins un administrateur', 'error');
+                                      return;
+                                    }
+                                    if (!confirm('Rétrograder cet administrateur?')) return;
+                                    setMemberAccessLevel(member.id, newLevel);
+                                  } else {
+                                    setMemberAccessLevel(member.id, newLevel);
+                                  }
+                                }}
+                                className={`px-3 py-1.5 text-sm font-medium rounded-lg border cursor-pointer ${accessLevelLabels[getAccessLevel(member)].color}`}
+                              >
+                                <option value="viewer">👁 Consultation</option>
+                                <option value="requester">📝 Demandes</option>
+                                <option value="billing">💳 Facturation</option>
+                                <option value="admin">👑 Admin</option>
+                              </select>
                               <button
                                 onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
                                 className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
@@ -7917,11 +7909,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                           <div>
                             <p className="font-medium text-amber-800">{invite.email}</p>
                             <p className="text-xs text-amber-600">
-                              {[
-                                invite.can_view && '👁️ Consulter',
-                                invite.can_request && '📋 Demandes',
-                                invite.can_invoice && '💳 Facturation'
-                              ].filter(Boolean).join(' • ') || 'Aucune permission'}
+                              {accessLevelLabels[invite.role === 'admin' ? 'admin' : invite.can_invoice ? 'billing' : invite.can_request ? 'requester' : 'viewer']?.label || '👁 Consultation'}
                               {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
                             </p>
                           </div>
@@ -8430,29 +8418,27 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Niveau d'accès</label>
                 <div className="space-y-2">
-                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
-                    <input type="checkbox" checked={inviteData.can_view} onChange={e => setInviteData({ ...inviteData, can_view: e.target.checked })} className="w-4 h-4" />
-                    <div>
-                      <p className="font-medium text-sm">👁 Voir les demandes</p>
-                      <p className="text-xs text-gray-500">Consulter toutes les demandes de l'entreprise</p>
-                    </div>
-                  </label>
-                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
-                    <input type="checkbox" checked={inviteData.can_request} onChange={e => setInviteData({ ...inviteData, can_request: e.target.checked })} className="w-4 h-4" />
-                    <div>
-                      <p className="font-medium text-sm">📝 Créer des demandes</p>
-                      <p className="text-xs text-gray-500">Soumettre de nouvelles demandes de service</p>
-                    </div>
-                  </label>
-                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
-                    <input type="checkbox" checked={inviteData.can_invoice} onChange={e => setInviteData({ ...inviteData, can_invoice: e.target.checked })} className="w-4 h-4" />
-                    <div>
-                      <p className="font-medium text-sm">💳 Facturation & contrats</p>
-                      <p className="text-xs text-gray-500">Voir les contrats, devis et factures</p>
-                    </div>
-                  </label>
+                  {(['viewer', 'requester', 'billing', 'admin']).map(level => (
+                    <label key={level} className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      inviteData.access_level === level 
+                        ? `${accessLevelLabels[level].color} border-current` 
+                        : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <input 
+                        type="radio" 
+                        name="access_level" 
+                        checked={inviteData.access_level === level} 
+                        onChange={() => setInviteData({ ...inviteData, access_level: level })} 
+                        className="mt-1 w-4 h-4" 
+                      />
+                      <div>
+                        <p className="font-medium text-sm">{accessLevelLabels[level].label}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{accessLevelLabels[level].desc}</p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
               
@@ -8467,7 +8453,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                   type="button"
                   onClick={() => {
                     setShowInviteModal(false);
-                    setInviteData({ email: '', can_view: true, can_request: false, can_invoice: false });
+                    setInviteData({ email: '', access_level: 'viewer' });
                   }}
                   className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg"
                 >
