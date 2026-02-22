@@ -20642,6 +20642,39 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
               {contract.status === 'active' && (
                 <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium text-sm">✅ Contrat Actif</span>
               )}
+              <button
+                onClick={async () => {
+                  const contractNum = contract.contract_number || 'ce contrat';
+                  if (!confirm(`⚠️ Supprimer ${contractNum} ?\n\nCette action est irréversible. Tous les appareils et messages associés seront supprimés.`)) return;
+                  setSaving(true);
+                  try {
+                    // Unlink any RMAs referencing this contract
+                    const deviceIds = (contract.contract_devices || []).map(d => d.id).filter(Boolean);
+                    if (deviceIds.length > 0) {
+                      await supabase.from('request_devices').update({ contract_device_id: null }).in('contract_device_id', deviceIds);
+                    }
+                    await supabase.from('service_requests').update({ contract_id: null }).eq('contract_id', contract.id);
+                    // Delete messages, devices, then contract
+                    await supabase.from('messages').delete().eq('contract_id', contract.id);
+                    await supabase.from('contract_devices').delete().eq('contract_id', contract.id);
+                    const { error } = await supabase.from('contracts').delete().eq('id', contract.id);
+                    if (error) throw error;
+                    notify('🗑️ Contrat supprimé');
+                    onUpdate();
+                    onClose();
+                  } catch (err) {
+                    console.error('Delete error:', err);
+                    notify('Erreur: ' + err.message, 'error');
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="px-3 py-2 bg-red-500/20 hover:bg-red-500 text-red-200 hover:text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                title="Supprimer ce contrat"
+              >
+                🗑️
+              </button>
             </div>
           </div>
         </div>
@@ -20728,6 +20761,7 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                                   .update({ company_id: null, company_name_manual: company.name })
                                   .eq('id', contract.id);
                                 if (error) { notify('Erreur: ' + error.message, 'error'); return; }
+                                setContract(prev => ({ ...prev, company_id: null, company_name_manual: company.name, companies: null }));
                                 notify('🔓 Client délié du contrat');
                                 onUpdate();
                               }}
@@ -20745,13 +20779,14 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                               onChange={async (e) => {
                                 const cid = e.target.value;
                                 if (!cid) return;
-                                const selectedName = clients?.find(c => c.id === cid)?.name;
-                                if (!confirm(`Lier ce contrat à "${selectedName}" ?`)) { e.target.value = ''; return; }
+                                const selectedClient = clients?.find(c => c.id === cid);
+                                if (!confirm(`Lier ce contrat à "${selectedClient?.name}" ?`)) { e.target.value = ''; return; }
                                 const { error } = await supabase.from('contracts')
                                   .update({ company_id: cid, company_name_manual: null })
                                   .eq('id', contract.id);
                                 if (error) { notify('Erreur: ' + error.message, 'error'); return; }
-                                notify(`🔗 Contrat lié à ${selectedName}`);
+                                setContract(prev => ({ ...prev, company_id: cid, company_name_manual: null, companies: selectedClient }));
+                                notify(`🔗 Contrat lié à ${selectedClient?.name}`);
                                 onUpdate();
                               }}
                               className="mt-1 w-full text-xs border border-amber-300 rounded px-2 py-1 bg-amber-50"
@@ -21816,7 +21851,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
               cat.models.forEach(m => {
                 inserts.push({
                   contract_id: contract.id,
-                  serial_number: null,
+                  serial_number: '',
                   model_name: m.name,
                   device_type: catalog?.deviceType || 'particle_counter',
                   nickname: cat.id,
