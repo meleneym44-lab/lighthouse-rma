@@ -3093,100 +3093,75 @@ export default function CustomerPortal() {
   const refresh = useCallback(() => loadData(profile), [loadData, profile]);
 
   // Auth check
-  const userLoadedRef = useRef(false);
-
   useEffect(() => {
-    const processSession = async (session) => {
-      if (!session?.user) return false;
-      if (userLoadedRef.current) return true; // Already processed
-      
-      console.log('[Auth] Processing session for:', session.user.email);
-      
-      const { data: p } = await supabase.from('profiles')
-        .select('*, companies(*)')
-        .eq('id', session.user.id)
-        .single();
-      
-      if (p) {
-        if (p.role === 'lh_admin' || p.role === 'lh_employee') {
-          window.location.href = '/admin';
-          return true;
-        }
-        if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
-          await supabase.auth.signOut({ scope: 'local' });
-          return false;
-        }
-        setUser(session.user);
-        setProfile(p);
-        if (p.preferred_language) setLang(p.preferred_language);
-        else setLang('fr');
-        userLoadedRef.current = true;
-        await loadData(p);
-        return true;
-      } else {
-        // No profile - try processing pending invite
-        console.log('[Auth] No profile found, processing invite...');
-        try {
-          const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
-          if (processed) {
-            const { data: newP } = await supabase.from('profiles')
-              .select('*, companies(*)')
-              .eq('id', session.user.id)
-              .single();
-            if (newP) {
-              setUser(session.user);
-              setProfile(newP);
-              setNeedsSetup(true);
-              userLoadedRef.current = true;
-              await loadData(newP);
-              return true;
-            }
-          }
-        } catch (inviteErr) {
-          console.error('Invite processing error:', inviteErr);
-        }
-        // No invite found either - sign out
-        await supabase.auth.signOut({ scope: 'local' });
-        return false;
-      }
-    };
+    // If URL has hash with access_token from invite link,
+    // let Supabase process it, then reload clean
+    const hash = window.location.hash;
+    if (hash && hash.includes('access_token')) {
+      setTimeout(() => window.location.replace(window.location.pathname), 1000);
+      return;
+    }
 
+    let cancelled = false;
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        await processSession(session);
-      } catch (err) {
-        console.error('Auth check error:', err);
-      }
-      setLoading(false);
-    };
+        if (!session?.user || cancelled) return;
 
-    // Listen for auth events (handles invite link hash tokens + password recovery)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[Auth] Event:', event, 'User:', session?.user?.email);
+        let p = null;
+        try {
+          const res = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
+          p = res.data;
+        } catch (e) { console.error('[Auth] Profile query error:', e); }
+
+        if (p) {
+          if (p.role === 'lh_admin' || p.role === 'lh_employee') { window.location.href = '/admin'; return; }
+          if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
+            await supabase.auth.signOut({ scope: 'local' }); return;
+          }
+          setUser(session.user);
+          setProfile(p);
+          setLang(p.preferred_language || 'fr');
+          try { await loadData(p); } catch (e) { console.error('[Auth] loadData error:', e); }
+        } else {
+          // No profile - try invite
+          console.log('[Auth] No profile, trying invite for:', session.user.email);
+          try {
+            const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
+            if (processed) {
+              const { data: newP } = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
+              if (newP) {
+                setUser(session.user);
+                setProfile(newP);
+                setLang(newP.preferred_language || 'fr');
+                setNeedsSetup(true);
+                try { await loadData(newP); } catch (e) { console.error('[Auth] loadData error:', e); }
+                return;
+              }
+            }
+          } catch (e) { console.error('[Auth] Invite error:', e); }
+          await supabase.auth.signOut({ scope: 'local' });
+        }
+      } catch (err) {
+        console.error('[Auth] Fatal error:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
         setLoading(false);
-        return;
-      }
-      if (event === 'SIGNED_IN' && session?.user && !userLoadedRef.current) {
-        // This fires when Supabase processes invite link hash tokens
-        console.log('[Auth] SIGNED_IN - processing session');
-        const success = await processSession(session);
-        setLoading(false);
       }
     });
-    
-    checkAuth();
 
-    // Check URL for invite token
     const params = new URLSearchParams(window.location.search);
-    if (params.get('invite')) {
-      setPage('register');
-    }
+    if (params.get('invite')) setPage('register');
 
-    return () => subscription?.unsubscribe();
+    return () => { cancelled = true; subscription?.unsubscribe(); };
   }, [loadData]);
 
   const logout = async () => {
@@ -3232,7 +3207,6 @@ export default function CustomerPortal() {
       setProfile(p);
       if (p.preferred_language) setLang(p.preferred_language);
       else setLang('fr');
-      userLoadedRef.current = true;
       setPage('dashboard');
       await loadData(p);
     } else {
@@ -3249,7 +3223,6 @@ export default function CustomerPortal() {
           setProfile(newP);
           if (newP.preferred_language) setLang(newP.preferred_language);
           else setLang('fr');
-          userLoadedRef.current = true;
           setNeedsSetup(true); // New invite user needs to set name + password
           await loadData(newP);
           return null;
