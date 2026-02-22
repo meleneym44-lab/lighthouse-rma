@@ -2578,6 +2578,20 @@ async function generateRentalQuotePDF(options) {
   pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 16;
 
+  // Buyback
+  if (qd.buybackClause) {
+    checkPageBreak(14);
+    y += 2;
+    pdf.setDrawColor(0, 166, 81);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, margin, y + 11);
+    pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text('Clause de Rachat', margin + 5, y + 5);
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+    pdf.text('Si achat a l\'issue de la location, ' + (qd.buybackPercent || 50) + '% du montant de location sera deduit du prix d\'achat.', margin + 5, y + 10);
+    y += 14;
+  }
+
   // Conditions
   const RENTAL_CONDITIONS = [
     'Le materiel reste la propriete de Lighthouse France. La garde est transferee au client des reception jusqu\'a restitution.',
@@ -2819,10 +2833,9 @@ const StepProgress = ({ status, serviceType }) => {
     { id: 'submitted', label: 'Demande Soumise', shortLabel: 'Soumis' },
     { id: 'quote', label: 'Devis Envoyé', shortLabel: 'Devis' },
     { id: 'approved', label: 'BC Approuvé', shortLabel: 'Approuvé' },
-    { id: 'shipped', label: 'Expédié / En Location', shortLabel: 'En cours' },
-    { id: 'returned', label: 'Retourné', shortLabel: 'Retourné' },
-    { id: 'inspection', label: 'Inspection', shortLabel: 'Inspection' },
-    { id: 'completed', label: 'Terminé', shortLabel: 'Terminé' }
+    { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' },
+    { id: 'in_rental', label: 'En Location', shortLabel: 'Location' },
+    { id: 'returned', label: 'Retourné', shortLabel: 'Retourné' }
   ];
   
   // CALIBRATION: 10 steps
@@ -2868,10 +2881,9 @@ const StepProgress = ({ status, serviceType }) => {
         'requested': 0, 'submitted': 0, 'pending': 0,
         'pending_quote_review': 1, 'quote_sent': 1,
         'waiting_bc': 2, 'bc_review': 2, 'bc_approved': 2,
-        'shipped': 3, 'in_rental': 3,
-        'return_pending': 4, 'returned': 4,
-        'inspection': 5, 'inspection_issue': 5,
-        'completed': 6, 'cancelled': 0
+        'shipped': 3,
+        'in_rental': 4,
+        'return_pending': 5, 'returned': 5, 'completed': 5, 'cancelled': 0
       };
       return rentalMap[currentStatus] ?? 0;
     } else if (isRepair) {
@@ -3413,7 +3425,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'service', 'parts', 'messages'
   const [deviceSearch, setDeviceSearch] = useState('');
   const [rentalActions, setRentalActions] = useState([]);
-  const [rentalThreadData, setRentalThreadData] = useState([]);
 
   // Load messages + rental actions
   useEffect(() => {
@@ -3421,15 +3432,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       if (!profile?.company_id) return;
       
       const requestIds = requests.map(r => r.id);
-      
-      // Load rental messages for this company (always)
-      const { data: rentalMsgs } = await supabase
-        .from('messages')
-        .select('*, rental_requests!inner(company_id)')
-        .eq('rental_requests.company_id', profile.company_id)
-        .not('rental_request_id', 'is', null)
-        .order('created_at', { ascending: false });
-
       if (requestIds.length === 0) {
         // Still load rental actions even with no requests
         const { data: rentalData } = await supabase
@@ -3438,16 +3440,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           .eq('company_id', profile.company_id)
           .in('status', ['quote_sent']);
         if (rentalData) setRentalActions(rentalData);
-        // Load rental thread data
-        const { data: rentalAll } = await supabase
-          .from('rental_requests')
-          .select('id, rental_number, status, created_at, companies(name)')
-          .eq('company_id', profile.company_id)
-          .order('created_at', { ascending: false });
-        if (rentalAll) setRentalThreadData(rentalAll);
-        const allMessages = rentalMsgs || [];
-        setMessages(allMessages);
-        setUnreadCount(allMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length);
         return;
       }
       
@@ -3456,10 +3448,11 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
         .select('*')
         .in('request_id', requestIds)
         .order('created_at', { ascending: false });
-
-      const allMessages = [...(data || []), ...(rentalMsgs || [])];
-      setMessages(allMessages);
-      setUnreadCount(allMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length);
+      
+      if (data) {
+        setMessages(data);
+        setUnreadCount(data.filter(m => !m.is_read && m.sender_id !== profile.id).length);
+      }
       
       // Load rental actions
       const { data: rentalData } = await supabase
@@ -3468,14 +3461,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
         .eq('company_id', profile.company_id)
         .in('status', ['quote_sent']);
       if (rentalData) setRentalActions(rentalData);
-
-      // Load rental threads for messages tab
-      const { data: rentalAll } = await supabase
-        .from('rental_requests')
-        .select('id, rental_number, status, created_at, companies(name)')
-        .eq('company_id', profile.company_id)
-        .order('created_at', { ascending: false });
-      if (rentalAll) setRentalThreadData(rentalAll);
     };
     loadMessages();
   }, [profile, requests]);
@@ -4144,7 +4129,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           profile={profile} 
           setMessages={setMessages}
           setUnreadCount={setUnreadCount}
-          rentalThreadData={rentalThreadData}
         />
       )}
     </div>
@@ -4154,7 +4138,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
 // ============================================
 // MESSAGES PANEL COMPONENT
 // ============================================
-function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount, rentalThreadData = [] }) {
+function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCount }) {
   const [selectedThread, setSelectedThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -4165,37 +4149,20 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Group messages by request (RMA + Parts)
-  const serviceThreads = requests.map(req => {
+  // Group messages by request
+  const messagesByRequest = requests.map(req => {
     const reqMessages = messages.filter(m => m.request_id === req.id);
     const unread = reqMessages.filter(m => !m.is_read && m.sender_id !== profile.id).length;
     const lastMessage = reqMessages[0];
     return {
       request: req,
-      _type: req.request_type === 'parts' ? 'parts' : 'rma',
       messages: reqMessages,
       unreadCount: unread,
       lastMessage
     };
-  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed');
-
-  // Rental threads
-  const rentalThreads = rentalThreadData.map(rental => {
-    const rMsgs = messages.filter(m => m.rental_request_id === rental.id);
-    const unread = rMsgs.filter(m => !m.is_read && m.sender_id !== profile.id).length;
-    const lastMessage = rMsgs[0];
-    return {
-      request: { ...rental, request_number: rental.rental_number, id: rental.id },
-      _type: 'rental',
-      _rentalId: rental.id,
-      messages: rMsgs,
-      unreadCount: unread,
-      lastMessage
-    };
-  }).filter(t => t.messages.length > 0);
-
-  const messagesByRequest = [...serviceThreads, ...rentalThreads]
+  }).filter(t => t.messages.length > 0 || t.request.status !== 'completed')
     .sort((a, b) => {
+      // Sort by unread first, then by last message date
       if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
       if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
       const dateA = a.lastMessage?.created_at || a.request.created_at;
@@ -4203,13 +4170,10 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
       return new Date(dateB) - new Date(dateA);
     });
 
-  const markAsRead = async (thread) => {
-    const threadId = thread._rentalId || thread.request?.id;
-    const isRental = thread._type === 'rental';
-    const unreadMessages = messages.filter(m => {
-      const matchesThread = isRental ? m.rental_request_id === threadId : m.request_id === threadId;
-      return matchesThread && !m.is_read && m.sender_id !== profile.id;
-    });
+  const markAsRead = async (requestId) => {
+    const unreadMessages = messages.filter(m => 
+      m.request_id === requestId && !m.is_read && m.sender_id !== profile.id
+    );
     
     if (unreadMessages.length === 0) return;
     
@@ -4234,43 +4198,31 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
     if (!newMessage.trim() || !selectedThread) return;
     
     setSending(true);
-    try {
-      const insertData = {
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        request_id: selectedThread.request.id,
         sender_id: profile.id,
         sender_type: 'customer',
         sender_name: profile.full_name || 'Client',
         content: newMessage.trim()
-      };
-      if (selectedThread._type === 'rental') {
-        insertData.rental_request_id = selectedThread._rentalId || selectedThread.request.id;
-      } else {
-        insertData.request_id = selectedThread.request.id;
-      }
-      
-      const { data, error } = await supabase
-        .from('messages')
-        .insert(insertData)
-        .select()
-        .single();
-      
-      if (!error && data) {
-        setMessages(prevMessages => [data, ...prevMessages]);
-        setNewMessage('');
-        setTimeout(scrollToBottom, 100);
-      } else if (error) {
-        console.error('Message send error:', error);
-        alert('Erreur envoi: ' + (error.message || error.details || JSON.stringify(error)));
-      }
-    } catch (err) {
-      console.error('Message send exception:', err);
-      alert('Erreur: ' + err.message);
+      })
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setMessages(prevMessages => [data, ...prevMessages]);
+      setNewMessage('');
+      // Scroll to bottom after sending
+      setTimeout(scrollToBottom, 100);
     }
     setSending(false);
   };
 
   const openThread = (thread) => {
     setSelectedThread(thread);
-    markAsRead(thread);
+    markAsRead(thread.request.id);
+    // Scroll to bottom when opening thread
     setTimeout(scrollToBottom, 100);
   };
 
@@ -4297,23 +4249,19 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {messagesByRequest.map(thread => {
-                const threadKey = `${thread._type || 'rma'}-${thread.request.id}`;
-                const selectedKey = selectedThread ? `${selectedThread._type || 'rma'}-${selectedThread.request.id}` : null;
-                const typeIcon = thread._type === 'rental' ? '📅' : thread._type === 'parts' ? '🔩' : '🔧';
-                return (
+              {messagesByRequest.map(thread => (
                 <div
-                  key={threadKey}
+                  key={thread.request.id}
                   onClick={() => openThread(thread)}
                   className={`p-4 cursor-pointer transition-colors ${
-                    selectedKey === threadKey
+                    selectedThread?.request.id === thread.request.id 
                       ? 'bg-[#E8F2F8]' 
                       : 'hover:bg-gray-50'
                   }`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-mono font-medium text-[#3B7AB4] text-sm">
-                      {typeIcon} {thread.request.request_number}
+                      {thread.request.request_number}
                     </span>
                     {thread.unreadCount > 0 && (
                       <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
@@ -4333,7 +4281,7 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
                     }
                   </p>
                 </div>
-              );})}
+              ))}
             </div>
           )}
         </div>
@@ -4343,17 +4291,16 @@ function MessagesPanel({ messages, requests, profile, setMessages, setUnreadCoun
           {selectedThread ? (
             (() => {
               // Get current messages for selected thread from state (not from cached selectedThread)
-              const currentMessages = selectedThread._type === 'rental'
-                ? messages.filter(m => m.rental_request_id === (selectedThread._rentalId || selectedThread.request.id))
-                : messages.filter(m => m.request_id === selectedThread.request.id);
+              const currentMessages = messages.filter(m => m.request_id === selectedThread.request.id);
               return (
                 <>
                   {/* Thread Header */}
                   <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex-shrink-0">
                     <h3 className="font-bold text-[#1E3A5F]">
-                      {selectedThread._type === 'rental' ? '📅 Location' : selectedThread._type === 'parts' ? '🔩 Commande Pièces' : '🔧 Demande'} {selectedThread.request.request_number}
+                      Demande {selectedThread.request.request_number}
                     </h3>
                     <p className="text-sm text-gray-500">
+                      {selectedThread.request.request_devices?.length || 0} appareil(s) • 
                       {new Date(selectedThread.request.created_at).toLocaleDateString('fr-FR')}
                     </p>
                   </div>
@@ -8473,7 +8420,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       let fileUrl = null;
       if (bcFile) {
         try {
-          const fileName = `bons-commande/${request.request_number}/bc_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const fileName = `bc_${request.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
@@ -8495,7 +8442,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         try {
           console.log('🖊️ Uploading signature...');
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const signatureFileName = `signatures/${request.request_number}/sig_bc_${Date.now()}.png`;
+          const signatureFileName = `signature_${request.id}_${Date.now()}.png`;
           console.log('🖊️ Signature file name:', signatureFileName);
           
           const { data: sigUploadData, error: sigError } = await supabase.storage
@@ -8561,7 +8508,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
               signatureImage: signatureData
             });
-            pdfFileName = `bons-commande/${request.request_number}/devis_signe_${Date.now()}.pdf`;
+            pdfFileName = `devis_signe_${request.request_number}_${Date.now()}.pdf`;
           }
           
           console.log('📄 PDF blob generated, size:', pdfBlob?.size);
@@ -8695,30 +8642,24 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     if (!newMessage.trim()) return;
     
     setSending(true);
-    try {
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          request_id: request.id,
-          sender_id: profile.id,
-          sender_type: 'customer',
-          sender_name: profile.full_name || 'Client',
-          content: newMessage.trim()
-        })
-        .select()
-        .single();
-      
-      if (!error && data) {
-        setMessages([...messages, data]);
-        setNewMessage('');
-        notify('Message envoyé!');
-      } else if (error) {
-        console.error('Message send error:', error);
-        notify('Erreur: ' + (error.message || error.details || JSON.stringify(error)), 'error');
-      }
-    } catch (err) {
-      console.error('Message send exception:', err);
-      notify('Erreur: ' + err.message, 'error');
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        request_id: request.id,
+        sender_id: profile.id,
+        sender_type: 'customer',
+        sender_name: profile.full_name || 'Client',
+        content: newMessage.trim()
+      })
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setMessages([...messages, data]);
+      setNewMessage('');
+      notify('Message envoyé!');
+    } else if (error) {
+      notify('Erreur: ' + error.message, 'error');
     }
     setSending(false);
   };
@@ -11542,7 +11483,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
       let fileUrl = null;
       if (bcFile) {
         try {
-          const fileName = `bons-commande/contracts/${selectedContract.contract_number}/bc_${Date.now()}.${bcFile.name.split('.').pop()}`;
+          const fileName = `bc_contract_${selectedContract.id}_${Date.now()}.${bcFile.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage
             .from('documents')
             .upload(fileName, bcFile);
@@ -11563,7 +11504,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
       if (signatureData) {
         try {
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const signatureFileName = `signatures/contracts/${selectedContract.contract_number}/sig_bc_${Date.now()}.png`;
+          const signatureFileName = `signature_contract_${selectedContract.id}_${Date.now()}.png`;
           const { error: sigError } = await supabase.storage
             .from('documents')
             .upload(signatureFileName, signatureBlob);
@@ -11595,7 +11536,7 @@ function ContractsPage({ profile, t, notify, setPage }) {
             signatureImage: signatureData
           });
           
-          const pdfFileName = `bons-commande/contracts/${selectedContract.contract_number}/devis_signe_${Date.now()}.pdf`;
+          const pdfFileName = `devis_signe_contrat_${selectedContract.contract_number}_${Date.now()}.pdf`;
           const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -13329,22 +13270,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
         console.error('Could not generate LOC number:', e);
       }
       if (!rentalNumber) {
-        // Fallback: LOC-MMYY-XXX
+        // Fallback: LOC-MMYY-XXXXX
         const mm = String(new Date().getMonth() + 1).padStart(2, '0');
         const yy = String(new Date().getFullYear()).slice(-2);
         const { data: lastLoc } = await supabase.from('rental_requests').select('rental_number').like('rental_number', `LOC-${mm}${yy}-%`).order('rental_number', { ascending: false }).limit(1);
         const lastNum = lastLoc?.[0]?.rental_number ? parseInt(lastLoc[0].rental_number.split('-').pop()) : 0;
-        rentalNumber = `LOC-${mm}${yy}-${String(lastNum + 1).padStart(3, '0')}`;
-      }
-      
-      // Check for duplicates and increment if needed
-      const { data: existing } = await supabase.from('rental_requests').select('rental_number').eq('rental_number', rentalNumber).maybeSingle();
-      if (existing) {
-        // Collision - find the true max and increment
-        const prefix = rentalNumber.substring(0, rentalNumber.lastIndexOf('-') + 1); // e.g. "LOC-0226-"
-        const { data: allExisting } = await supabase.from('rental_requests').select('rental_number').like('rental_number', `${prefix}%`).order('rental_number', { ascending: false }).limit(1);
-        const maxNum = allExisting?.[0]?.rental_number ? parseInt(allExisting[0].rental_number.split('-').pop()) : 0;
-        rentalNumber = `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+        rentalNumber = `LOC-${mm}${yy}-${String(lastNum + 1).padStart(5, '0')}`;
       }
       
       // Create rental request
@@ -13433,11 +13364,9 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       bc_review: 'bg-indigo-100 text-indigo-700',
       bc_approved: 'bg-teal-100 text-teal-700',
       shipped: 'bg-cyan-100 text-cyan-700',
-      in_rental: 'bg-cyan-100 text-cyan-700',
+      in_rental: 'bg-green-100 text-green-700',
       return_pending: 'bg-orange-100 text-orange-700',
-      returned: 'bg-teal-100 text-teal-700',
-      inspection: 'bg-blue-100 text-blue-700',
-      inspection_issue: 'bg-red-100 text-red-700',
+      returned: 'bg-gray-100 text-gray-700',
       completed: 'bg-emerald-100 text-emerald-700',
       cancelled: 'bg-red-100 text-red-700'
     };
@@ -13448,12 +13377,10 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       waiting_bc: 'En attente BC',
       bc_review: 'BC en révision',
       bc_approved: 'BC approuvé',
-      shipped: 'Expédié / En location',
-      in_rental: 'Expédié / En location',
+      shipped: 'Expédié',
+      in_rental: 'En location',
       return_pending: 'Retour en attente',
       returned: 'Retourné',
-      inspection: 'Inspection en cours',
-      inspection_issue: '⚠ Action requise',
       completed: 'Terminé',
       cancelled: 'Annulé'
     };
@@ -13803,27 +13730,16 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     e?.preventDefault();
     if (!rentalNewMsg.trim() || !selectedRental) return;
     setRentalSending(true);
-    try {
-      const { data, error: sendErr } = await supabase.from('messages').insert({
-        rental_request_id: selectedRental.id,
-        sender_id: profile?.id,
-        sender_name: profile?.full_name || 'Client',
-        sender_type: 'customer',
-        content: rentalNewMsg.trim()
-      }).select().single();
-      if (sendErr) {
-        console.error('Rental message send error:', sendErr);
-        notify('Erreur: ' + (sendErr.message || sendErr.details || JSON.stringify(sendErr)), 'error');
-      } else {
-        setRentalNewMsg('');
-        setRentalMessages(prev => [...prev, data]);
-        notify('Message envoyé !');
-      }
-    } catch (err) {
-      console.error('Rental message exception:', err);
-      notify('Erreur: ' + err.message, 'error');
-    }
+    await supabase.from('messages').insert({
+      rental_request_id: selectedRental.id,
+      sender_id: profile?.id,
+      sender_name: profile?.full_name || 'Client',
+      sender_role: 'customer',
+      content: rentalNewMsg.trim()
+    });
+    setRentalNewMsg('');
     setRentalSending(false);
+    loadRentalComms(selectedRental.id);
   };
 
   const handleRentalRevision = async () => {
@@ -13855,7 +13771,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       let fileUrl = null;
       if (bcFileUpload) {
         try {
-          const fileName = `bons-commande/rentals/${selectedRental.rental_number}/bc_${Date.now()}.${bcFileUpload.name.split('.').pop()}`;
+          const fileName = `rental_bc_${selectedRental.id}_${Date.now()}.${bcFileUpload.name.split('.').pop()}`;
           const { error: uploadError } = await supabase.storage.from('documents').upload(fileName, bcFileUpload);
           if (!uploadError) {
             const { data: publicUrl } = supabase.storage.from('documents').getPublicUrl(fileName);
@@ -13869,7 +13785,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       if (signatureData) {
         try {
           const signatureBlob = await fetch(signatureData).then(r => r.blob());
-          const sigFileName = `signatures/rentals/${selectedRental.rental_number}/sig_bc_${Date.now()}.png`;
+          const sigFileName = `rental_sig_${selectedRental.id}_${Date.now()}.png`;
           const { error: sigError } = await supabase.storage.from('documents').upload(sigFileName, signatureBlob);
           if (!sigError) {
             const { data: sigUrl } = supabase.storage.from('documents').getPublicUrl(sigFileName);
@@ -13889,7 +13805,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             signatureDate: new Date(signatureDateISO).toLocaleDateString('fr-FR'),
             signatureImage: signatureData
           });
-          const pdfFileName = `bons-commande/rentals/${selectedRental.rental_number}/devis_signe_${Date.now()}.pdf`;
+          const pdfFileName = `devis_location_signe_${selectedRental.rental_number}_${Date.now()}.pdf`;
           const { error: pdfUploadError } = await supabase.storage
             .from('documents')
             .upload(pdfFileName, pdfBlob, { contentType: 'application/pdf' });
@@ -14022,7 +13938,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           )}
 
           {/* BC Review - Pending */}
-          {(rental.status === 'bc_review' || rental.bc_submitted_at) && rental.status !== 'bc_approved' && !['shipped', 'in_rental', 'return_pending', 'returned', 'inspection', 'inspection_issue', 'completed'].includes(rental.status) && (
+          {(rental.status === 'bc_review' || rental.bc_submitted_at) && rental.status !== 'bc_approved' && !['shipped', 'in_rental', 'return_pending', 'returned', 'completed'].includes(rental.status) && (
             <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">📋</span>
@@ -14075,8 +13991,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           <div className="flex gap-1 px-6 pt-4 bg-gray-50 border-b overflow-x-auto">
             {[
               { id: 'overview', label: 'Aperçu', icon: '📋' },
-              { id: 'documents', label: 'Documents', icon: '📄', badge: rentalDocs.filter(d => !(d.category||'').startsWith('internal_') && !(d.category||'').startsWith('archived_') && !d.archived_at).length + [rental.quote_url, rental.signed_quote_url, rental.bc_file_url, (rental.quote_data||{}).bl_url || ((rental.quote_data||{}).shippingInfo||{}).bl_url, (rental.quote_data||{}).ups_label_url || ((rental.quote_data||{}).shippingInfo||{}).ups_label_url].filter(Boolean).length },
-              { id: 'messages', label: 'Messages', icon: '💬', badge: rentalMessages.filter(m => m.sender_type !== 'customer' && !m.is_read).length }
+              { id: 'documents', label: 'Documents', icon: '📄', badge: rentalDocs.length + (rental.bc_file_url ? 1 : 0) },
+              { id: 'messages', label: 'Messages', icon: '💬', badge: rentalMessages.filter(m => m.sender_role !== 'customer').length }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -14086,20 +14002,14 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 }`}
               >
                 <span>{tab.icon}</span> {tab.label}
-                {tab.badge > 0 && <span className={`text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center ${tab.id === 'messages' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-600'}`}>{tab.badge}</span>}
+                {tab.badge > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[20px] text-center">{tab.badge}</span>}
               </button>
             ))}
           </div>
 
           <div className="p-6">
             {/* ========== OVERVIEW TAB ========== */}
-            {rentalTab === 'overview' && (() => {
-              const shipping = qd.shippingInfo || {};
-              const trackingNum = rental.outbound_tracking || shipping.outbound_tracking || qd.outbound_tracking || '';
-              const shippedAt = rental.outbound_shipped_at || shipping.outbound_shipped_at || qd.outbound_shipped_at || '';
-              const blNum = rental.bl_number || shipping.bl_number || qd.bl_number || '';
-
-              return (
+            {rentalTab === 'overview' && (
               <div className="space-y-6">
                 {/* Rental period */}
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
@@ -14107,39 +14017,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <span className="font-bold text-purple-800">📅 Période de location</span>
                     <span className="font-medium">{new Date(rental.start_date).toLocaleDateString('fr-FR')} → {new Date(rental.end_date).toLocaleDateString('fr-FR')}</span>
                     <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-xs font-bold">{rentalDaysDisplay} jours</span>
-                    {['in_rental', 'shipped'].includes(rental.status) && (() => {
-                      const daysLeft = Math.ceil((new Date(rental.end_date) - new Date()) / (1000*60*60*24));
-                      return daysLeft < 0 
-                        ? <span className="px-2 py-0.5 bg-red-500 text-white rounded-full text-xs font-bold">{Math.abs(daysLeft)}j de retard</span>
-                        : daysLeft <= 5
-                          ? <span className="px-2 py-0.5 bg-orange-400 text-white rounded-full text-xs font-bold">{daysLeft}j restant{daysLeft > 1 ? 's' : ''}</span>
-                          : <span className="px-2 py-0.5 bg-green-500 text-white rounded-full text-xs font-bold">{daysLeft}j restants</span>;
-                    })()}
                   </div>
                 </div>
-
-                {/* Shipping / Tracking */}
-                {trackingNum && (
-                  <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-2xl">🚚</span>
-                      <div className="flex-1">
-                        <p className="font-bold text-cyan-800">
-                          {['shipped', 'in_rental'].includes(rental.status) ? 'Votre équipement a été expédié' : 'Suivi d\'expédition'}
-                        </p>
-                        {shippedAt && <p className="text-xs text-cyan-600">Expédié le {new Date(shippedAt).toLocaleDateString('fr-FR')}</p>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 mt-3">
-                      <a href={`https://www.ups.com/track?tracknum=${trackingNum}`} target="_blank" rel="noopener noreferrer"
-                         className="flex items-center gap-2 px-4 py-2 bg-[#FFB500] hover:bg-[#E5A300] text-[#351C15] rounded-lg font-bold text-sm transition-colors">
-                        <span>📦</span> Suivre sur UPS
-                      </a>
-                      <span className="font-mono text-sm text-cyan-700">{trackingNum}</span>
-                    </div>
-                    {blNum && <p className="text-xs text-gray-500 mt-2">BL N° {blNum}</p>}
-                  </div>
-                )}
 
                 {/* Equipment List */}
                 <div>
@@ -14151,6 +14030,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                           <div>
                             <p className="font-bold text-gray-800">{item.item_name || item.equipment_model || '—'}</p>
                             {item.serial_number && !(item.item_name || '').includes(item.serial_number) && <p className="text-xs text-gray-500 font-mono">S/N: {item.serial_number}</p>}
+                            {item.specs && <p className="text-sm text-gray-600 mt-2 whitespace-pre-line">{item.specs}</p>}
                           </div>
                           {(item.line_total || 0) > 0 && (
                             <span className="font-bold text-[#8B5CF6] text-lg">{parseFloat(item.line_total).toFixed(2)} € HT</span>
@@ -14164,7 +14044,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 {/* Quote Summary */}
                 {hasQuote && (
                   <div>
-                    <h3 className="font-bold text-gray-800 mb-3">💰 Résumé du Devis</h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-bold text-gray-800">💰 Résumé du Devis</h3>
+                      <button onClick={() => setShowRentalQuote(true)} className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                        👁️ Voir le devis complet →
+                      </button>
+                    </div>
                     <div className="bg-gray-50 rounded-lg p-4 border space-y-2">
                       {(qd.discount || 0) > 0 && <>
                         <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
@@ -14176,7 +14061,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 )}
 
-                {/* Insurance Notice */}
+                {/* Insurance */}
                 {hasQuote && (
                   <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                     <p className="font-bold text-sm text-amber-800 mb-1">Conditions générales de location</p>
@@ -14185,27 +14070,19 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 )}
 
-                {/* Inspection Status - Customer View */}
-                {rental.status === 'inspection' && (
-                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">🔍</span>
-                      <div>
-                        <p className="font-bold text-blue-800">Inspection en cours</p>
-                        <p className="text-sm text-blue-600">Votre appareil a été reçu et est en cours d'inspection par notre équipe technique.</p>
-                      </div>
-                    </div>
+                {/* Buyback */}
+                {qd.buybackClause && (
+                  <div className="bg-green-50 rounded-lg p-3 border border-green-200 text-xs text-green-800">
+                    Si l'appareil est acheté à la fin de la période de location, {qd.buybackPercent || 50}% de la somme versée sera déduite du prix d'achat.
                   </div>
                 )}
-                {rental.status === 'inspection_issue' && (
-                  <div className="bg-red-50 rounded-lg p-4 border border-red-300">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">⚠️</span>
-                      <div>
-                        <p className="font-bold text-red-800">Action requise — Dommages constatés</p>
-                        <p className="text-sm text-red-600">Lors de la réception de votre appareil, nous avons constaté des problèmes nécessitant une intervention. Veuillez consulter le devis de réparation dans vos messages ou documents.</p>
-                      </div>
-                    </div>
+
+                {/* Shipping / Tracking */}
+                {rental.outbound_tracking && (
+                  <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200">
+                    <h3 className="font-bold text-cyan-800 mb-2">🚚 Expédition</h3>
+                    <p className="text-sm font-mono font-bold">{rental.outbound_tracking}</p>
+                    {rental.outbound_shipped_at && <p className="text-xs text-gray-500">Expédié le {new Date(rental.outbound_shipped_at).toLocaleDateString('fr-FR')}</p>}
                   </div>
                 )}
 
@@ -14217,31 +14094,10 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 )}
               </div>
-              );
-            })()}
+            )}
 
             {/* ========== DOCUMENTS TAB ========== */}
-            {rentalTab === 'documents' && (() => {
-              const shipping = qd.shippingInfo || {};
-              const blUrl = rental.bl_url || shipping.bl_url || qd.bl_url || '';
-              const blNumber = rental.bl_number || shipping.bl_number || qd.bl_number || '';
-              const upsLabelUrl = rental.ups_label_url || shipping.ups_label_url || qd.ups_label_url || '';
-              const outboundTracking = rental.outbound_tracking || shipping.outbound_tracking || qd.outbound_tracking || '';
-              // Filter out internal docs and duplicates
-              const visibleDocs = rentalDocs.filter(d => 
-                d.file_url && 
-                !(d.category || '').startsWith('internal_') && 
-                !(d.category || '').startsWith('archived_') &&
-                !d.archived_at &&
-                d.file_url !== rental.quote_url && 
-                d.file_url !== rental.signed_quote_url && 
-                d.file_url !== rental.bc_file_url &&
-                d.file_url !== blUrl &&
-                d.file_url !== upsLabelUrl
-              );
-              const getCategoryIcon = (cat) => ({ bon_commande: '📝', bon_livraison: '📄', ups_label: '🏷️', signed_quote: '✅', devis: '💰' }[cat] || '📎');
-
-              return (
+            {rentalTab === 'documents' && (
               <div className="space-y-6">
                 <h3 className="font-bold text-[#1E3A5F]">📁 Documents</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -14284,36 +14140,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     </a>
                   )}
 
-                  {/* Bon de Livraison */}
-                  {blUrl && (
-                    <a href={blUrl} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-cyan-50 transition-colors border-cyan-200">
-                      <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Bon de Livraison</p>
-                        <p className="text-sm text-cyan-600">{blNumber ? `N° ${blNumber}` : 'BL'}</p>
-                      </div>
-                    </a>
-                  )}
-
-                  {/* UPS Label */}
-                  {upsLabelUrl && (
-                    <a href={upsLabelUrl} target="_blank" rel="noopener noreferrer"
-                       className="flex items-center gap-4 p-4 border rounded-lg hover:bg-amber-50 transition-colors">
-                      <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">🏷️</div>
-                      <div>
-                        <p className="font-medium text-gray-800">Étiquette UPS</p>
-                        <p className="text-sm text-amber-600">{outboundTracking || "Label d'expédition"}</p>
-                      </div>
-                    </a>
-                  )}
-
-                  {/* Additional visible attachments (admin-uploaded, non-internal) */}
-                  {visibleDocs.map(doc => (
+                  {/* Additional attachments */}
+                  {rentalDocs.filter(d => d.file_url !== rental.quote_url && d.file_url !== rental.signed_quote_url && d.file_url !== rental.bc_file_url).map(doc => (
                     <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer"
                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">
-                        {getCategoryIcon(doc.category)}
+                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-sm font-bold text-gray-600">
+                        {doc.file_type?.includes('pdf') ? 'PDF' : doc.file_name?.split('.').pop()?.toUpperCase() || 'DOC'}
                       </div>
                       <div className="min-w-0">
                         <p className="font-medium text-gray-800 truncate">{doc.file_name || doc.category || 'Document'}</p>
@@ -14323,17 +14155,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   ))}
                 </div>
 
-                {/* UPS Tracking link */}
-                {outboundTracking && (
-                  <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                    <p className="text-sm text-blue-800">
-                      📦 Suivi UPS : <a href={`https://www.ups.com/track?tracknum=${outboundTracking}`} target="_blank" rel="noopener noreferrer" className="font-mono font-bold text-blue-600 hover:underline">{outboundTracking}</a>
-                    </p>
-                  </div>
-                )}
-
                 {/* No docs fallback */}
-                {!rental.quote_url && !rental.signed_quote_url && !rental.bc_file_url && !blUrl && !upsLabelUrl && visibleDocs.length === 0 && (
+                {!rental.quote_url && !rental.signed_quote_url && !rental.bc_file_url && rentalDocs.length === 0 && (
                   <div className="text-center py-8 bg-gray-50 rounded-lg">
                     <p className="text-4xl mb-2">📄</p>
                     <p className="font-medium text-gray-500">Aucun document</p>
@@ -14341,8 +14164,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 )}
               </div>
-              );
-            })()}
+            )}
 
             {/* ========== MESSAGES TAB (identical to RMA) ========== */}
             {rentalTab === 'messages' && (
@@ -14386,7 +14208,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             )}
           </div>
         </div>
-
 
         {/* ========== FULL QUOTE MODAL (identical layout to RMA) ========== */}
         {showRentalQuote && hasQuote && (() => {
@@ -14522,6 +14343,14 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <span style={{color:'white', fontWeight:'bold', fontSize:'22px'}}>{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} EUR</span>
                   </div>
                 </div>
+
+                {/* Buyback Clause */}
+                {qd.buybackClause && (
+                  <div style={{margin:'16px 32px 0 32px', borderLeft:'3px solid #00A651', paddingLeft:'12px'}}>
+                    <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 3px 0'}}>Clause de Rachat</p>
+                    <p style={{fontSize:'11px', color:'#505050', margin:0}}>Si achat à l'issue de la location, {qd.buybackPercent || 50}% du montant de location sera déduit du prix d'achat.</p>
+                  </div>
+                )}
 
                 {/* Conditions */}
                 <div style={{padding:'16px 32px 0 32px'}}>
