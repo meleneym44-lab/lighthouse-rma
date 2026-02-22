@@ -3092,6 +3092,85 @@ export default function CustomerPortal() {
 
   const refresh = useCallback(() => loadData(profile), [loadData, profile]);
 
+  const processInviteOnFirstLogin = async (userId, userEmail) => {
+    console.log('[Invite] Processing invite for:', userEmail);
+    
+    // Call server-side API to accept invite (bypasses RLS)
+    try {
+      const res = await fetch('/api/accept-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId, 
+          userEmail,
+          fullName: userEmail.split('@')[0],
+          phone: null
+        })
+      });
+      
+      const result = await res.json();
+      console.log('[Invite] Accept result:', result);
+      
+      if (res.ok && result.success) {
+        return true;
+      } else {
+        console.error('[Invite] Accept failed:', result.error);
+      }
+    } catch (err) {
+      console.error('[Invite] Accept API error:', err);
+    }
+
+    // Check for pending normal registration (localStorage fallback)
+    const pendingReg = localStorage.getItem('lhf_pending_registration');
+    if (pendingReg) {
+      try {
+        const reg = JSON.parse(pendingReg);
+        const { data: company } = await supabase.from('companies').insert({
+          name: reg.companyName,
+          billing_address: reg.address,
+          billing_city: reg.city,
+          billing_postal_code: reg.postalCode,
+          country: reg.country || 'France',
+          siret: reg.siret || null,
+          tva_number: reg.vatNumber || null,
+          phone: reg.phone,
+          email: userEmail
+        }).select().single();
+
+        if (company) {
+          await supabase.from('profiles').insert({
+            id: userId,
+            email: userEmail,
+            full_name: reg.contactName,
+            role: 'admin',
+            company_id: company.id,
+            phone: reg.phone,
+            invitation_status: 'active',
+            can_view: true,
+            can_request: true,
+            can_invoice: true
+          });
+
+          await supabase.from('shipping_addresses').insert({
+            company_id: company.id,
+            label: 'Principal',
+            address_line1: reg.address,
+            city: reg.city,
+            postal_code: reg.postalCode,
+            country: reg.country || 'France',
+            is_default: true
+          });
+
+          localStorage.removeItem('lhf_pending_registration');
+          return true;
+        }
+      } catch (err) {
+        console.error('Pending registration error:', err);
+      }
+    }
+
+    return false;
+  };
   // Auth check
   useEffect(() => {
     // If URL has hash with access_token from invite link,
@@ -3332,85 +3411,6 @@ export default function CustomerPortal() {
   };
 
   // Process pending invite on first login (when user has session but no profile)
-  const processInviteOnFirstLogin = async (userId, userEmail) => {
-    console.log('[Invite] Processing invite for:', userEmail);
-    
-    // Call server-side API to accept invite (bypasses RLS)
-    try {
-      const res = await fetch('/api/accept-invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId, 
-          userEmail,
-          fullName: userEmail.split('@')[0],
-          phone: null
-        })
-      });
-      
-      const result = await res.json();
-      console.log('[Invite] Accept result:', result);
-      
-      if (res.ok && result.success) {
-        return true;
-      } else {
-        console.error('[Invite] Accept failed:', result.error);
-      }
-    } catch (err) {
-      console.error('[Invite] Accept API error:', err);
-    }
-
-    // Check for pending normal registration (localStorage fallback)
-    const pendingReg = localStorage.getItem('lhf_pending_registration');
-    if (pendingReg) {
-      try {
-        const reg = JSON.parse(pendingReg);
-        const { data: company } = await supabase.from('companies').insert({
-          name: reg.companyName,
-          billing_address: reg.address,
-          billing_city: reg.city,
-          billing_postal_code: reg.postalCode,
-          country: reg.country || 'France',
-          siret: reg.siret || null,
-          tva_number: reg.vatNumber || null,
-          phone: reg.phone,
-          email: userEmail
-        }).select().single();
-
-        if (company) {
-          await supabase.from('profiles').insert({
-            id: userId,
-            email: userEmail,
-            full_name: reg.contactName,
-            role: 'admin',
-            company_id: company.id,
-            phone: reg.phone,
-            invitation_status: 'active',
-            can_view: true,
-            can_request: true,
-            can_invoice: true
-          });
-
-          await supabase.from('shipping_addresses').insert({
-            company_id: company.id,
-            label: 'Principal',
-            address_line1: reg.address,
-            city: reg.city,
-            postal_code: reg.postalCode,
-            country: reg.country || 'France',
-            is_default: true
-          });
-
-          localStorage.removeItem('lhf_pending_registration');
-          return true;
-        }
-      } catch (err) {
-        console.error('Pending registration error:', err);
-      }
-    }
-
-    return false;
-  };
 
   // Permissions
   const isAdmin = profile?.role === 'admin';
