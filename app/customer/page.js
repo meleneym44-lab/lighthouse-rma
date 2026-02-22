@@ -7070,10 +7070,8 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
 
   const sections = [
     { id: 'profile', label: lang === 'en' ? 'Profile' : 'Profil', icon: '👤' },
-    { id: 'company', label: lang === 'en' ? 'Company' : 'Entreprise', icon: '🏢' },
+    { id: 'company', label: lang === 'en' ? 'Company & Addresses' : 'Entreprise & Adresses', icon: '🏢' },
     ...(isAdmin ? [{ id: 'team', label: lang === 'en' ? 'Team' : 'Équipe', icon: '👥' }] : []),
-    { id: 'addresses', label: lang === 'en' ? 'Addresses' : 'Adresses', icon: '📍' },
-    { id: 'language', label: lang === 'en' ? 'Language' : 'Langue', icon: '🌐' },
     { id: 'notifications', label: 'Notifications', icon: '🔔' },
     { id: 'security', label: lang === 'en' ? 'Security' : 'Sécurité', icon: '🔒' }
   ];
@@ -7197,9 +7195,10 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
 
       {/* Company Section */}
       {activeSection === 'company' && (
+        <div className="space-y-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-            <h2 className="text-lg font-bold text-[#1E3A5F]">Informations entreprise</h2>
+            <h2 className="text-lg font-bold text-[#1E3A5F]">🏢 Informations entreprise</h2>
             {!editingCompany && (
               <button
                 onClick={() => setEditingCompany(true)}
@@ -7324,200 +7323,12 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
             )}
           </div>
         </div>
-      )}
 
-      {/* Team Section - Admin Only */}
-      {activeSection === 'team' && isAdmin && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
             <div>
-              <h2 className="text-lg font-bold text-[#1E3A5F]">Gestion de l'équipe</h2>
-              <p className="text-sm text-gray-500">Invitez des membres et gérez leurs accès</p>
-            </div>
-            <button
-              onClick={() => setShowInviteModal(true)}
-              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
-            >
-              + Inviter un membre
-            </button>
-          </div>
-          
-          <div className="p-6">
-            {loadingTeam ? (
-              <div className="flex justify-center py-8">
-                <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Current Team Members */}
-                <div>
-                  <h3 className="font-medium text-[#1E3A5F] mb-3">Membres actifs ({teamMembers.filter(m => m.invitation_status === 'active').length})</h3>
-                  <div className="space-y-3">
-                    {teamMembers.filter(m => m.invitation_status === 'active').map(member => (
-                      <div key={member.id} className={`p-4 rounded-xl border-2 ${member.id === profile.id ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
-                        <div className="flex flex-wrap items-center justify-between gap-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center font-bold">
-                              {member.full_name?.charAt(0)?.toUpperCase() || '?'}
-                            </div>
-                            <div>
-                              <p className="font-medium text-[#1E3A5F]">
-                                {member.full_name}
-                                {member.id === profile.id && <span className="ml-2 text-xs text-gray-400">(vous)</span>}
-                                {member.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">👑 Admin</span>}
-                              </p>
-                              <p className="text-sm text-gray-500">{member.email}</p>
-                            </div>
-                          </div>
-                          {member.id !== profile.id && (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {/* Permission toggles */}
-                              {[
-                                { key: 'can_view', label: '👁 Voir', desc: 'Voir les demandes' },
-                                { key: 'can_request', label: '📝 Demander', desc: 'Créer des demandes' },
-                                { key: 'can_invoice', label: '💳 Facturer', desc: 'Voir contrats/factures' }
-                              ].map(perm => (
-                                <button
-                                  key={perm.key}
-                                  onClick={() => togglePermission(member.id, perm.key, !member[perm.key])}
-                                  title={perm.desc}
-                                  className={`px-2 py-1 text-xs rounded-lg border ${
-                                    member[perm.key] 
-                                      ? 'bg-green-50 border-green-300 text-green-700' 
-                                      : 'bg-gray-50 border-gray-200 text-gray-400'
-                                  }`}
-                                >
-                                  {perm.label}
-                                </button>
-                              ))}
-                              {member.role !== 'admin' && (
-                                <button
-                                  onClick={() => promoteToAdmin(member.id)}
-                                  className="px-2 py-1 text-xs text-purple-600 border border-purple-200 rounded-lg hover:bg-purple-50"
-                                >
-                                  👑 Promouvoir
-                                </button>
-                              )}
-                              {member.role === 'admin' && (
-                                <button
-                                  onClick={() => demoteFromAdmin(member.id)}
-                                  className="px-2 py-1 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100"
-                                >
-                                  Rétrograder
-                                </button>
-                              )}
-                              <button
-                                onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
-                                className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                              >
-                                Désactiver
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Deactivated Members */}
-                {teamMembers.filter(m => m.invitation_status === 'deactivated').length > 0 && (
-                  <div>
-                    <h3 className="font-medium text-gray-500 mb-3">Comptes désactivés</h3>
-                    <div className="space-y-2">
-                      {teamMembers.filter(m => m.invitation_status === 'deactivated').map(member => (
-                        <div key={member.id} className="p-3 rounded-lg bg-gray-100 border border-gray-200 flex justify-between items-center">
-                          <div>
-                            <p className="font-medium text-gray-500">{member.full_name}</p>
-                            <p className="text-sm text-gray-400">{member.email}</p>
-                          </div>
-                          <button
-                            onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
-                            className="px-3 py-1.5 text-sm text-green-600 border border-green-200 rounded-lg hover:bg-green-50"
-                          >
-                            Réactiver
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* GDPR Erased Members */}
-                {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').length > 0 && (
-                  <div>
-                    <h3 className="font-medium text-gray-400 mb-3">Comptes supprimés (RGPD)</h3>
-                    <div className="space-y-2">
-                      {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').map(member => (
-                        <div key={member.id} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
-                          <p className="text-gray-400 text-sm">{member.full_name || 'Utilisateur supprimé'}</p>
-                          <p className="text-xs text-gray-300">Données anonymisées — {member.gdpr_erased_at ? new Date(member.gdpr_erased_at).toLocaleDateString('fr-FR') : ''}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Pending Invitations */}
-                {pendingInvites.length > 0 && (
-                  <div>
-                    <h3 className="font-medium text-amber-600 mb-3">Invitations en attente ({pendingInvites.length})</h3>
-                    <div className="space-y-2">
-                      {pendingInvites.map(invite => (
-                        <div key={invite.id} className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex justify-between items-center">
-                          <div>
-                            <p className="font-medium text-amber-800">{invite.email}</p>
-                            <p className="text-xs text-amber-600">
-                              {[
-                                invite.can_view && '👁️ Consulter',
-                                invite.can_request && '📋 Demandes',
-                                invite.can_invoice && '💳 Facturation'
-                              ].filter(Boolean).join(' • ') || 'Aucune permission'}
-                              {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => cancelInvite(invite.id)}
-                            className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                          >
-                            Annuler
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Last invite link */}
-                {lastInviteLink && (
-                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                    <p className="font-medium text-green-700 mb-2">🔗 Lien d'invitation</p>
-                    <p className="text-sm text-green-600 mb-2">Partagez ce lien avec le nouveau membre :</p>
-                    <div className="flex gap-2">
-                      <input type="text" readOnly value={lastInviteLink} className="flex-1 px-3 py-2 text-sm bg-white border border-green-300 rounded-lg font-mono" />
-                      <button
-                        onClick={() => { navigator.clipboard.writeText(lastInviteLink); notify('Lien copié!'); }}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
-                      >
-                        Copier
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Addresses Section */}
-      {activeSection === 'addresses' && (
-        <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-bold text-[#1E3A5F]">Adresses de livraison</h2>
-              <p className="text-sm text-gray-500">Gérez vos adresses pour la réception et le retour des équipements</p>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">📦 Adresses de livraison / retour</h2>
+              <p className="text-sm text-gray-500">Adresses pour la réception et le retour des équipements</p>
             </div>
             <button
               onClick={() => {
@@ -7742,85 +7553,195 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
           </div>
         </div>
         )}
+
+        </div>
+      )}
+
+      {/* Team Section - Admin Only */}
+      {activeSection === 'team' && isAdmin && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-[#1E3A5F]">Gestion de l'équipe</h2>
+              <p className="text-sm text-gray-500">Invitez des membres et gérez leurs accès</p>
+            </div>
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
+            >
+              + Inviter un membre
+            </button>
+          </div>
+          
+          <div className="p-6">
+            {loadingTeam ? (
+              <div className="flex justify-center py-8">
+                <div className="w-8 h-8 border-4 border-[#3B7AB4] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Current Team Members */}
+                <div>
+                  <h3 className="font-medium text-[#1E3A5F] mb-3">Membres actifs ({teamMembers.filter(m => m.invitation_status === 'active').length})</h3>
+                  <div className="space-y-3">
+                    {teamMembers.filter(m => m.invitation_status === 'active').map(member => (
+                      <div key={member.id} className={`p-4 rounded-xl border-2 ${member.id === profile.id ? 'border-[#3B7AB4] bg-[#E8F2F8]' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-[#1E3A5F] text-white flex items-center justify-center font-bold">
+                              {member.full_name?.charAt(0)?.toUpperCase() || '?'}
+                            </div>
+                            <div>
+                              <p className="font-medium text-[#1E3A5F]">
+                                {member.full_name}
+                                {member.id === profile.id && <span className="ml-2 text-xs text-gray-400">(vous)</span>}
+                                {member.role === 'admin' && <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">👑 Admin</span>}
+                              </p>
+                              <p className="text-sm text-gray-500">{member.email}</p>
+                            </div>
+                          </div>
+                          {member.id !== profile.id && (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Permission toggles */}
+                              {[
+                                { key: 'can_view', label: '👁 Voir', desc: 'Voir les demandes' },
+                                { key: 'can_request', label: '📝 Demander', desc: 'Créer des demandes' },
+                                { key: 'can_invoice', label: '💳 Facturer', desc: 'Voir contrats/factures' }
+                              ].map(perm => (
+                                <button
+                                  key={perm.key}
+                                  onClick={() => togglePermission(member.id, perm.key, !member[perm.key])}
+                                  title={perm.desc}
+                                  className={`px-2 py-1 text-xs rounded-lg border ${
+                                    member[perm.key] 
+                                      ? 'bg-green-50 border-green-300 text-green-700' 
+                                      : 'bg-gray-50 border-gray-200 text-gray-400'
+                                  }`}
+                                >
+                                  {perm.label}
+                                </button>
+                              ))}
+                              {member.role !== 'admin' && (
+                                <button
+                                  onClick={() => promoteToAdmin(member.id)}
+                                  className="px-2 py-1 text-xs text-purple-600 border border-purple-200 rounded-lg hover:bg-purple-50"
+                                >
+                                  👑 Promouvoir
+                                </button>
+                              )}
+                              {member.role === 'admin' && (
+                                <button
+                                  onClick={() => demoteFromAdmin(member.id)}
+                                  className="px-2 py-1 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-100"
+                                >
+                                  Rétrograder
+                                </button>
+                              )}
+                              <button
+                                onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                                className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                              >
+                                Désactiver
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Deactivated Members */}
+                {teamMembers.filter(m => m.invitation_status === 'deactivated').length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-gray-500 mb-3">Comptes désactivés</h3>
+                    <div className="space-y-2">
+                      {teamMembers.filter(m => m.invitation_status === 'deactivated').map(member => (
+                        <div key={member.id} className="p-3 rounded-lg bg-gray-100 border border-gray-200 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-500">{member.full_name}</p>
+                            <p className="text-sm text-gray-400">{member.email}</p>
+                          </div>
+                          <button
+                            onClick={() => toggleMemberStatus(member.id, member.invitation_status)}
+                            className="px-3 py-1.5 text-sm text-green-600 border border-green-200 rounded-lg hover:bg-green-50"
+                          >
+                            Réactiver
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* GDPR Erased Members */}
+                {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-gray-400 mb-3">Comptes supprimés (RGPD)</h3>
+                    <div className="space-y-2">
+                      {teamMembers.filter(m => m.invitation_status === 'gdpr_erased').map(member => (
+                        <div key={member.id} className="p-3 rounded-lg bg-gray-50 border border-gray-100">
+                          <p className="text-gray-400 text-sm">{member.full_name || 'Utilisateur supprimé'}</p>
+                          <p className="text-xs text-gray-300">Données anonymisées — {member.gdpr_erased_at ? new Date(member.gdpr_erased_at).toLocaleDateString('fr-FR') : ''}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending Invitations */}
+                {pendingInvites.length > 0 && (
+                  <div>
+                    <h3 className="font-medium text-amber-600 mb-3">Invitations en attente ({pendingInvites.length})</h3>
+                    <div className="space-y-2">
+                      {pendingInvites.map(invite => (
+                        <div key={invite.id} className="p-3 rounded-lg bg-amber-50 border border-amber-200 flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-amber-800">{invite.email}</p>
+                            <p className="text-xs text-amber-600">
+                              {[
+                                invite.can_view && '👁️ Consulter',
+                                invite.can_request && '📋 Demandes',
+                                invite.can_invoice && '💳 Facturation'
+                              ].filter(Boolean).join(' • ') || 'Aucune permission'}
+                              {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => cancelInvite(invite.id)}
+                            className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Last invite link */}
+                {lastInviteLink && (
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                    <p className="font-medium text-green-700 mb-2">🔗 Lien d'invitation</p>
+                    <p className="text-sm text-green-600 mb-2">Partagez ce lien avec le nouveau membre :</p>
+                    <div className="flex gap-2">
+                      <input type="text" readOnly value={lastInviteLink} className="flex-1 px-3 py-2 text-sm bg-white border border-green-300 rounded-lg font-mono" />
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(lastInviteLink); notify('Lien copié!'); }}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+                      >
+                        Copier
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {/* Language Section */}
-      {activeSection === 'language' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <h2 className="text-lg font-bold text-[#1E3A5F]">{lang === 'en' ? 'Language Preference' : 'Préférence de langue'}</h2>
-            <p className="text-sm text-gray-500">{lang === 'en' ? 'Choose the display language for your portal. This only affects the interface, not documents.' : 'Choisissez la langue d\'affichage du portail. Ceci n\'affecte que l\'interface, pas les documents.'}</p>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* French Option */}
-              <button
-                onClick={async () => {
-                  setLang('fr');
-                  setSaving(true);
-                  const { error } = await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id);
-                  setSaving(false);
-                  if (!error) notify('Langue mise à jour — Français', 'success');
-                  else notify('Erreur lors de la sauvegarde', 'error');
-                }}
-                className={`p-6 rounded-xl border-2 transition-all text-left ${
-                  lang === 'fr' 
-                    ? 'border-[#3B7AB4] bg-[#E8F2F8] ring-2 ring-[#3B7AB4]/20' 
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <span className="text-4xl">🇫🇷</span>
-                  <div className="flex-1">
-                    <p className="font-bold text-lg text-[#1E3A5F]">Français</p>
-                    <p className="text-sm text-gray-500">Afficher le portail en français</p>
-                  </div>
-                  {lang === 'fr' && (
-                    <span className="w-6 h-6 rounded-full bg-[#3B7AB4] flex items-center justify-center text-white text-xs font-bold">✓</span>
-                  )}
-                </div>
-              </button>
-              
-              {/* English Option */}
-              <button
-                onClick={async () => {
-                  setLang('en');
-                  setSaving(true);
-                  const { error } = await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id);
-                  setSaving(false);
-                  if (!error) notify('Language updated — English', 'success');
-                  else notify('Error saving preference', 'error');
-                }}
-                className={`p-6 rounded-xl border-2 transition-all text-left ${
-                  lang === 'en' 
-                    ? 'border-[#3B7AB4] bg-[#E8F2F8] ring-2 ring-[#3B7AB4]/20' 
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <span className="text-4xl">🇬🇧</span>
-                  <div className="flex-1">
-                    <p className="font-bold text-lg text-[#1E3A5F]">English</p>
-                    <p className="text-sm text-gray-500">Display portal in English</p>
-                  </div>
-                  {lang === 'en' && (
-                    <span className="w-6 h-6 rounded-full bg-[#3B7AB4] flex items-center justify-center text-white text-xs font-bold">✓</span>
-                  )}
-                </div>
-              </button>
-            </div>
-            
-            <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800">
-                <strong>💡 {lang === 'en' ? 'Note:' : 'Remarque :'}</strong> {lang === 'en' ? 'This setting only changes the portal interface language. Official documents (quotes, certificates, reports) will remain in French.' : 'Ce paramètre change uniquement la langue de l\'interface. Les documents officiels (devis, certificats, rapports) resteront en français.'}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Notifications Section */}
       {activeSection === 'notifications' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-100">
