@@ -3320,7 +3320,7 @@ export default function CustomerPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
+    <div className="min-h-screen bg-[#f0f2f5] flex flex-col">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
@@ -3415,7 +3415,7 @@ export default function CustomerPortal() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 py-8 w-full">
         {page === 'dashboard' && (
           <Dashboard 
             profile={profile} 
@@ -3517,16 +3517,38 @@ export default function CustomerPortal() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-[#1E3A5F] text-white py-8 mt-auto">
-        <div className="max-w-7xl mx-auto px-6 text-center">
-          <div className="font-bold text-xl mb-2">LIGHTHOUSE FRANCE</div>
-          <p className="text-white/60 text-sm">
-            16 Rue Paul Sejourne, 94000 Creteil - France@golighthouse.com
-          </p>
-          <div className="mt-3 flex justify-center gap-4">
-            <button onClick={() => setShowLegalPage('mentions')} className="text-white/40 text-xs hover:text-white/70">Mentions légales</button>
-            <span className="text-white/20">|</span>
-            <button onClick={() => setShowLegalPage('privacy')} className="text-white/40 text-xs hover:text-white/70">Politique de confidentialité</button>
+      <footer className="bg-[#1E3A5F] text-white py-10">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid md:grid-cols-3 gap-8 mb-8">
+            <div>
+              <h4 className="font-bold text-lg mb-3">LIGHTHOUSE FRANCE</h4>
+              <p className="text-white/60 text-sm leading-relaxed">
+                Filiale française de Lighthouse Worldwide Solutions, leader mondial des solutions de monitoring de contamination.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-bold text-lg mb-3">Contact</h4>
+              <p className="text-white/60 text-sm">16 Rue Paul Séjourné</p>
+              <p className="text-white/60 text-sm">94000 Créteil, France</p>
+              <p className="text-white/60 text-sm mt-2">Tél : +33 (0)1 43 77 28 07</p>
+              <p className="text-white/60 text-sm">France@golighthouse.com</p>
+            </div>
+            <div>
+              <h4 className="font-bold text-lg mb-3">Liens rapides</h4>
+              <div className="space-y-2">
+                <button onClick={() => setPage('dashboard')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Tableau de bord</button>
+                <button onClick={() => setPage('new-request')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Nouvelle demande</button>
+                <a href="https://golighthouse.fr" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse France</a>
+              </div>
+            </div>
+          </div>
+          <div className="border-t border-white/10 pt-6 text-center">
+            <p className="text-white/40 text-sm">© {new Date().getFullYear()} Lighthouse France SAS. Tous droits réservés.</p>
+            <div className="mt-2 flex justify-center gap-4">
+              <button onClick={() => setShowLegalPage('mentions')} className="text-white/30 text-xs hover:text-white/60">Mentions légales</button>
+              <span className="text-white/20">|</span>
+              <button onClick={() => setShowLegalPage('privacy')} className="text-white/30 text-xs hover:text-white/60">Politique de confidentialité</button>
+            </div>
           </div>
         </div>
       </footer>
@@ -4590,65 +4612,92 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
   if (!requestType) {
     return (
       <div>
-        <h1 className="text-2xl font-bold text-[#1E3A5F] mb-6">Nouvelle Demande</h1>
-        
+        <h1 className="text-2xl font-bold text-[#1E3A5F] mb-2">Nouvelle Demande</h1>
         <p className="text-gray-600 mb-8">Quel type de demande souhaitez-vous soumettre?</p>
         
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid md:grid-cols-2 gap-6">
           {/* Service Request */}
           <button
             onClick={() => setRequestType('service')}
-            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] hover:shadow-md transition-all text-left group"
           >
-            <div className="text-4xl mb-4">🔧</div>
-            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
-              Étalonnage / Réparation
-            </h2>
-            <p className="text-gray-600 text-sm">
-              Calibration, réparation ou maintenance de vos appareils
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-14 h-14 rounded-xl bg-blue-50 flex items-center justify-center text-3xl group-hover:bg-blue-100 transition-colors">🔧</div>
+              <h2 className="text-xl font-bold text-[#1E3A5F] group-hover:text-[#3B7AB4]">
+                Étalonnage / Réparation
+              </h2>
+            </div>
+            <p className="text-gray-600 text-sm leading-relaxed">
+              Soumettez une demande de calibration, réparation ou maintenance pour vos compteurs de particules et instruments de mesure. Nous vous enverrons un devis détaillé avant toute intervention.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">Calibration ISO 21501-4</span>
+              <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">Réparation</span>
+              <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full">Maintenance préventive</span>
+            </div>
           </button>
           
           {/* Parts Order */}
           <button
             onClick={() => setRequestType('parts')}
-            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#3B7AB4] transition-colors text-left group"
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#F59E0B] hover:shadow-md transition-all text-left group"
           >
-            <div className="text-4xl mb-4">📦</div>
-            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#3B7AB4]">
-              Commande de Pièces
-            </h2>
-            <p className="text-gray-600 text-sm">
-              Pièces de rechange ou consommables
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-14 h-14 rounded-xl bg-amber-50 flex items-center justify-center text-3xl group-hover:bg-amber-100 transition-colors">📦</div>
+              <h2 className="text-xl font-bold text-[#1E3A5F] group-hover:text-[#F59E0B]">
+                Commande de Pièces
+              </h2>
+            </div>
+            <p className="text-gray-600 text-sm leading-relaxed">
+              Commandez des pièces de rechange, consommables ou accessoires pour vos équipements Lighthouse. Filtres, sondes, câbles, batteries et plus encore.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="text-xs bg-amber-50 text-amber-600 px-2 py-1 rounded-full">Pièces détachées</span>
+              <span className="text-xs bg-amber-50 text-amber-600 px-2 py-1 rounded-full">Consommables</span>
+              <span className="text-xs bg-amber-50 text-amber-600 px-2 py-1 rounded-full">Accessoires</span>
+            </div>
           </button>
           
           {/* Contract Request */}
           <button
             onClick={() => setRequestType('contract')}
-            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#00A651] transition-colors text-left group"
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#00A651] hover:shadow-md transition-all text-left group"
           >
-            <div className="text-4xl mb-4">📋</div>
-            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#00A651]">
-              Contrat d'Étalonnage
-            </h2>
-            <p className="text-gray-600 text-sm">
-              Contrat annuel pour votre parc d'appareils
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-14 h-14 rounded-xl bg-green-50 flex items-center justify-center text-3xl group-hover:bg-green-100 transition-colors">📋</div>
+              <h2 className="text-xl font-bold text-[#1E3A5F] group-hover:text-[#00A651]">
+                Contrat d'Étalonnage
+              </h2>
+            </div>
+            <p className="text-gray-600 text-sm leading-relaxed">
+              Souscrivez un contrat annuel de calibration pour l'ensemble de votre parc d'appareils. Bénéficiez de tarifs préférentiels, d'un suivi prioritaire et d'une planification simplifiée.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-full">Tarifs réduits</span>
+              <span className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-full">Suivi prioritaire</span>
+              <span className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-full">Planification annuelle</span>
+            </div>
           </button>
           
           {/* Rental Request */}
           <button
             onClick={() => setRequestType('rental')}
-            className="bg-white rounded-xl p-6 shadow-sm border-2 border-gray-200 hover:border-[#8B5CF6] transition-colors text-left group"
+            className="bg-white rounded-xl p-8 shadow-sm border-2 border-gray-200 hover:border-[#8B5CF6] hover:shadow-md transition-all text-left group"
           >
-            <div className="text-4xl mb-4">📅</div>
-            <h2 className="text-lg font-bold text-[#1E3A5F] mb-2 group-hover:text-[#8B5CF6]">
-              Location d'Équipement
-            </h2>
-            <p className="text-gray-600 text-sm">
-              Louer des compteurs de particules
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-14 h-14 rounded-xl bg-purple-50 flex items-center justify-center text-3xl group-hover:bg-purple-100 transition-colors">📅</div>
+              <h2 className="text-xl font-bold text-[#1E3A5F] group-hover:text-[#8B5CF6]">
+                Location d'Équipement
+              </h2>
+            </div>
+            <p className="text-gray-600 text-sm leading-relaxed">
+              Louez des compteurs de particules pour vos qualifications de salles propres, audits ponctuels ou besoins temporaires. Appareils livrés calibrés et prêts à l'emploi.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full">Location courte durée</span>
+              <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full">Appareils calibrés</span>
+              <span className="text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded-full">Livraison incluse</span>
+            </div>
           </button>
         </div>
         
@@ -15837,7 +15886,7 @@ function HomePage({ t, setPage, setShowLegalPage }) {
                 <div className="space-y-2">
                   <button onClick={() => setPage('login')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Connexion</button>
                   <button onClick={() => setPage('register')} className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Creer un compte</button>
-                  <a href="https://www.golighthouse.com" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse Worldwide</a>
+                  <a href="https://golighthouse.fr" target="_blank" rel="noopener noreferrer" className="block text-white/60 text-sm hover:text-[#00A651] transition-colors">Lighthouse France</a>
                 </div>
               </div>
             </div>
