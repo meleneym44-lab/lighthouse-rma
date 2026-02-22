@@ -3032,6 +3032,7 @@ export default function CustomerPortal() {
   const [previousPage, setPreviousPage] = useState('dashboard');
   const [pendingRentalId, setPendingRentalId] = useState(null);
   const [pendingContractId, setPendingContractId] = useState(null);
+  const [unseenInvoiceCount, setUnseenInvoiceCount] = useState(0);
   const [toast, setToast] = useState(null);
   const [cookieConsent, setCookieConsent] = useState(() => {
     try { return localStorage.getItem('lhf_cookie_consent') === 'accepted'; } catch { return false; }
@@ -3073,6 +3074,19 @@ export default function CustomerPortal() {
     if (reqRes.data) setRequests(reqRes.data);
     if (addrRes.data) setAddresses(addrRes.data);
     if (contractsRes.data) setContracts(contractsRes.data);
+
+    // Count unseen invoices for nav badge
+    try {
+      const { data: invData } = await supabase
+        .from('invoices')
+        .select('id')
+        .eq('company_id', p.company_id)
+        .eq('status', 'sent');
+      if (invData) {
+        const seen = JSON.parse(localStorage.getItem('lhf_seen_invoices') || '[]');
+        setUnseenInvoiceCount(invData.filter(i => !seen.includes(i.id)).length);
+      }
+    } catch (e) { /* invoices table may not exist yet */ }
   }, []);
 
   const refresh = useCallback(() => loadData(profile), [loadData, profile]);
@@ -3368,8 +3382,13 @@ export default function CustomerPortal() {
               <button onClick={() => setPage('equipment')} className={`font-medium ${page === 'equipment' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('myEquipment')}
               </button>
-              <button onClick={() => setPage('invoices')} className={`font-medium ${page === 'invoices' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
+              <button onClick={() => setPage('invoices')} className={`font-medium relative ${page === 'invoices' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {lang === 'en' ? 'Invoices' : 'Factures'}
+                {unseenInvoiceCount > 0 && (
+                  <span className="absolute -top-2 -right-4 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
+                    {unseenInvoiceCount}
+                  </span>
+                )}
               </button>
               <button onClick={() => setPage('settings')} className={`font-medium ${page === 'settings' ? 'text-[#00A651]' : 'text-white/70 hover:text-white'}`}>
                 {t('settings')}
@@ -3402,11 +3421,16 @@ export default function CustomerPortal() {
               <button
                 key={p}
                 onClick={() => setPage(p)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap relative ${
                   page === p ? 'bg-[#00A651] text-white' : 'bg-white/10 text-white/70'
                 }`}
               >
                 {p === 'new-request' ? t('newRequest') : p === 'my-orders' ? (lang === 'en' ? 'My Orders' : 'Mes Commandes') : p === 'invoices' ? (lang === 'en' ? 'Invoices' : 'Factures') : t(p)}
+                {p === 'invoices' && unseenInvoiceCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                    {unseenInvoiceCount}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -3514,6 +3538,7 @@ export default function CustomerPortal() {
             t={t}
             lang={lang}
             notify={notify}
+            setUnseenInvoiceCount={setUnseenInvoiceCount}
           />
         )}
 
@@ -15956,12 +15981,24 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
 // ============================================
 // INVOICES PAGE
 // ============================================
-function InvoicesPage({ profile, t, lang, notify }) {
+function InvoicesPage({ profile, t, lang, notify, setUnseenInvoiceCount }) {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [seenIds, setSeenIds] = useState([]);
+  const [showModificationModal, setShowModificationModal] = useState(null);
+  const [modificationMessage, setModificationMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
+  // Load seen IDs from localStorage
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('lhf_seen_invoices') || '[]');
+      setSeenIds(stored);
+    } catch { setSeenIds([]); }
+  }, []);
+
+  // Fetch only sent invoices (visible to customer)
   useEffect(() => {
     const fetchInvoices = async () => {
       if (!profile?.company_id) return;
@@ -15969,79 +16006,74 @@ function InvoicesPage({ profile, t, lang, notify }) {
         .from('invoices')
         .select('*')
         .eq('company_id', profile.company_id)
+        .eq('status', 'sent')
         .order('created_at', { ascending: false });
       if (data) setInvoices(data);
-      if (error) console.log('Invoices table may not exist yet:', error.message);
+      if (error) console.log('Invoices fetch error:', error.message);
       setLoading(false);
     };
     fetchInvoices();
   }, [profile?.company_id]);
 
-  const getStatusColor = (status) => {
-    const colors = {
-      draft: 'bg-gray-100 text-gray-600',
-      sent: 'bg-blue-100 text-blue-700',
-      pending: 'bg-amber-100 text-amber-700',
-      paid: 'bg-green-100 text-green-700',
-      overdue: 'bg-red-100 text-red-700',
-      cancelled: 'bg-gray-100 text-gray-500',
-    };
-    return colors[status] || 'bg-gray-100 text-gray-600';
+  // Mark invoice as seen
+  const markSeen = (invoiceId) => {
+    if (seenIds.includes(invoiceId)) return;
+    const updated = [...seenIds, invoiceId];
+    setSeenIds(updated);
+    try { localStorage.setItem('lhf_seen_invoices', JSON.stringify(updated)); } catch {}
+    // Update nav badge
+    const remaining = invoices.filter(i => !updated.includes(i.id)).length;
+    if (setUnseenInvoiceCount) setUnseenInvoiceCount(remaining);
   };
 
-  const getStatusLabel = (status) => {
-    const labels = {
-      draft: 'Brouillon', sent: 'Envoyée', pending: 'En attente', 
-      paid: 'Payée', overdue: 'En retard', cancelled: 'Annulée',
-    };
-    return labels[status] || status;
-  };
+  // Mark all as seen when page loads
+  useEffect(() => {
+    if (!loading && invoices.length > 0) {
+      const allIds = invoices.map(i => i.id);
+      const newSeen = [...new Set([...seenIds, ...allIds])];
+      setSeenIds(newSeen);
+      try { localStorage.setItem('lhf_seen_invoices', JSON.stringify(newSeen)); } catch {}
+      if (setUnseenInvoiceCount) setUnseenInvoiceCount(0);
+    }
+  }, [loading, invoices.length]);
 
-  const filters = [
-    { id: 'all', label: 'Toutes', count: invoices.length },
-    { id: 'pending', label: 'En attente', count: invoices.filter(i => ['sent', 'pending'].includes(i.status)).length },
-    { id: 'overdue', label: 'En retard', count: invoices.filter(i => i.status === 'overdue').length },
-    { id: 'paid', label: 'Payées', count: invoices.filter(i => i.status === 'paid').length },
-  ];
+  const isNew = (invoiceId) => !seenIds.includes(invoiceId);
+
+  // Request modification
+  const sendModificationRequest = async () => {
+    if (!modificationMessage.trim() || !showModificationModal) return;
+    setSending(true);
+    try {
+      // Send as a message on the linked service request, or create a notification
+      const inv = showModificationModal;
+      await supabase.from('messages').insert({
+        service_request_id: inv.service_request_id || null,
+        sender_id: profile.id,
+        sender_type: 'customer',
+        content: `[Demande de modification - Facture ${inv.invoice_number}]\n\n${modificationMessage}`,
+      });
+      notify('Demande de modification envoyée');
+      setShowModificationModal(null);
+      setModificationMessage('');
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setSending(false);
+  };
 
   const filteredInvoices = invoices.filter(inv => {
-    if (filter === 'pending') return ['sent', 'pending'].includes(inv.status);
-    if (filter === 'overdue') return inv.status === 'overdue';
-    if (filter === 'paid') return inv.status === 'paid';
-    return true;
-  }).filter(inv => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (inv.invoice_number || '').toLowerCase().includes(q) ||
            (inv.description || '').toLowerCase().includes(q);
   });
 
-  // Summary stats
-  const totalDue = invoices.filter(i => ['sent', 'pending', 'overdue'].includes(i.status)).reduce((sum, i) => sum + (i.total_amount || 0), 0);
-  const totalOverdue = invoices.filter(i => i.status === 'overdue').reduce((sum, i) => sum + (i.total_amount || 0), 0);
-
   return (
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-[#1E3A5F]">{lang === 'en' ? 'Invoices' : 'Factures'}</h1>
-          <p className="text-gray-500 text-sm mt-1">{lang === 'en' ? 'View and manage your invoices' : 'Consultez et gérez vos factures'}</p>
-        </div>
-      </div>
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Total Due' : 'Total dû'}</p>
-          <p className="text-2xl font-bold text-[#1E3A5F]">{totalDue.toFixed(2)} €</p>
-        </div>
-        <div className={`rounded-xl p-5 shadow-sm border ${totalOverdue > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
-          <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Overdue' : 'En retard'}</p>
-          <p className={`text-2xl font-bold ${totalOverdue > 0 ? 'text-red-600' : 'text-[#1E3A5F]'}`}>{totalOverdue.toFixed(2)} €</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <p className="text-sm text-gray-500 mb-1">{lang === 'en' ? 'Total Invoices' : 'Total factures'}</p>
-          <p className="text-2xl font-bold text-[#1E3A5F]">{invoices.length}</p>
+          <p className="text-gray-500 text-sm mt-1">{lang === 'en' ? 'View your invoices and download PDFs' : 'Consultez vos factures et téléchargez les PDF'}</p>
         </div>
       </div>
 
@@ -16059,24 +16091,6 @@ function InvoicesPage({ profile, t, lang, notify }) {
         </div>
       </div>
 
-      {/* Filter chips */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-        {filters.map(f => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-              filter === f.id 
-                ? 'bg-[#1E3A5F] text-white shadow-md' 
-                : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            {f.label}
-            <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === f.id ? 'bg-white/20' : 'bg-gray-100'}`}>{f.count}</span>
-          </button>
-        ))}
-      </div>
-
       {/* Invoice list */}
       {loading ? (
         <div className="text-center py-12">
@@ -16084,64 +16098,127 @@ function InvoicesPage({ profile, t, lang, notify }) {
           <p className="text-gray-400">{lang === 'en' ? 'Loading...' : 'Chargement...'}</p>
         </div>
       ) : filteredInvoices.length > 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase">{lang === 'en' ? 'Invoice' : 'Facture'}</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">{lang === 'en' ? 'Date' : 'Date'}</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">{lang === 'en' ? 'Description' : 'Description'}</th>
-                <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase">{lang === 'en' ? 'Amount' : 'Montant'}</th>
-                <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">{lang === 'en' ? 'Status' : 'Statut'}</th>
-                <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">{lang === 'en' ? 'Due Date' : 'Échéance'}</th>
-                <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase">PDF</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filteredInvoices.map(inv => (
-                <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-4">
-                    <span className="font-bold text-[#1E3A5F]">{inv.invoice_number || '—'}</span>
-                  </td>
-                  <td className="px-5 py-4 text-sm text-gray-500 hidden sm:table-cell">
-                    {inv.created_at ? new Date(inv.created_at).toLocaleDateString('fr-FR') : '—'}
-                  </td>
-                  <td className="px-5 py-4 text-sm text-gray-600 hidden md:table-cell truncate max-w-[250px]">
-                    {inv.description || '—'}
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <span className="font-bold text-[#1E3A5F]">{(inv.total_amount || 0).toFixed(2)} €</span>
-                    {inv.tax_amount > 0 && <p className="text-xs text-gray-400">TVA: {inv.tax_amount.toFixed(2)} €</p>}
-                  </td>
-                  <td className="px-5 py-4 text-center">
-                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${getStatusColor(inv.status)}`}>
-                      {getStatusLabel(inv.status)}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-sm text-center hidden sm:table-cell">
-                    {inv.due_date ? (
-                      <span className={inv.status === 'overdue' ? 'text-red-600 font-medium' : 'text-gray-500'}>
-                        {new Date(inv.due_date).toLocaleDateString('fr-FR')}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-5 py-4 text-center">
-                    {inv.pdf_url ? (
-                      <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="text-[#3B7AB4] hover:text-[#1E3A5F]" title="Télécharger">
-                        📄
-                      </a>
-                    ) : <span className="text-gray-300">—</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {filteredInvoices.map(inv => {
+            const unseen = isNew(inv.id);
+            return (
+              <div 
+                key={inv.id} 
+                className={`bg-white rounded-xl shadow-sm border-2 p-6 transition-all ${
+                  unseen 
+                    ? 'border-[#00A651] bg-green-50/30 ring-2 ring-[#00A651]/20' 
+                    : 'border-gray-100'
+                }`}
+                onClick={() => markSeen(inv.id)}
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  {/* Left: Invoice info */}
+                  <div className="flex items-start gap-4">
+                    {unseen && (
+                      <div className="flex-shrink-0 mt-1">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#00A651] text-white text-xs font-bold rounded-full animate-pulse">
+                          ✨ NOUVEAU
+                        </span>
+                      </div>
+                    )}
+                    <div>
+                      <div className="flex items-center gap-3 mb-1">
+                        <h3 className="text-lg font-bold text-[#1E3A5F]">{inv.invoice_number || '—'}</h3>
+                      </div>
+                      <p className="text-sm text-gray-500 mb-1">
+                        {inv.created_at ? new Date(inv.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+                        {inv.description && <span className="ml-2 text-gray-400">— {inv.description}</span>}
+                      </p>
+                      {inv.due_date && (
+                        <p className="text-xs text-gray-400">
+                          Échéance : {new Date(inv.due_date).toLocaleDateString('fr-FR')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Amount + Actions */}
+                  <div className="flex items-center gap-4 md:gap-6">
+                    {/* Amount */}
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-[#1E3A5F]">
+                        {(inv.total_amount || inv.amount || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+                      </p>
+                      {inv.amount > 0 && inv.tax_amount > 0 && (
+                        <p className="text-xs text-gray-400">
+                          HT: {inv.amount.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} € | TVA: {inv.tax_amount.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      {inv.pdf_url ? (
+                        <a 
+                          href={inv.pdf_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          onClick={(e) => { e.stopPropagation(); markSeen(inv.id); }}
+                          className="px-4 py-2.5 bg-[#1E3A5F] text-white rounded-lg font-medium hover:bg-[#2C5282] transition-colors flex items-center gap-2 text-sm"
+                        >
+                          📄 PDF
+                        </a>
+                      ) : (
+                        <span className="px-4 py-2.5 bg-gray-100 text-gray-400 rounded-lg text-sm">PDF non disponible</span>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); markSeen(inv.id); setShowModificationModal(inv); }}
+                        className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm"
+                      >
+                        ✏️ Modifier
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-16">
           <div className="text-6xl mb-4">🧾</div>
           <h3 className="text-xl font-bold text-gray-400 mb-2">{lang === 'en' ? 'No invoices' : 'Aucune facture'}</h3>
-          <p className="text-gray-400">{lang === 'en' ? 'Your invoices will appear here once generated' : 'Vos factures apparaîtront ici une fois générées'}</p>
+          <p className="text-gray-400">{lang === 'en' ? 'Your invoices will appear here once sent' : 'Vos factures apparaîtront ici une fois envoyées'}</p>
+        </div>
+      )}
+
+      {/* Modification Request Modal */}
+      {showModificationModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowModificationModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[#1E3A5F] mb-2">
+              Demande de modification
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Facture : <strong>{showModificationModal.invoice_number}</strong> — {(showModificationModal.total_amount || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+            </p>
+            <textarea
+              value={modificationMessage}
+              onChange={e => setModificationMessage(e.target.value)}
+              placeholder="Décrivez la modification souhaitée (ex: erreur d'adresse, montant incorrect, TVA...)"
+              className="w-full h-32 p-3 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+            />
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={() => { setShowModificationModal(null); setModificationMessage(''); }}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={sendModificationRequest}
+                disabled={!modificationMessage.trim() || sending}
+                className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] disabled:opacity-50"
+              >
+                {sending ? 'Envoi...' : 'Envoyer la demande'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
