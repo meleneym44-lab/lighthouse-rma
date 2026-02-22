@@ -7512,6 +7512,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
 
       {/* Addresses Section */}
       {activeSection === 'addresses' && (
+        <div className="space-y-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
             <div>
@@ -7741,6 +7742,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
           </div>
         </div>
         )}
+        </div>
       )}
 
       {/* Language Section */}
