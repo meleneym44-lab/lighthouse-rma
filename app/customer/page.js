@@ -3040,6 +3040,7 @@ export default function CustomerPortal() {
   const [showLegalPage, setShowLegalPage] = useState(null); // 'privacy' | 'mentions' | null
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const authProcessedRef = useRef(false);
   
   // Data
   const [requests, setRequests] = useState([]);
@@ -3116,6 +3117,7 @@ export default function CustomerPortal() {
             setProfile(p);
             if (p.preferred_language) setLang(p.preferred_language);
             else setLang('fr');
+            authProcessedRef.current = true;
             await loadData(p);
           } else {
             // No profile - try processing pending invite or registration
@@ -3130,6 +3132,7 @@ export default function CustomerPortal() {
                   setUser(session.user);
                   setProfile(newP);
                   setNeedsSetup(true);
+                  authProcessedRef.current = true;
                   await loadData(newP);
                   setLoading(false);
                   return;
@@ -3153,6 +3156,43 @@ export default function CustomerPortal() {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
+        setLoading(false);
+      }
+      // Handle invite email link click (user arrives with session from email token)
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+        // Only process if checkAuth hasn't already handled this
+        if (authProcessedRef.current) return;
+        authProcessedRef.current = true;
+        try {
+          const { data: p } = await supabase.from('profiles')
+            .select('*, companies(*)')
+            .eq('id', session.user.id)
+            .single();
+          if (p) {
+            setUser(session.user);
+            setProfile(p);
+            if (p.preferred_language) setLang(p.preferred_language);
+            else setLang('fr');
+            setPage('dashboard');
+            await loadData(p);
+          } else {
+            const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
+            if (processed) {
+              const { data: newP } = await supabase.from('profiles')
+                .select('*, companies(*)')
+                .eq('id', session.user.id)
+                .single();
+              if (newP) {
+                setUser(session.user);
+                setProfile(newP);
+                setNeedsSetup(true);
+                await loadData(newP);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Auth state change error:', err);
+        }
         setLoading(false);
       }
     });
@@ -7216,50 +7256,41 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       return;
     }
 
-    // 2. Create auth user via direct API call (sends verification email)
-    // Using fetch() so it doesn't affect the admin's current session
-    const tempPassword = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)) + 'Aa1!';
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // 2. Send invite email via server-side API route
     const redirectUrl = window.location.origin + '/customer';
     
     try {
-      const signupRes = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+      const res = await fetch('/api/invite', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey
-        },
-        body: JSON.stringify({
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
           email: inviteData.email.toLowerCase(),
-          password: tempPassword,
-          data: { invited: true, invite_token: token },
-          gotrue_meta_supabase: {
-            redirect_to: redirectUrl
-          }
+          redirectUrl 
         })
       });
       
-      const signupData = await signupRes.json();
+      const result = await res.json();
       
-      if (signupRes.ok) {
-        notify(`Email de vérification envoyé à ${inviteData.email} ! L'utilisateur doit cliquer le lien pour activer son compte.`);
-      } else if (signupData?.msg?.includes('already registered') || signupData?.message?.includes('already registered')) {
-        // User already has an auth account - they just need to login
-        notify(`Invitation créée pour ${inviteData.email}. Cet utilisateur a déjà un compte — il peut se connecter directement.`);
+      if (res.ok && result.success) {
+        if (result.alreadyExists) {
+          notify(`Invitation créée pour ${inviteData.email}. Cet utilisateur a déjà un compte — il peut se connecter directement.`);
+        } else {
+          notify(`Email d'invitation envoyé à ${inviteData.email} !`);
+        }
       } else {
-        // Signup failed but invite was created - show manual link
+        // API failed - show manual link as fallback
+        console.error('[Invite] API error:', result.error);
         const baseUrl = window.location.origin + '/customer';
         const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
         setLastInviteLink(inviteLink);
-        notify(`Invitation créée. L'envoi automatique a échoué — partagez le lien manuellement.`);
+        notify(`Invitation créée. L'envoi automatique a échoué (${result.error || 'erreur serveur'}) — partagez le lien manuellement.`);
       }
     } catch (fetchErr) {
-      // API call failed - fallback to manual link
+      console.error('[Invite] Fetch error:', fetchErr);
       const baseUrl = window.location.origin + '/customer';
       const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
       setLastInviteLink(inviteLink);
-      notify(`Invitation créée. Partagez le lien d'inscription manuellement.`);
+      notify(`Invitation créée. Partagez le lien manuellement.`);
     }
     
     setSaving(false);
