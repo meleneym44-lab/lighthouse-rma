@@ -15690,41 +15690,22 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
   const rmas = (requests || []).filter(r => r.request_type !== 'parts');
   const partsOrders = (requests || []).filter(r => r.request_type === 'parts');
 
-  // Status helpers
+  // Status helpers - use global STATUS_STYLES for consistent French labels
   const getStatusColor = (status) => {
-    const colors = {
-      submitted: 'bg-blue-100 text-blue-700',
-      quote_sent: 'bg-amber-100 text-amber-700',
-      approved: 'bg-green-100 text-green-700',
-      shipped: 'bg-purple-100 text-purple-700',
-      received: 'bg-indigo-100 text-indigo-700',
-      in_progress: 'bg-cyan-100 text-cyan-700',
-      calibration: 'bg-cyan-100 text-cyan-700',
-      completed: 'bg-green-100 text-green-700',
-      invoiced: 'bg-emerald-100 text-emerald-700',
-      cancelled: 'bg-red-100 text-red-700',
-      active: 'bg-green-100 text-green-700',
-      expired: 'bg-gray-100 text-gray-500',
-      pending: 'bg-amber-100 text-amber-700',
-      confirmed: 'bg-green-100 text-green-700',
-      delivered: 'bg-blue-100 text-blue-700',
-      return_pending: 'bg-orange-100 text-orange-700',
-      returned: 'bg-gray-100 text-gray-600',
-    };
-    return colors[status] || 'bg-gray-100 text-gray-600';
+    const s = STATUS_STYLES[status];
+    if (s) return `${s.bg} ${s.text}`;
+    return 'bg-gray-100 text-gray-600';
   };
 
   const getStatusLabel = (status) => {
-    const labels = {
-      submitted: 'Soumise', rma_created: 'RMA créé', quote_sent: 'Devis envoyé', approved: 'Approuvée',
-      waiting: 'En attente', shipped: 'Expédiée', received: 'Reçue', in_queue: 'En file', 
-      calibration: 'En calibration', in_progress: 'En cours', qc: 'Contrôle qualité',
-      ready: 'Prête', return_shipped: 'Retour expédié', completed: 'Terminée', invoiced: 'Facturée',
-      cancelled: 'Annulée', active: 'Actif', expired: 'Expiré', quote: 'Devis',
-      pending: 'En attente', confirmed: 'Confirmée', delivered: 'Livrée',
-      return_pending: 'Retour en attente', returned: 'Retournée',
+    // Extra labels for contract/rental statuses not in STATUS_STYLES
+    const extras = {
+      active: 'Actif', expired: 'Expiré', quote: 'Devis',
+      confirmed: 'Confirmée', return_pending: 'Retour en attente', returned: 'Retournée',
+      invoiced: 'Facturée', rma_created: 'RMA créé', quote_approved: 'Devis approuvé',
+      bc_submitted: 'BC soumis', bc_approved: 'BC approuvé',
     };
-    return labels[status] || status;
+    return STATUS_STYLES[status]?.label || extras[status] || status;
   };
 
   const isActive = (status) => !['completed', 'invoiced', 'cancelled', 'expired', 'returned'].includes(status);
@@ -15775,6 +15756,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     let date = '';
     let status = '';
     let summary = '';
+    let serials = [];
     let active = false;
 
     if (type === 'rma' || type === 'parts') {
@@ -15783,8 +15765,9 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
       status = item.status;
       active = isActive(item.status);
       if (type === 'rma') {
-        const deviceCount = item.request_devices?.length || 0;
-        summary = `${deviceCount} appareil${deviceCount > 1 ? 's' : ''} — ${item.requested_service || 'Service'}`;
+        const devices = item.request_devices || [];
+        serials = devices.map(d => (d.model_name ? d.model_name + ' — ' : '') + (d.serial_number || '')).filter(s => s.length > 0);
+        summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${item.requested_service || 'Service'}`;
       } else {
         summary = item.problem_description?.split('\n')[0]?.slice(0, 80) || 'Commande de pièces';
       }
@@ -15793,16 +15776,21 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
       date = item.created_at;
       status = item.status;
       active = !['expired', 'cancelled', 'completed'].includes(item.status);
-      const deviceCount = item.contract_devices?.length || 0;
-      summary = `${deviceCount} appareil${deviceCount > 1 ? 's' : ''} — ${item.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
+      const devices = item.contract_devices || [];
+      serials = devices.map(d => (d.model_name ? d.model_name + ' — ' : '') + (d.serial_number || '')).filter(s => s.length > 0);
+      summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${item.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
     } else if (type === 'rental') {
       ref = item.rental_number || 'Location en cours de création';
       date = item.created_at;
       status = item.status;
       active = !['returned', 'cancelled', 'completed'].includes(item.status);
-      const itemCount = item.rental_request_items?.length || 0;
-      summary = `${itemCount} appareil${itemCount > 1 ? 's' : ''}`;
+      const items2 = item.rental_request_items || [];
+      serials = items2.map(ri => ri.equipment_name || ri.serial_number).filter(Boolean);
+      summary = `${items2.length} appareil${items2.length > 1 ? 's' : ''}`;
     }
+
+    const displaySerials = serials.slice(0, 2);
+    const extraCount = serials.length - 2;
 
     return (
       <button
@@ -15822,6 +15810,18 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
               </span>
             </div>
             <p className="text-gray-600 text-sm truncate">{summary}</p>
+            {displaySerials.length > 0 && (
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                {displaySerials.map((s, i) => (
+                  <span key={i} className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                    {s}
+                  </span>
+                ))}
+                {extraCount > 0 && (
+                  <span className="text-xs text-gray-400 font-medium">+{extraCount} autre{extraCount > 1 ? 's' : ''}</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-xs text-gray-400">{date ? new Date(date).toLocaleDateString('fr-FR') : '—'}</p>
