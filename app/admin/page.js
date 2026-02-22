@@ -20421,7 +20421,8 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
   const [contractData, setContractData] = useState({
     start_date: contract.start_date || new Date().toISOString().split('T')[0],
     end_date: contract.end_date || new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-    internal_notes: contract.internal_notes || ''
+    internal_notes: contract.internal_notes || '',
+    shipping_price: contract.shipping_price ?? null
   });
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -20484,7 +20485,8 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
         .update({
           start_date: contractData.start_date,
           end_date: contractData.end_date,
-          internal_notes: contractData.internal_notes
+          internal_notes: contractData.internal_notes,
+          shipping_price: contractData.shipping_price
         })
         .eq('id', contract.id);
       if (contractError) throw contractError;
@@ -20639,6 +20641,12 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                 <button onClick={() => updateContractStatus('active')} disabled={saving}
                   className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
                   {saving ? '⏳...' : '✅ Approuver BC → Activer'}
+                </button>
+              )}
+              {(contract.status === 'quote_sent' || contract.status === 'contract_sent') && isPricingContract && (
+                <button onClick={() => updateContractStatus('active')} disabled={saving}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium disabled:opacity-50">
+                  {saving ? '⏳...' : '✅ Approuver & Activer'}
                 </button>
               )}
               {contract.status === 'active' && (
@@ -20897,6 +20905,30 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                       </div>
                       )}
                     </div>
+
+                    {/* Shipping price (pricing contracts) */}
+                    {isPricingContract && (
+                      <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">📦</span>
+                            <span className="font-medium text-amber-800">Frais de port contractuels</span>
+                          </div>
+                          {editMode ? (
+                            <div className="flex items-center gap-2">
+                              <input type="number" step="0.01" value={contractData.shipping_price ?? ''} onChange={e => setContractData({...contractData, shipping_price: e.target.value === '' ? null : parseFloat(e.target.value)})} className="border rounded px-3 py-1 text-sm w-24 text-center font-bold" placeholder="45" />
+                              <span className="text-sm text-amber-700">€ / colis</span>
+                            </div>
+                          ) : (
+                            <span className="font-bold text-amber-800">
+                              {contract.shipping_price !== null && contract.shipping_price !== undefined 
+                                ? `${parseFloat(contract.shipping_price).toFixed(2)} € / colis`
+                                : 'Tarif standard (45.00 €)'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Notes */}
                     {editMode ? (
@@ -21362,8 +21394,9 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     company_name: '',
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-    status: 'active',
-    internal_notes: ''
+    status: 'quote_sent',
+    internal_notes: '',
+    shipping_price: null // null = standard rate, number = contract rate
   });
   
   // Live fuzzy matching for manual company name
@@ -21479,17 +21512,19 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       // Footer line
       pdf.setDrawColor(200, 200, 200);
       pdf.setLineWidth(0.3);
-      pdf.line(margin, pageHeight - 22, pageWidth - margin, pageHeight - 22);
-      // Company info
+      pdf.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
+      // Company info - left
       pdf.setFontSize(7);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(140, 140, 140);
-      pdf.text(biz.company_name || 'Lighthouse France SAS', margin, pageHeight - 17);
-      pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'}`, margin, pageHeight - 13);
-      pdf.text(`Tel. ${biz.phone || '01 43 77 28 07'}${biz.email ? ' - ' + biz.email : ''}`, margin, pageHeight - 9);
-      if (biz.siret) pdf.text(`SIRET: ${biz.siret}`, margin, pageHeight - 5);
-      // Page number
-      pdf.text(`Page ${pageNum} / ${totalPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
+      pdf.text(biz.company_name || 'Lighthouse France SAS', margin, pageHeight - 15);
+      pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'}`, margin, pageHeight - 11);
+      pdf.text(`Tel: ${biz.phone || '01 43 77 28 07'} - ${biz.email || 'service@golighthouse.com'}`, margin, pageHeight - 7);
+      // Right - SIRET + page
+      if (biz.siret) pdf.text(`SIRET: ${biz.siret}`, pageWidth - margin, pageHeight - 11, { align: 'right' });
+      if (biz.tva_number) pdf.text(`TVA: ${biz.tva_number}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Page ${pageNum} / ${totalPages}`, pageWidth - margin, pageHeight - 15, { align: 'right' });
     };
 
     const footerZone = 30;
@@ -21506,7 +21541,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     if (lighthouseLogo) {
       try {
         const fmt = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-        pdf.addImage(lighthouseLogo, fmt, margin, y, 60, 16);
+        pdf.addImage(lighthouseLogo, fmt, margin, y, 75, 20);
       } catch (e) {
         pdf.setFontSize(20); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
         pdf.text('LIGHTHOUSE', margin, y + 10);
@@ -21514,17 +21549,17 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     }
     
     // Title block - right aligned
-    pdf.setFontSize(18);
+    pdf.setFontSize(16);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...navy);
-    pdf.text(isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ETALONNAGE", pageWidth - margin, y + 5, { align: 'right' });
+    pdf.text(isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ETALONNAGE", pageWidth - margin, y + 6, { align: 'right' });
     
-    pdf.setFontSize(10);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text(contractNumber || '', pageWidth - margin, y + 11, { align: 'right' });
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...accent);
+    pdf.text(contractNumber || '', pageWidth - margin, y + 13, { align: 'right' });
     
-    y += 20;
+    y += 24;
     
     // Navy accent bar
     pdf.setFillColor(...navy);
@@ -21538,7 +21573,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     
     // Left column - Contract details
     pdf.setFillColor(245, 247, 250);
-    pdf.roundedRect(colLeft, y, colW, 32, 2, 2, 'F');
+    pdf.roundedRect(colLeft, y, colW, 26, 2, 2, 'F');
     
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'bold');
@@ -21552,18 +21587,16 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     pdf.text('Date :', colLeft + 5, infoY);
     pdf.text('Debut :', colLeft + 5, infoY + 5);
     pdf.text('Fin :', colLeft + 5, infoY + 10);
-    pdf.text('Validite :', colLeft + 5, infoY + 15);
     
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
     pdf.text(new Date().toLocaleDateString('fr-FR'), colLeft + 30, infoY);
     pdf.text(new Date(contractData.start_date).toLocaleDateString('fr-FR'), colLeft + 30, infoY + 5);
     pdf.text(new Date(contractData.end_date).toLocaleDateString('fr-FR'), colLeft + 30, infoY + 10);
-    pdf.text('30 jours', colLeft + 30, infoY + 15);
     
     // Right column - Client
     pdf.setFillColor(245, 247, 250);
-    pdf.roundedRect(colRight, y, colW, 32, 2, 2, 'F');
+    pdf.roundedRect(colRight, y, colW, 26, 2, 2, 'F');
     
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'bold');
@@ -21594,7 +21627,26 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       }
     }
     
-    y += 38;
+    y += 30;
+    
+    // Offer validity + shipping price (below the boxes)
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(...gray);
+    pdf.text("Validite de l'offre : 30 jours a compter de la date d'emission.", margin, y);
+    y += 5;
+    
+    if (isPricing && contractData.shipping_price !== null && contractData.shipping_price !== undefined) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text('Frais de port contractuels : ', margin, y);
+      const labelW = pdf.getTextWidth('Frais de port contractuels : ');
+      pdf.setTextColor(...accent);
+      pdf.text(`${parseFloat(contractData.shipping_price).toFixed(2)} EUR / colis`, margin + labelW, y);
+      y += 5;
+    }
+    
+    y += 4;
 
     if (isPricing) {
       // ===== PRICING CONTRACT - Category + exceptions only =====
@@ -21662,7 +21714,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(170, 170, 175);
         pdf.text(`${catalog.models.length} modeles inclus`, margin + 4, y + 2);
-        y += 6;
+        y += 10; // More generous spacing between categories
       }
       
     } else {
@@ -21747,46 +21799,56 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       y += noteLines.length * 4 + 5;
     }
 
-    // ===== SIGNATURES =====
-    checkPageBreak(50);
-    y += 8;
+    // ===== SIGNATURE SECTION (quote style) =====
+    checkPageBreak(55);
+    y += 10;
     
-    // Section title
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...navy);
-    pdf.text('SIGNATURES', margin, y);
-    y += 1;
-    pdf.setFillColor(...navy);
-    pdf.rect(margin, y, 20, 0.5, 'F');
-    y += 8;
-    
-    const sigBoxW = (contentWidth - 15) / 2;
-    const sigBoxH = 30;
-    
-    // Left - Lighthouse
-    pdf.setDrawColor(200, 205, 210);
+    // Separator line
+    pdf.setDrawColor(200, 200, 200);
     pdf.setLineWidth(0.3);
-    pdf.roundedRect(margin, y, sigBoxW, sigBoxH, 2, 2, 'S');
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...navy);
-    pdf.text('LIGHTHOUSE FRANCE', margin + 5, y + 6);
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Date et signature :', margin + 5, y + 11);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 8;
     
-    // Right - Client
-    pdf.roundedRect(pageWidth - margin - sigBoxW, y, sigBoxW, sigBoxH, 2, 2, 'S');
+    // ETABLI PAR (left side)
     pdf.setFontSize(8);
+    pdf.setTextColor(180, 180, 180);
+    pdf.text('ETABLI PAR', margin, y);
+    y += 6;
+    pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...navy);
-    pdf.text('LE CLIENT', pageWidth - margin - sigBoxW + 5, y + 6);
-    pdf.setFontSize(7);
+    pdf.setTextColor(...darkBlue);
+    pdf.text(biz.quote_signatory || 'M. Meleney', margin, y);
+    y += 5;
+    pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
-    pdf.text('Date et signature :', pageWidth - margin - sigBoxW + 5, y + 11);
+    pdf.text(biz.company_name || 'Lighthouse France', margin, y);
+    
+    // CapCert logo (next to name)
+    let capcertLogo = null;
+    try {
+      capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
+    } catch (e) {}
+    if (capcertLogo) {
+      try {
+        const fmt = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+        pdf.addImage(capcertLogo, fmt, margin + 55, y - 14, 30, 30);
+      } catch (e) {}
+    }
+    
+    // Signature box (right side)
+    const sigBoxX = pageWidth - margin - 62;
+    const sigBoxY = y - 14;
+    pdf.setFontSize(8);
+    pdf.setTextColor(180, 180, 180);
+    pdf.text('Signature client', sigBoxX + 16, sigBoxY);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.setLineWidth(0.3);
+    pdf.setLineDashPattern([2, 2], 0);
+    pdf.roundedRect(sigBoxX + 5, sigBoxY + 3, 52, 22, 2, 2, 'D');
+    pdf.setLineDashPattern([], 0);
+    pdf.setFontSize(7);
+    pdf.text('Lu et approuve', sigBoxX + 18, sigBoxY + 28);
 
     // Add footers to all pages
     const pageCount = pdf.internal.getNumberOfPages();
@@ -21870,10 +21932,24 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         }
       }
 
-      // Create contract (contract_number auto-generated by DB)
+      // Generate contract number
+      let contractNumber = null;
+      try {
+        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'CTR' });
+        if (!docNumError && docNumData) contractNumber = docNumData;
+      } catch (e) { console.error('get_next_doc_number error:', e); }
+      if (!contractNumber) {
+        const year = new Date().getFullYear();
+        const { data: existing } = await supabase.from('contracts').select('contract_number').like('contract_number', `CTR-${year}-%`).order('contract_number', { ascending: false }).limit(1);
+        const lastNum = existing?.[0]?.contract_number ? parseInt(existing[0].contract_number.split('-')[2]) : 0;
+        contractNumber = `CTR-${year}-${String(lastNum + 1).padStart(3, '0')}`;
+      }
+
+      // Create contract
       const { data: contract, error: contractError } = await supabase
         .from('contracts')
         .insert({
+          contract_number: contractNumber,
           company_id: resolvedCompanyId,
           company_name_manual: resolvedManualName,
           contract_type: contractType,
@@ -21884,6 +21960,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
               models: cat.models.filter(m => m.isOverride).map(m => ({ key: m.key, name: m.name, price: m.price }))
             }))
           ) : null,
+          shipping_price: contractType === 'pricing' ? contractData.shipping_price : null,
           start_date: contractData.start_date,
           end_date: contractData.end_date,
           status: contractData.status,
@@ -21934,7 +22011,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
 
       // Generate and upload contract PDF (now we have the real contract_number from DB)
       try {
-        const realContractNumber = contract.contract_number || '';
+        const realContractNumber = contract.contract_number || contractNumber || '';
         const resolvedClientName = resolvedCompanyId 
           ? (clients.find(c => c.id === resolvedCompanyId)?.name || resolvedManualName || 'Client')
           : (resolvedManualName || 'Client');
@@ -22266,6 +22343,29 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                   )}
                 </div>
               </div>
+              {/* Shipping price override */}
+              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📦</span>
+                    <div>
+                      <p className="font-bold text-amber-800">Frais de port contractuels</p>
+                      <p className="text-xs text-amber-600">Tarif standard : 45.00 € / colis. Laissez vide pour utiliser le tarif standard.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" 
+                      value={contractData.shipping_price ?? ''} 
+                      onChange={e => setContractData({ ...contractData, shipping_price: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                      className="w-24 px-3 py-2 border-2 border-amber-300 rounded-lg text-center font-bold bg-white"
+                      placeholder="45"
+                      min="0" step="0.01"
+                    />
+                    <span className="text-amber-800 font-medium">€ / colis</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           )}
@@ -22290,26 +22390,25 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
               {/* Header */}
               <div className="p-6 pb-4">
                 <div className="flex justify-between items-start">
-                  <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10" onError={e => { e.target.style.display='none'; }} />
+                  <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-14" onError={e => { e.target.style.display='none'; }} />
                   <div className="text-right">
                     <h2 className="text-xl font-bold" style={{ color: '#2D5A7B' }}>
                       {isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ÉTALONNAGE"}
                     </h2>
-                    <p className="text-sm text-gray-400 mt-1">N° attribué à la création</p>
+                    <p className="text-sm font-bold text-green-600 mt-1">N° attribué à la création</p>
                   </div>
                 </div>
                 <div className="mt-3 h-0.5 bg-[#2D5A7B] rounded" />
               </div>
               
               {/* Info cards */}
-              <div className="px-6 grid grid-cols-2 gap-4 mb-5">
+              <div className="px-6 grid grid-cols-2 gap-4 mb-3">
                 <div className="bg-gray-50 rounded-lg p-4">
                   <p className="text-[10px] font-bold text-[#2D5A7B] tracking-wider mb-2">DÉTAILS DU CONTRAT</p>
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between"><span className="text-gray-500">Date :</span><span className="font-medium text-gray-800">{new Date().toLocaleDateString('fr-FR')}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">Début :</span><span className="font-medium text-gray-800">{new Date(contractData.start_date).toLocaleDateString('fr-FR')}</span></div>
                     <div className="flex justify-between"><span className="text-gray-500">Fin :</span><span className="font-medium text-gray-800">{new Date(contractData.end_date).toLocaleDateString('fr-FR')}</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Validité :</span><span className="font-medium text-gray-800">30 jours</span></div>
                   </div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4">
@@ -22322,6 +22421,14 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                     </div>
                   )}
                 </div>
+              </div>
+              
+              {/* Validity + shipping */}
+              <div className="px-6 mb-5">
+                <p className="text-xs text-gray-400 italic">Validité de l'offre : 30 jours à compter de la date d'émission.</p>
+                {isPricing && contractData.shipping_price !== null && contractData.shipping_price !== undefined && (
+                  <p className="text-sm font-bold text-[#2D5A7B] mt-1">📦 Frais de port contractuels : <span className="text-green-600">{parseFloat(contractData.shipping_price).toFixed(2)} € / colis</span></p>
+                )}
               </div>
               
               {/* Content - Pricing or Token */}
@@ -22398,17 +22505,21 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                 </div>
               )}
               
-              {/* Signatures */}
+              {/* Signature section - quote style */}
               <div className="px-6 pb-6">
-                <p className="text-xs font-bold text-[#2D5A7B] tracking-wider mb-3">SIGNATURES</p>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="border border-gray-200 rounded-lg p-4 h-24">
-                    <p className="text-xs font-bold text-[#2D5A7B]">LIGHTHOUSE FRANCE</p>
-                    <p className="text-[10px] text-gray-400 mt-1">Date et signature :</p>
-                  </div>
-                  <div className="border border-gray-200 rounded-lg p-4 h-24">
-                    <p className="text-xs font-bold text-[#2D5A7B]">LE CLIENT</p>
-                    <p className="text-[10px] text-gray-400 mt-1">Date et signature :</p>
+                <div className="border-t border-gray-200 pt-5">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-[10px] text-gray-400 tracking-wider">ÉTABLI PAR</p>
+                      <p className="text-lg font-bold text-[#2D5A7B] mt-1">{businessSettings?.quote_signatory || 'M. Meleney'}</p>
+                      <p className="text-sm text-gray-500">{businessSettings?.company_name || 'Lighthouse France'}</p>
+                      <img src="/images/logos/capcert-logo.png" alt="CapCert" className="h-12 mt-2 opacity-80" onError={e => { e.target.style.display='none'; }} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[10px] text-gray-400 tracking-wider mb-2">Signature client</p>
+                      <div className="w-40 h-20 border-2 border-dashed border-gray-300 rounded-lg"></div>
+                      <p className="text-[10px] text-gray-400 mt-1">Lu et approuvé</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -26270,7 +26381,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           if (companyId) {
             const { data: pricingContracts } = await supabase
               .from('contracts')
-              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, shipping_price, contract_devices(*)')
               .eq('status', 'active')
               .eq('company_id', companyId)
               .eq('contract_type', 'pricing')
@@ -26289,7 +26400,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             if (companyName) {
               const { data: allPricing } = await supabase
                 .from('contracts')
-                .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*), companies(name)')
+                .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, shipping_price, contract_devices(*), companies(name)')
                 .eq('status', 'active')
                 .eq('contract_type', 'pricing')
                 .lte('start_date', todayStr)
@@ -26315,7 +26426,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
               if (mk) pricingMap[mk] = { unit_price: pd.unit_price || 0, device_type: pd.device_type, contract_device_id: pd.id };
             }
             console.log('💲 Early path pricing map keys:', Object.keys(pricingMap).length);
-            setContractInfo({ contracts: [earlyPricingContract], primaryContract: earlyPricingContract, deviceMap: {}, pricingContract: true, pricingMap });
+            setContractInfo({ contracts: [earlyPricingContract], primaryContract: earlyPricingContract, deviceMap: {}, pricingContract: true, pricingMap, shippingPrice: earlyPricingContract.shipping_price });
           }
           
           setLoadingContract(false);
@@ -26403,7 +26514,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           console.log('🔍 Checking pricing contracts for company_id:', companyId);
           const { data: pricingContracts } = await supabase
             .from('contracts')
-            .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+            .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, shipping_price, contract_devices(*)')
             .eq('status', 'active')
             .eq('company_id', companyId)
             .eq('contract_type', 'pricing')
@@ -26448,7 +26559,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             console.log('🔍 Fuzzy checking ALL pricing contracts for:', companyName);
             const { data: allPricingContracts } = await supabase
               .from('contracts')
-              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*), companies(name)')
+              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, shipping_price, contract_devices(*), companies(name)')
               .eq('status', 'active')
               .eq('contract_type', 'pricing')
               .lte('start_date', todayStr)
@@ -26513,7 +26624,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             primaryContract: prev?.primaryContract || foundPricingContract,
             deviceMap: prev?.deviceMap || {},
             pricingContract: true,
-            pricingMap
+            pricingMap,
+            shippingPrice: foundPricingContract.shipping_price
           }));
         } else {
           console.log('❌ No pricing contract found for company_id:', companyId, 'company:', request?.companies?.name);
@@ -26685,6 +26797,16 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       // Restore discount data if saved
       if (existingQuoteData?.discount) {
         setDiscountData(existingQuoteData.discount);
+      }
+      
+      // Apply contract shipping price override
+      if (contractInfo?.shippingPrice !== null && contractInfo?.shippingPrice !== undefined) {
+        console.log('📦 Applying contract shipping price:', contractInfo.shippingPrice);
+        setShippingData(prev => ({
+          ...prev,
+          unitPrice: contractInfo.shippingPrice,
+          total: contractInfo.shippingPrice * prev.parcels
+        }));
       }
     }
   }, [loadingContract, loadingParts, contractInfo, partsCache]);
@@ -27374,6 +27496,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           <p className="text-xs text-blue-600 mt-2">
                             Contrat: {contractInfo.primaryContract.contract_number} • 
                             Valide jusqu'au {new Date(contractInfo.primaryContract.end_date).toLocaleDateString('fr-FR')}
+                            {contractInfo.shippingPrice !== null && contractInfo.shippingPrice !== undefined && (
+                              <> • 📦 Port: {parseFloat(contractInfo.shippingPrice).toFixed(2)} €/colis</>
+                            )}
                           </p>
                         )}
                       </div>
