@@ -26418,6 +26418,28 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             console.log('✅ Found pricing contract by company_id:', foundPricingContract.contract_number);
           } else {
             console.log('❌ No active pricing contract found for company_id:', companyId, 'on date:', todayStr);
+            // DEBUG: Show ALL contracts for this company to find the mismatch
+            const { data: debugContracts } = await supabase
+              .from('contracts')
+              .select('id, contract_number, status, contract_type, company_id, start_date, end_date, company_name_manual')
+              .eq('company_id', companyId);
+            console.log('🔎 DEBUG - All contracts for this company:', debugContracts);
+            // Also check ALL pricing contracts in system
+            const { data: allPricingDebug } = await supabase
+              .from('contracts')
+              .select('id, contract_number, status, contract_type, company_id, start_date, end_date, company_name_manual')
+              .eq('contract_type', 'pricing');
+            console.log('🔎 DEBUG - ALL pricing contracts in system:', allPricingDebug);
+            if (debugContracts) {
+              debugContracts.forEach(dc => {
+                console.log(`   Contract ${dc.contract_number}: status="${dc.status}" type="${dc.contract_type}" dates=${dc.start_date} → ${dc.end_date}`);
+                const statusOk = dc.status === 'active';
+                const typeOk = dc.contract_type === 'pricing';
+                const startOk = dc.start_date <= todayStr;
+                const endOk = dc.end_date >= todayStr;
+                console.log(`   Filters: status=${statusOk} type=${typeOk} startOk=${startOk} endOk=${endOk}`);
+              });
+            }
           }
         }
         
