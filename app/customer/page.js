@@ -4800,6 +4800,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [showNewBillingForm, setShowNewBillingForm] = useState(false);
   const [newBillingAddress, setNewBillingAddress] = useState({ label: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '' });
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -4914,7 +4915,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     return data.id;
   };
 
-  const handleSubmit = async (e) => {
+  const openReview = (e) => {
     e.preventDefault();
     
     // Validate devices
@@ -4923,7 +4924,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         notify('Veuillez remplir tous les champs obligatoires pour chaque appareil (type, modèle, n° série, service)', 'error');
         return;
       }
-      // Notes required only for repair, calibration_repair, or other services
       const needsNotes = d.service_type === 'repair' || d.service_type === 'calibration_repair' || d.service_type === 'other';
       if (needsNotes && !d.notes) {
         notify('Veuillez décrire le problème ou la demande dans les notes pour les réparations', 'error');
@@ -4939,14 +4939,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       }
     }
 
-    // Handle address
-    let addressId = shipping.address_id;
-    if (shipping.showNewForm) {
-      addressId = await saveNewAddress();
-      if (!addressId) return;
-    }
-    
-    if (!addressId) {
+    // Validate address
+    if (!shipping.showNewForm && !shipping.address_id) {
       notify('Veuillez sélectionner ou ajouter une adresse', 'error');
       return;
     }
@@ -4963,9 +4957,22 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
 
+    setShowReviewModal(true);
+  };
+
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
+
     setSaving(true);
     
     try {
+      // Handle shipping address
+      let addressId = shipping.address_id;
+      if (shipping.showNewForm) {
+        addressId = await saveNewAddress();
+        if (!addressId) { setSaving(false); return; }
+      }
+
       // Handle billing address
       let finalBillingAddressId = billingChoice === 'same' ? addressId : billingChoice === 'other' ? (billingAddressId || null) : null;
       if (showNewBillingForm) {
@@ -5041,9 +5048,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         }
       }
 
-      notify('Demande soumise avec succès! Numéro FR attribué après validation.');
       refresh();
-      setPage('dashboard');
+      setShowReviewModal(false);
+      setShowSuccess(true);
     } catch (err) {
       notify(`Erreur: ${err.message}`, 'error');
     }
@@ -5058,7 +5065,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Demande Étalonnage / Réparation</h1>
       </div>
       
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={openReview}>
         {/* Devices */}
         <div className="space-y-6 mb-8">
           {devices.map((device) => (
@@ -5177,7 +5184,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
             disabled={saving}
             className="flex-1 py-3 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F] transition-colors disabled:opacity-50"
           >
-            {saving ? 'Envoi en cours...' : 'Soumettre la Demande'}
+            {saving ? 'Envoi en cours...' : 'Vérifier et Soumettre →'}
           </button>
         </div>
       </form>
@@ -5194,95 +5201,172 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           return a ? `${a.label || a.company_name}, ${a.address_line1}, ${a.postal_code} ${a.city}` : '—';
         };
         const serviceLabels = { calibration: 'Étalonnage', repair: 'Réparation', calibration_repair: 'Étalonnage + Réparation', other: 'Autre' };
+        const returnShippingLabels = {
+          standard: '🚚 Retour standard par Lighthouse',
+          own_label: '🏷️ Le client fournit sa propre étiquette de retour',
+          pickup: '🏢 Le client récupère les appareils sur place'
+        };
 
         return (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
-            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="px-6 py-4 border-b border-gray-200 shrink-0">
-                <h2 className="text-lg font-bold text-[#1E3A5F]">Récapitulatif de la demande</h2>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-6 py-5 border-b border-gray-200 shrink-0 bg-[#1E3A5F] rounded-t-2xl">
+                <h2 className="text-xl font-bold text-white">📋 Récapitulatif de votre demande</h2>
+                <p className="text-white/60 text-sm mt-1">Vérifiez les informations avant de soumettre</p>
               </div>
-              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+
+              <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                {/* Devices */}
                 <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Appareils ({devices.length})</p>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200 text-left text-xs text-gray-400">
-                        <th className="pb-2 font-medium">#</th>
-                        <th className="pb-2 font-medium">Appareil</th>
-                        <th className="pb-2 font-medium">N° Série</th>
-                        <th className="pb-2 font-medium">Service</th>
-                        <th className="pb-2 font-medium">Retour</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {devices.map((d, i) => {
-                        const devAddr = d.shipping_address_id ? addresses.find(a => a.id === d.shipping_address_id) : null;
-                        return (
-                          <tr key={d.id}>
-                            <td className="py-2 text-gray-400">{i + 1}</td>
-                            <td className="py-2 font-medium text-[#1E3A5F]">{d.brand === 'other' ? d.brand_other : 'Lighthouse'} {d.model}</td>
-                            <td className="py-2 font-mono text-xs">{d.serial_number}</td>
-                            <td className="py-2 text-xs">{serviceLabels[d.service_type] || d.service_other || '—'}</td>
-                            <td className="py-2 text-xs text-gray-500">
-                              {devAddr ? <span className="text-amber-600" title={`${devAddr.label || devAddr.company_name}, ${devAddr.city}`}>{devAddr.label || devAddr.city}</span> : 'Standard'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <hr className="border-gray-100" />
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Adresse de retour</p>
-                    {retAddr && (
-                      <div className="text-sm text-gray-700 leading-relaxed">
-                        <p className="font-medium text-[#1E3A5F]">{retAddr.company_name || retAddr.label || co.name}</p>
-                        {retAddr.attention && <p>Attn: {retAddr.attention}</p>}
-                        <p>{retAddr.address_line1}</p>
-                        <p>{retAddr.postal_code} {retAddr.city}, {retAddr.country || 'France'}</p>
-                      </div>
-                    )}
-                    <p className="text-xs text-gray-400 mt-1">
-                      {shipping.return_shipping === 'own_label' 
-                        ? '🏷️ Étiquette de retour fournie par le client' 
-                        : shipping.return_shipping === 'pickup' 
-                          ? '🏢 Récupération sur place par le client' 
-                          : `${shipping.parcels} colis`}
-                    </p>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    🔧 Appareils ({devices.length})
+                  </h3>
+                  <div className="space-y-3">
+                    {devices.map((d, i) => {
+                      const devAddr = d.shipping_address_id ? addresses.find(a => a.id === d.shipping_address_id) : null;
+                      return (
+                        <div key={d.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-bold text-[#1E3A5F]">
+                                {d.brand === 'other' ? d.brand_other : 'Lighthouse'} {d.model}
+                              </p>
+                              <p className="text-sm text-gray-500 font-mono">S/N: {d.serial_number}</p>
+                            </div>
+                            <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">
+                              {serviceLabels[d.service_type] || d.service_other || '—'}
+                            </span>
+                          </div>
+                          {d.notes && <p className="text-xs text-gray-500 mt-2 italic">"{d.notes}"</p>}
+                          {d.accessories?.length > 0 && (
+                            <p className="text-xs text-gray-400 mt-1">Accessoires : {d.accessories.join(', ')}</p>
+                          )}
+                          {devAddr && (
+                            <p className="text-xs text-amber-600 mt-1">↩ Retour : {devAddr.label || devAddr.company_name}, {devAddr.city}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Facturation</p>
-                    <div className="text-sm text-gray-700 leading-relaxed">
-                      <p>{getBillingAddr()}</p>
+                </div>
+
+                <hr className="border-gray-200" />
+
+                {/* Return Address */}
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    📍 Adresse de retour
+                  </h3>
+                  {retAddr && (
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                      <p className="font-medium text-[#1E3A5F]">{retAddr.company_name || retAddr.label || co.name}</p>
+                      {retAddr.attention && <p className="text-sm text-gray-600">Attn: {retAddr.attention}</p>}
+                      <p className="text-sm text-gray-600">{retAddr.address_line1}</p>
+                      <p className="text-sm text-gray-600">{retAddr.postal_code} {retAddr.city}, {retAddr.country || 'France'}</p>
                     </div>
+                  )}
+                </div>
+
+                {/* Billing */}
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    💳 Facturation
+                  </h3>
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                    <p className="text-sm text-gray-700">{getBillingAddr()}</p>
                     {(co.siret || co.tva_number) && (
-                      <div className="mt-2 pt-2 border-t border-gray-100 text-xs text-gray-500 space-y-0.5">
+                      <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500 space-y-0.5">
                         {co.siret && <p>SIRET: <span className="font-mono">{co.siret}</span></p>}
                         {co.tva_number && <p>TVA: <span className="font-mono">{co.tva_number}</span></p>}
                       </div>
                     )}
                   </div>
                 </div>
+
+                {/* Return Shipping Method */}
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    🚚 Retour des appareils
+                  </h3>
+                  <div className={`rounded-lg p-4 border ${
+                    shipping.return_shipping === 'own_label' ? 'bg-amber-50 border-amber-200' 
+                    : shipping.return_shipping === 'pickup' ? 'bg-green-50 border-green-200' 
+                    : 'bg-blue-50 border-blue-200'
+                  }`}>
+                    <p className="font-medium text-sm">{returnShippingLabels[shipping.return_shipping] || returnShippingLabels.standard}</p>
+                    {shipping.return_shipping === 'standard' && (
+                      <p className="text-xs text-gray-500 mt-1">📦 {shipping.parcels} colis</p>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-200 flex gap-3 shrink-0">
-                <button type="button" onClick={() => setShowReviewModal(false)} className="flex-1 py-2.5 bg-white border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-50">
-                  Modifier
+
+              {/* Actions */}
+              <div className="px-6 py-4 border-t border-gray-200 flex gap-3 shrink-0 bg-gray-50 rounded-b-2xl">
+                <button type="button" onClick={() => setShowReviewModal(false)} className="flex-1 py-3 bg-white border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-100">
+                  ← Modifier
                 </button>
                 <button
                   type="button"
-                  onClick={(e) => { setShowReviewModal(false); handleSubmit(e); }}
+                  onClick={(e) => handleSubmit(e)}
                   disabled={saving}
-                  className="flex-1 py-2.5 bg-[#1E3A5F] text-white rounded-lg font-semibold hover:bg-[#2a4f7a] disabled:opacity-50"
+                  className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008C44] disabled:opacity-50 transition-colors"
                 >
-                  {saving ? 'Envoi...' : 'Confirmer et envoyer'}
+                  {saving ? 'Envoi en cours...' : '✓ Confirmer et envoyer'}
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+
+      {/* Success Page */}
+      {showSuccess && (
+        <div className="fixed inset-0 bg-white z-50 flex items-center justify-center p-4">
+          <div className="max-w-lg w-full text-center">
+            <div className="w-20 h-20 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-4xl text-white">✓</span>
+            </div>
+            <h1 className="text-2xl font-bold text-[#1E3A5F] mb-3">Merci pour votre demande !</h1>
+            <p className="text-gray-600 mb-8 leading-relaxed">
+              Nous allons examiner votre demande et vous envoyer un devis sous peu. 
+              Après approbation du devis, vous pourrez envoyer vos appareils à l'adresse suivante :
+            </p>
+            
+            <div className="bg-[#E8F2F8] rounded-xl p-6 mb-8 text-left border-2 border-[#3B7AB4]/30">
+              <p className="text-xs font-bold text-[#3B7AB4] uppercase tracking-wider mb-3">📦 Adresse d'envoi des appareils</p>
+              <p className="font-bold text-[#1E3A5F] text-lg">Lighthouse France SAS</p>
+              <p className="text-gray-700">À l'attention de Marshall Meleney</p>
+              <p className="text-gray-700">16 Rue Paul Séjourné</p>
+              <p className="text-gray-700">94000 Créteil, France</p>
+              <p className="text-gray-700 mt-2">📞 +33 (0)1 43 77 28 07</p>
+            </div>
+
+            <div className="bg-amber-50 rounded-xl p-4 mb-8 text-left border border-amber-200">
+              <p className="text-sm text-amber-800">
+                <strong>⚠️ Important :</strong> N'envoyez pas vos appareils avant d'avoir reçu et approuvé notre devis. 
+                Nous vous contacterons dès que le devis sera prêt.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setPage('my-orders')} 
+                className="flex-1 py-3 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50"
+              >
+                Voir mes commandes
+              </button>
+              <button 
+                onClick={() => setPage('dashboard')} 
+                className="flex-1 py-3 bg-[#1E3A5F] text-white rounded-lg font-bold hover:bg-[#2a4f7a]"
+              >
+                Retour au tableau de bord
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
