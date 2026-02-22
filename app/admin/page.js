@@ -20427,6 +20427,8 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteInput, setDeleteInput] = useState('');
   const [existingContracts, setExistingContracts] = useState([]);
   const messagesEndRef = useRef(null);
 
@@ -20642,39 +20644,16 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
               {contract.status === 'active' && (
                 <span className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium text-sm">✅ Contrat Actif</span>
               )}
+              {profile?.role === 'lh_admin' && (
               <button
-                onClick={async () => {
-                  const contractNum = contract.contract_number || 'ce contrat';
-                  if (!confirm(`⚠️ Supprimer ${contractNum} ?\n\nCette action est irréversible. Tous les appareils et messages associés seront supprimés.`)) return;
-                  setSaving(true);
-                  try {
-                    // Unlink any RMAs referencing this contract
-                    const deviceIds = (contract.contract_devices || []).map(d => d.id).filter(Boolean);
-                    if (deviceIds.length > 0) {
-                      await supabase.from('request_devices').update({ contract_device_id: null }).in('contract_device_id', deviceIds);
-                    }
-                    await supabase.from('service_requests').update({ contract_id: null }).eq('contract_id', contract.id);
-                    // Delete messages, devices, then contract
-                    await supabase.from('messages').delete().eq('contract_id', contract.id);
-                    await supabase.from('contract_devices').delete().eq('contract_id', contract.id);
-                    const { error } = await supabase.from('contracts').delete().eq('id', contract.id);
-                    if (error) throw error;
-                    notify('🗑️ Contrat supprimé');
-                    onUpdate();
-                    onClose();
-                  } catch (err) {
-                    console.error('Delete error:', err);
-                    notify('Erreur: ' + err.message, 'error');
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
+                onClick={() => setShowDeleteConfirm(true)}
                 disabled={saving}
                 className="px-3 py-2 bg-red-500/20 hover:bg-red-500 text-red-200 hover:text-white rounded-lg text-sm transition-colors disabled:opacity-50"
-                title="Supprimer ce contrat"
+                title="Supprimer ce contrat (admin)"
               >
                 🗑️
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -21092,10 +21071,82 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal - Admin only, type to confirm */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={() => { setShowDeleteConfirm(false); setDeleteInput(''); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="bg-red-600 px-6 py-4">
+              <h3 className="text-white font-bold text-lg">⚠️ Supprimer le contrat</h3>
+              <p className="text-red-100 text-sm">Cette action est permanente et irréversible</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+                <p className="font-bold mb-1">Cela supprimera définitivement :</p>
+                <p>• Le contrat <span className="font-mono font-bold">{contract.contract_number}</span></p>
+                <p>• {(contract.contract_devices || []).length} appareil(s) associé(s)</p>
+                <p>• Tous les messages liés</p>
+                <p>• Les liens avec les RMA seront détachés</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tapez <span className="font-mono font-bold text-red-600 bg-red-50 px-1 rounded">{contract.contract_number}</span> pour confirmer :
+                </label>
+                <input
+                  type="text"
+                  value={deleteInput}
+                  onChange={e => setDeleteInput(e.target.value)}
+                  placeholder={contract.contract_number}
+                  className={`w-full px-4 py-2.5 border-2 rounded-lg font-mono text-center text-lg ${deleteInput === contract.contract_number ? 'border-red-500 bg-red-50' : 'border-gray-300'}`}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t flex justify-between">
+              <button 
+                onClick={() => { setShowDeleteConfirm(false); setDeleteInput(''); }} 
+                className="px-5 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={async () => {
+                  if (deleteInput !== contract.contract_number) return;
+                  setSaving(true);
+                  try {
+                    const deviceIds = (contract.contract_devices || []).map(d => d.id).filter(Boolean);
+                    if (deviceIds.length > 0) {
+                      await supabase.from('request_devices').update({ contract_device_id: null }).in('contract_device_id', deviceIds);
+                    }
+                    await supabase.from('service_requests').update({ contract_id: null }).eq('contract_id', contract.id);
+                    await supabase.from('messages').delete().eq('contract_id', contract.id);
+                    await supabase.from('contract_devices').delete().eq('contract_id', contract.id);
+                    const { error } = await supabase.from('contracts').delete().eq('id', contract.id);
+                    if (error) throw error;
+                    notify('🗑️ Contrat supprimé définitivement');
+                    onUpdate();
+                    onClose();
+                  } catch (err) {
+                    console.error('Delete error:', err);
+                    notify('Erreur: ' + err.message, 'error');
+                  } finally {
+                    setSaving(false);
+                    setShowDeleteConfirm(false);
+                    setDeleteInput('');
+                  }
+                }}
+                disabled={deleteInput !== contract.contract_number || saving}
+                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+              >
+                {saving ? '⏳ Suppression...' : '🗑️ Supprimer définitivement'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-commande/manual' }) {
+}({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-commande/manual' }) {
   const t = k => k;
   const [uploading, setUploading] = useState(false);
   const [urlMode, setUrlMode] = useState(false);
@@ -26178,12 +26229,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       // Trim whitespace and normalize serial numbers (case-insensitive)
       const deviceSerials = devices.map(d => (d.serial_number || '').trim().toUpperCase()).filter(Boolean);
       console.log('🔍 Checking contracts for serial numbers:', deviceSerials);
-      
-      if (deviceSerials.length === 0) {
-        console.log('❌ No serial numbers to check');
-        setLoadingContract(false);
-        return;
-      }
+      console.log('🔍 Company ID from request:', request?.company_id, 'Company name:', request?.companies?.name);
       
       const todayStr = new Date().toISOString().split('T')[0];
       console.log('📅 Today:', todayStr);
@@ -26215,6 +26261,65 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             .select('id, contract_number, start_date, end_date, status')
             .eq('status', 'active');
           console.log('📋 All active contracts (any date):', allActive);
+          
+          // Still check for pricing contracts even if no token contracts found
+          const companyId = request?.company_id;
+          let earlyPricingContract = null;
+          
+          if (companyId) {
+            const { data: pricingContracts } = await supabase
+              .from('contracts')
+              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+              .eq('status', 'active')
+              .eq('company_id', companyId)
+              .eq('contract_type', 'pricing')
+              .lte('start_date', todayStr)
+              .gte('end_date', todayStr);
+            
+            if (pricingContracts && pricingContracts.length > 0) {
+              earlyPricingContract = pricingContracts[0];
+              console.log('✅ Found pricing contract (early path, by company_id):', earlyPricingContract.contract_number);
+            }
+          }
+          
+          // Fuzzy fallback for early path
+          if (!earlyPricingContract) {
+            const companyName = request?.companies?.name || '';
+            if (companyName) {
+              const { data: unlinked } = await supabase
+                .from('contracts')
+                .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+                .eq('status', 'active')
+                .is('company_id', null)
+                .not('company_name_manual', 'is', null)
+                .eq('contract_type', 'pricing')
+                .lte('start_date', todayStr)
+                .gte('end_date', todayStr);
+              
+              if (unlinked && unlinked.length > 0) {
+                const fakeList = unlinked.map(c => ({ id: c.id, name: c.company_name_manual }));
+                const matches = fuzzyMatchCompanies(companyName, fakeList);
+                if (matches.length > 0 && matches[0].score >= 60) {
+                  earlyPricingContract = unlinked.find(c => c.id === matches[0].company.id);
+                  console.log(`✅ Fuzzy matched pricing contract (early path): "${matches[0].company.name}" → score ${matches[0].score}`);
+                  if (earlyPricingContract && companyId) {
+                    await supabase.from('contracts').update({ company_id: companyId, company_name_manual: null }).eq('id', earlyPricingContract.id).catch(() => {});
+                  }
+                }
+              }
+            }
+          }
+          
+          if (earlyPricingContract) {
+            const pricingMap = {};
+            for (const pd of (earlyPricingContract.contract_devices || [])) {
+              const mk = (pd.model_name || '').trim().toUpperCase();
+              if (mk) pricingMap[mk] = { unit_price: pd.unit_price || 0, device_type: pd.device_type, contract_device_id: pd.id };
+            }
+            console.log('💲 Early path pricing map keys:', Object.keys(pricingMap).length);
+            setContractInfo({ contracts: [earlyPricingContract], primaryContract: earlyPricingContract, deviceMap: {}, pricingContract: true, pricingMap });
+          }
+          
           setLoadingContract(false);
           return;
         }
@@ -26289,96 +26394,102 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           console.log('✅ Contract info set!');
         } else {
           console.log('❌ No matching serial numbers found in token contracts');
+        }
+        
+        // === PRICING CONTRACT LOOKUP ===
+        // ALWAYS check for pricing contracts (even if token contract found - tokens may be exhausted)
+        const companyId = request?.company_id;
+        let foundPricingContract = null;
+        
+        if (companyId) {
+          console.log('🔍 Checking pricing contracts for company_id:', companyId);
+          const { data: pricingContracts } = await supabase
+            .from('contracts')
+            .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+            .eq('status', 'active')
+            .eq('company_id', companyId)
+            .eq('contract_type', 'pricing')
+            .lte('start_date', todayStr)
+            .gte('end_date', todayStr);
           
-          // === PRICING CONTRACT LOOKUP ===
-          // If no token contract match, check for pricing contracts by company_id
-          const companyId = request?.company_id;
-          let foundPricingContract = null;
-          
-          if (companyId) {
-            console.log('🔍 Checking pricing contracts for company_id:', companyId);
-            const { data: pricingContracts } = await supabase
+          if (pricingContracts && pricingContracts.length > 0) {
+            foundPricingContract = pricingContracts[0];
+            console.log('✅ Found pricing contract by company_id:', foundPricingContract.contract_number);
+          } else {
+            console.log('❌ No active pricing contract found for company_id:', companyId, 'on date:', todayStr);
+          }
+        }
+        
+        // Fuzzy fallback: check unlinked pricing contracts by company_name_manual
+        if (!foundPricingContract) {
+          const companyName = request?.companies?.name || request?.company_name || '';
+          if (companyName) {
+            console.log('🔍 Fuzzy checking unlinked pricing contracts for:', companyName);
+            const { data: unlinkedContracts } = await supabase
               .from('contracts')
               .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
               .eq('status', 'active')
-              .eq('company_id', companyId)
+              .is('company_id', null)
+              .not('company_name_manual', 'is', null)
               .eq('contract_type', 'pricing')
               .lte('start_date', todayStr)
               .gte('end_date', todayStr);
             
-            if (pricingContracts && pricingContracts.length > 0) {
-              foundPricingContract = pricingContracts[0];
-              console.log('✅ Found pricing contract by company_id:', foundPricingContract.contract_number);
-            }
-          }
-          
-          // Fuzzy fallback: check unlinked pricing contracts by company_name_manual
-          if (!foundPricingContract && companyId) {
-            const companyName = request?.companies?.name || request?.company_name || '';
-            if (companyName) {
-              console.log('🔍 Fuzzy checking unlinked pricing contracts for:', companyName);
-              const { data: unlinkedContracts } = await supabase
-                .from('contracts')
-                .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
-                .eq('status', 'active')
-                .is('company_id', null)
-                .not('company_name_manual', 'is', null)
-                .eq('contract_type', 'pricing')
-                .lte('start_date', todayStr)
-                .gte('end_date', todayStr);
-              
-              if (unlinkedContracts && unlinkedContracts.length > 0) {
-                // Use fuzzyMatchCompanies to find best match
-                const fakeCompanyList = unlinkedContracts.map(c => ({ id: c.id, name: c.company_name_manual }));
-                const matches = fuzzyMatchCompanies(companyName, fakeCompanyList);
-                if (matches.length > 0 && matches[0].score >= 60) {
-                  foundPricingContract = unlinkedContracts.find(c => c.id === matches[0].company.id);
-                  console.log(`✅ Fuzzy matched unlinked pricing contract: "${matches[0].company.name}" → score ${matches[0].score}`, foundPricingContract?.contract_number);
-                  
-                  // Auto-link the contract to this company
-                  if (foundPricingContract) {
-                    try {
-                      await supabase.from('contracts')
-                        .update({ company_id: companyId, company_name_manual: null })
-                        .eq('id', foundPricingContract.id);
-                      console.log('🔗 Auto-linked pricing contract to company_id:', companyId);
-                    } catch (linkErr) {
-                      console.error('Auto-link failed:', linkErr);
-                    }
+            if (unlinkedContracts && unlinkedContracts.length > 0) {
+              const fakeCompanyList = unlinkedContracts.map(c => ({ id: c.id, name: c.company_name_manual }));
+              const matches = fuzzyMatchCompanies(companyName, fakeCompanyList);
+              if (matches.length > 0 && matches[0].score >= 60) {
+                foundPricingContract = unlinkedContracts.find(c => c.id === matches[0].company.id);
+                console.log(`✅ Fuzzy matched unlinked pricing contract: "${matches[0].company.name}" → score ${matches[0].score}`, foundPricingContract?.contract_number);
+                
+                // Auto-link the contract to this company
+                if (foundPricingContract && companyId) {
+                  try {
+                    await supabase.from('contracts')
+                      .update({ company_id: companyId, company_name_manual: null })
+                      .eq('id', foundPricingContract.id);
+                    console.log('🔗 Auto-linked pricing contract to company_id:', companyId);
+                  } catch (linkErr) {
+                    console.error('Auto-link failed:', linkErr);
                   }
                 }
               }
             }
           }
+        }
+        
+        if (foundPricingContract) {
+          const pricingDevices = foundPricingContract.contract_devices || [];
+          console.log('💲 Building pricing map from', pricingDevices.length, 'contract devices');
           
-          if (foundPricingContract) {
-              const pricingDevices = foundPricingContract.contract_devices || [];
-              
-              // Build a pricing map: model_name (uppercase) -> { unit_price, device_type }
-              const pricingMap = {};
-              for (const pd of pricingDevices) {
-                const modelKey = (pd.model_name || '').trim().toUpperCase();
-                const normalizedKey = modelKey.toLowerCase().replace(/[+\-\/\s]+/g, ' ').trim();
-                if (modelKey) {
-                  const entry = {
-                    unit_price: pd.unit_price || 0,
-                    device_type: pd.device_type,
-                    contract_device_id: pd.id
-                  };
-                  pricingMap[modelKey] = entry;
-                  pricingMap[normalizedKey.toUpperCase()] = entry;
-                }
-              }
-              console.log('💲 Pricing map:', pricingMap);
-              
-              setContractInfo({
-                contracts: [foundPricingContract],
-                primaryContract: foundPricingContract,
-                deviceMap: {},
-                pricingContract: true,
-                pricingMap
-              });
+          // Build a pricing map: model_name (uppercase) -> { unit_price, device_type }
+          const pricingMap = {};
+          for (const pd of pricingDevices) {
+            const modelKey = (pd.model_name || '').trim().toUpperCase();
+            const normalizedKey = modelKey.toLowerCase().replace(/[+\-\/\s]+/g, ' ').trim();
+            if (modelKey) {
+              const entry = {
+                unit_price: pd.unit_price || 0,
+                device_type: pd.device_type,
+                contract_device_id: pd.id
+              };
+              pricingMap[modelKey] = entry;
+              pricingMap[normalizedKey.toUpperCase()] = entry;
+            }
           }
+          console.log('💲 Pricing map keys:', Object.keys(pricingMap).length, Object.keys(pricingMap).slice(0, 10));
+          
+          // Merge with existing token contract info or set fresh
+          setContractInfo(prev => ({
+            ...(prev || {}),
+            contracts: prev?.contracts || [foundPricingContract],
+            primaryContract: prev?.primaryContract || foundPricingContract,
+            deviceMap: prev?.deviceMap || {},
+            pricingContract: true,
+            pricingMap
+          }));
+        } else {
+          console.log('❌ No pricing contract found for company_id:', companyId, 'company:', request?.companies?.name);
         }
       } catch (err) {
         console.error('Contract check error:', err);
