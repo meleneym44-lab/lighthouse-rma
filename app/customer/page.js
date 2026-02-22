@@ -15753,7 +15753,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     let active = false;
 
     if (type === 'rma' || type === 'parts') {
-      ref = item.request_number || `#${item.id?.slice(0, 8)}`;
+      ref = item.request_number || 'En attente de numéro';
       date = item.created_at;
       status = item.status;
       active = isActive(item.status);
@@ -15764,14 +15764,14 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
         summary = item.problem_description?.split('\n')[0]?.slice(0, 80) || 'Commande de pièces';
       }
     } else if (type === 'contract') {
-      ref = item.contract_number || `CTR-${item.id?.slice(0, 6)}`;
+      ref = item.contract_number || 'Contrat en cours de création';
       date = item.created_at;
       status = item.status;
       active = !['expired', 'cancelled', 'completed'].includes(item.status);
       const deviceCount = item.contract_devices?.length || 0;
       summary = `${deviceCount} appareil${deviceCount > 1 ? 's' : ''} — ${item.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
     } else if (type === 'rental') {
-      ref = item.rental_number || `LOC-${item.id?.slice(0, 6)}`;
+      ref = item.rental_number || 'Location en cours de création';
       date = item.created_at;
       status = item.status;
       active = !['returned', 'cancelled', 'completed'].includes(item.status);
