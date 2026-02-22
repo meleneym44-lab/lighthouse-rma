@@ -3113,6 +3113,7 @@ export default function CustomerPortal() {
           setUser(session.user);
           setProfile(p);
           if (p.preferred_language) setLang(p.preferred_language);
+          else setLang('fr');
           await loadData(p);
         } else {
           await supabase.auth.signOut({ scope: 'local' });
@@ -3182,6 +3183,7 @@ export default function CustomerPortal() {
       setUser(data.user);
       setProfile(p);
       if (p.preferred_language) setLang(p.preferred_language);
+      else setLang('fr');
       setPage('dashboard');
       await loadData(p);
     }
