@@ -3472,7 +3472,7 @@ export default function CustomerPortal() {
   // Account setup for invited users (need to set name + password)
   if (needsSetup && user && profile) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#1a1a2e] to-[#2a2a4e] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         {toast && (
           <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
             toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
@@ -7113,8 +7113,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   // Check if user is admin
   const isAdmin = profile?.role === 'admin';
   
-  // Load team members
+  // Load team members (reloads every time Team tab is selected)
   useEffect(() => {
+    if (activeSection !== 'team') return;
     const loadTeam = async () => {
       if (!profile?.company_id || !isAdmin) return;
       setLoadingTeam(true);
@@ -7140,7 +7141,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       setLoadingTeam(false);
     };
     loadTeam();
-  }, [profile?.company_id, isAdmin]);
+  }, [profile?.company_id, isAdmin, activeSection]);
 
   // Invite team member
   // Map access level to permissions
@@ -7243,6 +7244,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     
     setSaving(false);
     setInviteData({ email: '', access_level: 'viewer' });
+    setShowInviteModal(false);
     
     const { data: invites } = await supabase
       .from('team_invitations')
@@ -7264,15 +7266,26 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       if (!confirm('Promouvoir ce membre en administrateur? Il pourra gérer toute l\'équipe.')) return;
     }
 
-    const { error } = await supabase
-      .from('profiles')
-      .update(permsForLevel)
-      .eq('id', memberId);
-    if (error) {
-      notify(`Erreur: ${error.message}`, 'error');
-    } else {
-      notify('Niveau d\'accès mis à jour!');
-      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, ...permsForLevel } : m));
+    try {
+      const res = await fetch('/api/update-permissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId,
+          adminId: profile.id,
+          companyId: profile.company_id,
+          permissions: permsForLevel
+        })
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        notify('Niveau d\'accès mis à jour!');
+        setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, ...permsForLevel } : m));
+      } else {
+        notify(`Erreur: ${result.error || 'Échec de la mise à jour'}`, 'error');
+      }
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
     }
   };
 
@@ -7296,16 +7309,26 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       if (!confirm(`${member.full_name} est administrateur. Voulez-vous vraiment désactiver ce compte?`)) return;
     }
     
-    const { error } = await supabase
-      .from('profiles')
-      .update({ invitation_status: newStatus })
-      .eq('id', memberId);
-    
-    if (error) {
-      notify(`Erreur: ${error.message}`, 'error');
-    } else {
-      notify(newStatus === 'active' ? 'Compte réactivé!' : 'Compte désactivé!');
-      setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, invitation_status: newStatus } : m));
+    try {
+      const res = await fetch('/api/update-permissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId,
+          adminId: profile.id,
+          companyId: profile.company_id,
+          permissions: { invitation_status: newStatus }
+        })
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        notify(newStatus === 'active' ? 'Compte réactivé!' : 'Compte désactivé!');
+        setTeamMembers(teamMembers.map(m => m.id === memberId ? { ...m, invitation_status: newStatus } : m));
+      } else {
+        notify(`Erreur: ${result.error}`, 'error');
+      }
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
     }
   };
 
@@ -17077,59 +17100,59 @@ function AccountSetupPage({ profile, notify, onComplete }) {
 
   return (
     <div className="w-full max-w-md">
-      <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden shadow-2xl">
-        <div className="bg-[#00A651]/20 backdrop-blur-sm px-8 py-8 border-b border-white/10 text-center">
-          <div className="w-16 h-16 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl text-white">🎉</span>
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xl">
+        <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] px-8 py-8 text-center">
+          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🎉</span>
           </div>
           <h1 className="text-2xl font-bold text-white">Bienvenue chez Lighthouse France</h1>
-          <p className="text-white/60 text-sm mt-2">
+          <p className="text-white/70 text-sm mt-2">
             Votre email a été vérifié. Finalisez votre compte ci-dessous.
           </p>
-          <p className="text-white/40 text-xs mt-1">{profile?.email}</p>
+          <p className="text-white/50 text-xs mt-1">{profile?.email}</p>
         </div>
         
         <form onSubmit={handleSubmit} className="p-8 space-y-5">
           <div>
-            <label className="block text-sm font-medium text-white/80 mb-1.5">Votre nom complet *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Votre nom complet *</label>
             <input
               type="text"
               value={fullName}
               onChange={e => setFullName(e.target.value)}
               placeholder="Jean Dupont"
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
               required
               autoFocus
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-white/80 mb-1.5">Créer un mot de passe *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Créer un mot de passe *</label>
             <input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="Minimum 8 caractères"
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
               required
             />
-            <p className="text-white/30 text-xs mt-1">Majuscule + chiffre + caractère spécial requis</p>
+            <p className="text-gray-400 text-xs mt-1">Majuscule + chiffre + caractère spécial requis</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-white/80 mb-1.5">Confirmer le mot de passe *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirmer le mot de passe *</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Retapez le mot de passe"
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
               required
             />
           </div>
 
           {error && (
-            <div className="bg-red-500/20 border border-red-400/30 text-red-200 px-4 py-3 rounded-xl text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
               {error}
             </div>
           )}
@@ -17137,7 +17160,7 @@ function AccountSetupPage({ profile, notify, onComplete }) {
           <button
             type="submit"
             disabled={saving}
-            className="w-full py-3.5 bg-[#00A651] text-white rounded-xl font-bold hover:bg-[#008C44] transition-colors disabled:opacity-50 text-lg"
+            className="w-full py-3.5 bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] text-white rounded-xl font-bold hover:from-[#162d4a] hover:to-[#2d6494] transition-all disabled:opacity-50 text-lg shadow-lg"
           >
             {saving ? 'Activation...' : '✓ Activer mon compte'}
           </button>
