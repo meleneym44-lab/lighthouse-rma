@@ -19317,6 +19317,9 @@ function ContractsSheet({ clients, notify, profile, reloadMain, t = k=>k, lang =
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-medium">{contract.companies?.name || contract.company_name_manual || 'N/A'}</div>
+                      {!contract.company_id && contract.company_name_manual && (
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Non lié</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${contract.contract_type === 'pricing' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
@@ -20617,7 +20620,7 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
               <button onClick={onClose} className="text-white/70 hover:text-white text-lg">←</button>
               <div>
                 <h1 className="text-xl font-bold text-white">{contract.contract_number || 'Nouveau Contrat'}</h1>
-                <p className="text-white/70 text-sm">{company.name} • {isPricingContract ? 'Contrat tarification' : 'Contrat de service'}</p>
+                <p className="text-white/70 text-sm">{company.name || contract.company_name_manual || 'Non lié'} • {isPricingContract ? 'Contrat tarification' : 'Contrat de service'}</p>
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>{statusStyle.label}</span>
             </div>
@@ -20713,7 +20716,53 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                     {/* Contract Info */}
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div><p className="text-xs text-gray-500">N° Contrat</p><p className="font-bold font-mono text-[#00A651]">{contract.contract_number || '—'}</p></div>
-                      <div><p className="text-xs text-gray-500">Client</p><p className="font-medium">{company.name}</p></div>
+                      <div>
+                        <p className="text-xs text-gray-500">Client</p>
+                        {contract.company_id ? (
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{company.name}</p>
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Délier "${company.name}" de ce contrat ?\n\nLe contrat sera marqué comme non lié et pourra être réassocié plus tard.`)) return;
+                                const { error } = await supabase.from('contracts')
+                                  .update({ company_id: null, company_name_manual: company.name })
+                                  .eq('id', contract.id);
+                                if (error) { notify('Erreur: ' + error.message, 'error'); return; }
+                                notify('🔓 Client délié du contrat');
+                                onUpdate();
+                              }}
+                              className="text-[10px] px-1.5 py-0.5 bg-gray-200 hover:bg-red-100 hover:text-red-700 text-gray-500 rounded transition-colors"
+                              title="Délier le client de ce contrat"
+                            >✕ Délier</button>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-amber-700">{contract.company_name_manual || 'Non lié'}</p>
+                              <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-medium">Non lié</span>
+                            </div>
+                            <select 
+                              onChange={async (e) => {
+                                const cid = e.target.value;
+                                if (!cid) return;
+                                const selectedName = clients?.find(c => c.id === cid)?.name;
+                                if (!confirm(`Lier ce contrat à "${selectedName}" ?`)) { e.target.value = ''; return; }
+                                const { error } = await supabase.from('contracts')
+                                  .update({ company_id: cid, company_name_manual: null })
+                                  .eq('id', contract.id);
+                                if (error) { notify('Erreur: ' + error.message, 'error'); return; }
+                                notify(`🔗 Contrat lié à ${selectedName}`);
+                                onUpdate();
+                              }}
+                              className="mt-1 w-full text-xs border border-amber-300 rounded px-2 py-1 bg-amber-50"
+                              defaultValue=""
+                            >
+                              <option value="">→ Lier à un client...</option>
+                              {(clients || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Dates */}
@@ -20981,7 +21030,11 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                 <h3 className="font-bold text-white">🏢 Client</h3>
               </div>
               <div className="p-4 space-y-3 text-sm">
-                <div><p className="text-xs text-gray-500 uppercase">Société</p><p className="font-bold">{company.name}</p></div>
+                <div><p className="text-xs text-gray-500 uppercase">Société</p><p className="font-bold">{company.name || contract.company_name_manual || 'Non lié'}</p>
+                  {!contract.company_id && contract.company_name_manual && (
+                    <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-medium">Non lié</span>
+                  )}
+                </div>
                 <div><p className="text-xs text-gray-500 uppercase">Contact</p><p>{company.contact_name || '—'}</p></div>
                 <div><p className="text-xs text-gray-500 uppercase">Téléphone</p><p>{company.phone || '—'}</p></div>
                 <div><p className="text-xs text-gray-500 uppercase">Email</p><p className="text-blue-600 break-all">{company.email || '—'}</p></div>
@@ -21126,6 +21179,91 @@ function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-co
   );
 }
 
+// Fuzzy company name matching - normalizes and scores similarity
+function fuzzyMatchCompanies(input, companies) {
+  if (!input || input.trim().length < 2) return [];
+  
+  // Normalize: lowercase, trim, remove common suffixes, collapse spaces
+  const normalize = (str) => {
+    return (str || '').toLowerCase().trim()
+      .replace(/\b(sas|sarl|sa|srl|ltd|llc|inc|gmbh|ag|s\.?a\.?s\.?|s\.?a\.?r\.?l\.?)\b/gi, '')
+      .replace(/[.,\-_'"()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+  
+  // Levenshtein distance
+  const levenshtein = (a, b) => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix = Array.from({ length: b.length + 1 }, (_, i) => [i]);
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + (b[i - 1] === a[j - 1] ? 0 : 1)
+        );
+      }
+    }
+    return matrix[b.length][a.length];
+  };
+  
+  const normalizedInput = normalize(input);
+  if (normalizedInput.length < 2) return [];
+  
+  return companies
+    .map(company => {
+      const normalizedName = normalize(company.name);
+      let score = 0;
+      
+      // 1. Exact match after normalization
+      if (normalizedInput === normalizedName) {
+        score = 100;
+      }
+      // 2. One contains the other (e.g. "Humeau" matches "Humeau Laboratoire")
+      else if (normalizedName.includes(normalizedInput) || normalizedInput.includes(normalizedName)) {
+        // Score higher if lengths are closer (full name vs partial)
+        const ratio = Math.min(normalizedInput.length, normalizedName.length) / Math.max(normalizedInput.length, normalizedName.length);
+        score = Math.round(70 + ratio * 25); // 70-95
+      }
+      // 3. Levenshtein on full strings (catches typos: "ecomessure" vs "ecomesure")
+      else {
+        const dist = levenshtein(normalizedInput, normalizedName);
+        const maxLen = Math.max(normalizedInput.length, normalizedName.length);
+        const similarity = 1 - (dist / maxLen);
+        if (similarity >= 0.6) {
+          score = Math.round(similarity * 90); // 54-90
+        }
+      }
+      
+      // 4. If still low, try word-level matching (e.g. "humeau lab" vs "humeau laboratoire")
+      if (score < 50) {
+        const inputWords = normalizedInput.split(' ').filter(w => w.length > 1);
+        const nameWords = normalizedName.split(' ').filter(w => w.length > 1);
+        let wordMatches = 0;
+        for (const iw of inputWords) {
+          for (const nw of nameWords) {
+            // Word contains or close Levenshtein
+            if (nw.includes(iw) || iw.includes(nw)) { wordMatches++; break; }
+            const wDist = levenshtein(iw, nw);
+            if (wDist <= Math.max(1, Math.floor(Math.min(iw.length, nw.length) / 4))) { wordMatches++; break; }
+          }
+        }
+        if (wordMatches > 0) {
+          const wordScore = Math.round((wordMatches / Math.max(inputWords.length, 1)) * 75);
+          if (wordScore > score) score = wordScore;
+        }
+      }
+      
+      return { company, score };
+    })
+    .filter(m => m.score >= 40)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+}
+
 function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' }) {
   const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit, 2=Preview
@@ -21140,6 +21278,11 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     status: 'active',
     internal_notes: ''
   });
+  
+  // Live fuzzy matching for manual company name
+  const fuzzyMatches = !contractData.company_id && contractData.company_name.length >= 2
+    ? fuzzyMatchCompanies(contractData.company_name, clients)
+    : [];
   
   // Token contract devices
   const [devices, setDevices] = useState([
@@ -21226,13 +21369,13 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
   }, []);
 
   // Generate contract PDF for preview/save
-  const generateContractPDF = async (contractNumber) => {
+  const generateContractPDF = async (contractNumber, resolvedClientName) => {
     const jsPDF = await loadJsPDF();
     const pdf = new jsPDF('p', 'mm', 'a4');
     const biz = businessSettings || {};
-    const clientName = contractData.company_id 
+    const clientName = resolvedClientName || (contractData.company_id 
       ? (clients.find(c => c.id === contractData.company_id)?.name || 'Client')
-      : (contractData.company_name || 'Client');
+      : (contractData.company_name || 'Client'));
     const clientObj = contractData.company_id ? clients.find(c => c.id === contractData.company_id) : null;
     
     const pageWidth = 210, pageHeight = 297, margin = 15;
@@ -21625,12 +21768,27 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       }
       } // end token serial conflict check
 
+      // Resolve company: auto-link on strong fuzzy match, otherwise store manual name
+      let resolvedCompanyId = contractData.company_id || null;
+      let resolvedManualName = null;
+      
+      if (!resolvedCompanyId && contractData.company_name) {
+        const matches = fuzzyMatchCompanies(contractData.company_name, clients);
+        if (matches.length > 0 && matches[0].score >= 85) {
+          // Strong match - auto-link
+          resolvedCompanyId = matches[0].company.id;
+        } else {
+          // No strong match - store manual name for later linking
+          resolvedManualName = contractData.company_name.trim();
+        }
+      }
+
       // Create contract (contract_number auto-generated by DB)
       const { data: contract, error: contractError } = await supabase
         .from('contracts')
         .insert({
-          company_id: contractData.company_id || null,
-          company_name_manual: contractData.company_id ? null : contractData.company_name,
+          company_id: resolvedCompanyId,
+          company_name_manual: resolvedManualName,
           contract_type: contractType,
           pricing_data: contractType === 'pricing' ? JSON.stringify(
             pricingCategories.filter(c => c.enabled).map(cat => ({
@@ -21690,7 +21848,10 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       // Generate and upload contract PDF (now we have the real contract_number from DB)
       try {
         const realContractNumber = contract.contract_number || '';
-        const pdf = await generateContractPDF(realContractNumber);
+        const resolvedClientName = resolvedCompanyId 
+          ? (clients.find(c => c.id === resolvedCompanyId)?.name || resolvedManualName || 'Client')
+          : (resolvedManualName || 'Client');
+        const pdf = await generateContractPDF(realContractNumber, resolvedClientName);
         const pdfBlob = pdf.output('blob');
         const contractDocUrl = await uploadPDFToStorage(pdfBlob, `contracts/${contract.id}`, `${realContractNumber || 'contract'}.pdf`);
         if (contractDocUrl) {
@@ -21700,7 +21861,12 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         console.error('PDF generation/upload error (contract still created):', pdfErr);
       }
 
-      notify('✅ Contrat créé avec succès!');
+      const autoLinkedMsg = (!contractData.company_id && resolvedCompanyId) 
+        ? ` (auto-lié à ${clients.find(c => c.id === resolvedCompanyId)?.name})` 
+        : (!contractData.company_id && resolvedManualName) 
+        ? ` (${resolvedManualName} — non lié, à associer plus tard)` 
+        : '';
+      notify(`✅ Contrat créé avec succès!${autoLinkedMsg}`);
       onCreated();
     } catch (err) {
       console.error('Error creating contract:', err);
@@ -21769,7 +21935,31 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00A651]"
                 disabled={!!contractData.company_id}
               />
-              <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'You can link the contract to an account later' : 'Vous pourrez lier le contrat à un compte plus tard'}</p>
+              {/* Fuzzy match suggestions */}
+              {fuzzyMatches.length > 0 && !contractData.company_id && (
+                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-amber-700 mb-1.5">🔍 Client existant détecté :</p>
+                  {fuzzyMatches.map(m => (
+                    <button
+                      key={m.company.id}
+                      onClick={() => setContractData({ ...contractData, company_id: m.company.id, company_name: '' })}
+                      className="flex items-center justify-between w-full text-left px-3 py-1.5 rounded hover:bg-amber-100 transition-colors group"
+                    >
+                      <span className="text-sm text-gray-800 font-medium">{m.company.name}</span>
+                      <span className="text-xs text-amber-600 group-hover:text-amber-800 font-medium">
+                        {m.score >= 85 ? '✅ Correspondance exacte' : m.score >= 60 ? '🟡 Probable' : '🔶 Possible'}
+                        {' → Lier'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!contractData.company_id && !fuzzyMatches.length && contractData.company_name.length >= 2 && (
+                <p className="text-xs text-gray-400 mt-1">Aucun client existant trouvé — le nom sera enregistré pour liaison ultérieure</p>
+              )}
+              {!contractData.company_id && contractData.company_name.length < 2 && (
+                <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'You can link the contract to an account later' : 'Vous pourrez lier le contrat à un compte plus tard'}</p>
+              )}
             </div>
           </div>
 
@@ -26068,11 +26258,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           // === PRICING CONTRACT LOOKUP ===
           // If no token contract match, check for pricing contracts by company_id
           const companyId = request?.company_id;
+          let foundPricingContract = null;
+          
           if (companyId) {
             console.log('🔍 Checking pricing contracts for company_id:', companyId);
             const { data: pricingContracts } = await supabase
               .from('contracts')
-              .select('id, contract_number, start_date, end_date, company_id, contract_type, contract_devices(*)')
+              .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
               .eq('status', 'active')
               .eq('company_id', companyId)
               .eq('contract_type', 'pricing')
@@ -26080,12 +26272,54 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
               .gte('end_date', todayStr);
             
             if (pricingContracts && pricingContracts.length > 0) {
-              console.log('✅ Found pricing contract:', pricingContracts[0].contract_number);
-              const pricingContract = pricingContracts[0];
-              const pricingDevices = pricingContract.contract_devices || [];
+              foundPricingContract = pricingContracts[0];
+              console.log('✅ Found pricing contract by company_id:', foundPricingContract.contract_number);
+            }
+          }
+          
+          // Fuzzy fallback: check unlinked pricing contracts by company_name_manual
+          if (!foundPricingContract && companyId) {
+            const companyName = request?.companies?.name || request?.company_name || '';
+            if (companyName) {
+              console.log('🔍 Fuzzy checking unlinked pricing contracts for:', companyName);
+              const { data: unlinkedContracts } = await supabase
+                .from('contracts')
+                .select('id, contract_number, start_date, end_date, company_id, contract_type, company_name_manual, contract_devices(*)')
+                .eq('status', 'active')
+                .is('company_id', null)
+                .not('company_name_manual', 'is', null)
+                .eq('contract_type', 'pricing')
+                .lte('start_date', todayStr)
+                .gte('end_date', todayStr);
+              
+              if (unlinkedContracts && unlinkedContracts.length > 0) {
+                // Use fuzzyMatchCompanies to find best match
+                const fakeCompanyList = unlinkedContracts.map(c => ({ id: c.id, name: c.company_name_manual }));
+                const matches = fuzzyMatchCompanies(companyName, fakeCompanyList);
+                if (matches.length > 0 && matches[0].score >= 60) {
+                  foundPricingContract = unlinkedContracts.find(c => c.id === matches[0].company.id);
+                  console.log(`✅ Fuzzy matched unlinked pricing contract: "${matches[0].company.name}" → score ${matches[0].score}`, foundPricingContract?.contract_number);
+                  
+                  // Auto-link the contract to this company
+                  if (foundPricingContract) {
+                    try {
+                      await supabase.from('contracts')
+                        .update({ company_id: companyId, company_name_manual: null })
+                        .eq('id', foundPricingContract.id);
+                      console.log('🔗 Auto-linked pricing contract to company_id:', companyId);
+                    } catch (linkErr) {
+                      console.error('Auto-link failed:', linkErr);
+                    }
+                  }
+                }
+              }
+            }
+          }
+          
+          if (foundPricingContract) {
+              const pricingDevices = foundPricingContract.contract_devices || [];
               
               // Build a pricing map: model_name (uppercase) -> { unit_price, device_type }
-              // Also index by PRICING_CATALOG key for fuzzy matching
               const pricingMap = {};
               for (const pd of pricingDevices) {
                 const modelKey = (pd.model_name || '').trim().toUpperCase();
@@ -26097,20 +26331,18 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     contract_device_id: pd.id
                   };
                   pricingMap[modelKey] = entry;
-                  // Also store under normalized key for fuzzy matching
                   pricingMap[normalizedKey.toUpperCase()] = entry;
                 }
               }
               console.log('💲 Pricing map:', pricingMap);
               
               setContractInfo({
-                contracts: [pricingContract],
-                primaryContract: pricingContract,
+                contracts: [foundPricingContract],
+                primaryContract: foundPricingContract,
                 deviceMap: {},
                 pricingContract: true,
                 pricingMap
               });
-            }
           }
         }
       } catch (err) {
@@ -26943,10 +27175,28 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     <div className="flex items-start gap-3">
                       <span className="text-3xl">💲</span>
                       <div className="flex-1">
-                        <p className="font-bold text-blue-800">Contrat tarification détecté</p>
+                        <p className="font-bold text-blue-800 text-lg">Contrat tarification détecté</p>
                         <p className="text-blue-700 text-sm mt-1">
-                          Les prix de calibration ont été automatiquement remplis selon la grille tarifaire du contrat.
+                          Les prix d'étalonnage ont été automatiquement remplis selon la grille tarifaire du contrat.
+                          Les champs marqués 💲 utilisent le tarif contractuel.
                         </p>
+                        {(() => {
+                          const matched = devicePricing.filter(d => d.hasPricingContract).length;
+                          const total = devicePricing.filter(d => d.needsCalibration).length;
+                          const unmatched = total - matched;
+                          return (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full font-medium">
+                                ✅ {matched}/{total} appareil(s) avec tarif contractuel
+                              </span>
+                              {unmatched > 0 && (
+                                <span className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-medium">
+                                  ⚠️ {unmatched} appareil(s) au tarif standard (modèle non trouvé dans le contrat)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                         {contractInfo?.primaryContract && (
                           <p className="text-xs text-blue-600 mt-2">
                             Contrat: {contractInfo.primaryContract.contract_number} • 
@@ -27186,13 +27436,16 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                                     <span className="px-2 py-1 bg-emerald-600 text-white text-xs rounded">{lang === 'en' ? 'Contract' : 'Contrat'}</span>
                                   </div>
                                 ) : (
-                                  <div className="w-24">
+                                  <div className="w-24 relative">
                                     <input
                                       type="number"
                                       value={device.calibrationPrice}
                                       onChange={e => updateDevice(device.id, 'calibrationPrice', parseFloat(e.target.value) || 0)}
-                                      className="w-full px-2 py-1.5 border rounded text-sm text-right"
+                                      className={`w-full px-2 py-1.5 border rounded text-sm text-right ${device.hasPricingContract ? 'border-blue-400 bg-blue-50' : ''}`}
                                     />
+                                    {device.hasPricingContract && (
+                                      <span className="absolute -top-2 -right-1 px-1 py-0.5 bg-blue-500 text-white text-[9px] rounded font-bold leading-none">💲</span>
+                                    )}
                                   </div>
                                 )}
                                 {/* Total */}
