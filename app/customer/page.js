@@ -3039,6 +3039,7 @@ export default function CustomerPortal() {
   });
   const [showLegalPage, setShowLegalPage] = useState(null); // 'privacy' | 'mentions' | null
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
   
   // Data
   const [requests, setRequests] = useState([]);
@@ -3116,6 +3117,24 @@ export default function CustomerPortal() {
           else setLang('fr');
           await loadData(p);
         } else {
+          // No profile - try processing pending invite or registration
+          const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
+          if (processed) {
+            const { data: newP } = await supabase.from('profiles')
+              .select('*, companies(*)')
+              .eq('id', session.user.id)
+              .single();
+            if (newP) {
+              setUser(session.user);
+              setProfile(newP);
+              if (newP.preferred_language) setLang(newP.preferred_language);
+              else setLang('fr');
+              setNeedsSetup(true); // New invite user needs to set name + password
+              await loadData(newP);
+              setLoading(false);
+              return;
+            }
+          }
           await supabase.auth.signOut({ scope: 'local' });
         }
       }
@@ -3128,6 +3147,41 @@ export default function CustomerPortal() {
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
+        setLoading(false);
+      }
+      if (event === 'SIGNED_IN' && session?.user && !profile) {
+        // User just verified email or signed in - check for profile
+        const { data: p } = await supabase.from('profiles')
+          .select('*, companies(*)')
+          .eq('id', session.user.id)
+          .single();
+        if (p) {
+          if (p.role === 'lh_admin' || p.role === 'lh_employee') {
+            window.location.href = '/admin';
+            return;
+          }
+          setUser(session.user);
+          setProfile(p);
+          if (p.preferred_language) setLang(p.preferred_language);
+          else setLang('fr');
+          setPage('dashboard');
+          await loadData(p);
+        } else {
+          // No profile - process invite
+          const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
+          if (processed) {
+            const { data: newP } = await supabase.from('profiles')
+              .select('*, companies(*)')
+              .eq('id', session.user.id)
+              .single();
+            if (newP) {
+              setUser(session.user);
+              setProfile(newP);
+              setNeedsSetup(true); // New invite user needs to set name + password
+              await loadData(newP);
+            }
+          }
+        }
         setLoading(false);
       }
     });
@@ -3186,97 +3240,217 @@ export default function CustomerPortal() {
       else setLang('fr');
       setPage('dashboard');
       await loadData(p);
+    } else {
+      // No profile yet - try processing pending invite or registration
+      const processed = await processInviteOnFirstLogin(data.user.id, data.user.email);
+      if (processed) {
+        // Reload profile
+        const { data: newP } = await supabase.from('profiles')
+          .select('*, companies(*)')
+          .eq('id', data.user.id)
+          .single();
+        if (newP) {
+          setUser(data.user);
+          setProfile(newP);
+          if (newP.preferred_language) setLang(newP.preferred_language);
+          else setLang('fr');
+          setNeedsSetup(true); // New invite user needs to set name + password
+          await loadData(newP);
+          return null;
+        }
+      }
+      await supabase.auth.signOut({ scope: 'local' });
+      return 'Aucun profil trouvé. Veuillez contacter votre administrateur.';
     }
     return null;
   };
 
   // Register function
   const register = async (formData) => {
+    // Get the redirect URL for email verification
+    const redirectUrl = window.location.origin + window.location.pathname;
+    
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: formData.email,
-      password: formData.password
+      password: formData.password,
+      options: {
+        emailRedirectTo: redirectUrl,
+        data: {
+          full_name: formData.contactName,
+          phone: formData.phone || null,
+          invite_token: formData.inviteToken || null
+        }
+      }
     });
     if (authError) return authError.message;
 
-    // Check for invite token - join existing company
+    // For invite mode: profile will be created on first login
     if (formData.inviteToken) {
-      const { data: invite } = await supabase
-        .from('team_invitations')
-        .select('*')
-        .eq('token', formData.inviteToken)
-        .eq('email', formData.email.toLowerCase())
-        .is('accepted_at', null)
-        .gt('expires_at', new Date().toISOString())
-        .single();
-
-      if (invite) {
-        await supabase.from('profiles').insert({
-          id: authData.user.id,
-          email: formData.email,
-          full_name: formData.contactName,
-          role: invite.role || 'customer',
-          company_id: invite.company_id,
-          phone: formData.phone || null,
-          invitation_status: 'active',
-          can_view: invite.can_view !== false,
-          can_request: !!invite.can_request,
-          can_invoice: !!invite.can_invoice
-        });
-
-        await supabase.from('team_invitations')
-          .update({ accepted_at: new Date().toISOString(), accepted_by: authData.user.id })
-          .eq('id', invite.id);
-
-        notify("Compte créé! Vous avez rejoint l'équipe.");
-        setPage('login');
-        return null;
-      } else {
-        return 'Invitation invalide, expirée, ou email incorrect.';
-      }
+      notify("Compte créé ! Vérifiez votre email puis connectez-vous.");
+      setPage('login');
+      return null;
     }
     
     // Normal registration - create new company
-    const { data: company, error: companyError } = await supabase.from('companies').insert({
-      name: formData.companyName,
-      billing_address: formData.address,
-      billing_city: formData.city,
-      billing_postal_code: formData.postalCode,
-      country: formData.country || 'France',
-      siret: formData.siret || null,
-      tva_number: formData.vatNumber || null,
-      phone: formData.phone,
-      email: formData.email
-    }).select().single();
-    if (companyError) return companyError.message;
+    // (This works because non-invite signups may get a session immediately,
+    //  but we also handle it on first login as a fallback)
+    try {
+      const { data: company, error: companyError } = await supabase.from('companies').insert({
+        name: formData.companyName,
+        billing_address: formData.address,
+        billing_city: formData.city,
+        billing_postal_code: formData.postalCode,
+        country: formData.country || 'France',
+        siret: formData.siret || null,
+        tva_number: formData.vatNumber || null,
+        phone: formData.phone,
+        email: formData.email
+      }).select().single();
+      
+      if (companyError) {
+        // If RLS blocked it (no session yet), user will need to verify email first
+        if (companyError.code === '42501' || companyError.message?.includes('policy')) {
+          notify('Compte créé ! Vérifiez votre email puis connectez-vous pour finaliser l\'inscription.');
+          // Store pending registration data in localStorage for completion on first login
+          localStorage.setItem('lhf_pending_registration', JSON.stringify({
+            contactName: formData.contactName,
+            phone: formData.phone,
+            companyName: formData.companyName,
+            address: formData.address,
+            city: formData.city,
+            postalCode: formData.postalCode,
+            country: formData.country || 'France',
+            siret: formData.siret,
+            vatNumber: formData.vatNumber
+          }));
+          setPage('login');
+          return null;
+        }
+        return companyError.message;
+      }
+      
+      // Create profile as admin of new company
+      await supabase.from('profiles').insert({
+        id: authData.user.id,
+        email: formData.email,
+        full_name: formData.contactName,
+        role: 'admin',
+        company_id: company.id,
+        phone: formData.phone,
+        invitation_status: 'active',
+        can_view: true,
+        can_request: true,
+        can_invoice: true
+      });
+      
+      // Create default shipping address
+      await supabase.from('shipping_addresses').insert({
+        company_id: company.id,
+        label: 'Principal',
+        address_line1: formData.address,
+        city: formData.city,
+        postal_code: formData.postalCode,
+        country: formData.country || 'France',
+        is_default: true
+      });
+    } catch (err) {
+      console.error('Registration error:', err);
+    }
     
-    // Create profile as admin of new company
-    await supabase.from('profiles').insert({
-      id: authData.user.id,
-      email: formData.email,
-      full_name: formData.contactName,
-      role: 'admin',
-      company_id: company.id,
-      phone: formData.phone,
-      invitation_status: 'active',
-      can_view: true,
-      can_request: true,
-      can_invoice: true
-    });
-    
-    // Create default shipping address
-    await supabase.from('shipping_addresses').insert({
-      company_id: company.id,
-      label: 'Principal',
-      address_line1: formData.address,
-      city: formData.city,
-      postal_code: formData.postalCode,
-      country: formData.country || 'France',
-      is_default: true
-    });
-    
-    notify('Compte créé avec succès! Veuillez vérifier votre email.');
+    notify('Compte créé ! Vérifiez votre email puis connectez-vous.');
     setPage('login');
     return null;
+  };
+
+  // Process pending invite on first login (when user has session but no profile)
+  const processInviteOnFirstLogin = async (userId, userEmail) => {
+    // Get user metadata (name, phone stored during signup)
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const meta = authUser?.user_metadata || {};
+    
+    // Check for pending invite by email
+    const { data: invite } = await supabase
+      .from('team_invitations')
+      .select('*')
+      .eq('email', userEmail.toLowerCase())
+      .is('accepted_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+
+    if (invite) {
+      // Create profile from invite
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: userId,
+        email: userEmail,
+        full_name: meta.full_name || userEmail.split('@')[0],
+        phone: meta.phone || null,
+        role: invite.role || 'customer',
+        company_id: invite.company_id,
+        invitation_status: 'active',
+        can_view: invite.can_view !== false,
+        can_request: !!invite.can_request,
+        can_invoice: !!invite.can_invoice
+      });
+
+      if (!profileError) {
+        // Mark invite as accepted
+        await supabase.from('team_invitations')
+          .update({ accepted_at: new Date().toISOString(), accepted_by: userId })
+          .eq('id', invite.id);
+        return true;
+      }
+    }
+
+    // Check for pending normal registration
+    const pendingReg = localStorage.getItem('lhf_pending_registration');
+    if (pendingReg) {
+      try {
+        const reg = JSON.parse(pendingReg);
+        const { data: company } = await supabase.from('companies').insert({
+          name: reg.companyName,
+          billing_address: reg.address,
+          billing_city: reg.city,
+          billing_postal_code: reg.postalCode,
+          country: reg.country || 'France',
+          siret: reg.siret || null,
+          tva_number: reg.vatNumber || null,
+          phone: reg.phone,
+          email: userEmail
+        }).select().single();
+
+        if (company) {
+          await supabase.from('profiles').insert({
+            id: userId,
+            email: userEmail,
+            full_name: reg.contactName,
+            role: 'admin',
+            company_id: company.id,
+            phone: reg.phone,
+            invitation_status: 'active',
+            can_view: true,
+            can_request: true,
+            can_invoice: true
+          });
+
+          await supabase.from('shipping_addresses').insert({
+            company_id: company.id,
+            label: 'Principal',
+            address_line1: reg.address,
+            city: reg.city,
+            postal_code: reg.postalCode,
+            country: reg.country || 'France',
+            is_default: true
+          });
+
+          localStorage.removeItem('lhf_pending_registration');
+          return true;
+        }
+      } catch (err) {
+        console.error('Pending registration error:', err);
+      }
+    }
+
+    return false;
   };
 
   // Permissions
@@ -3332,6 +3506,43 @@ export default function CustomerPortal() {
           <CookieBanner onAccept={() => { setCookieConsent(true); try { localStorage.setItem('lhf_cookie_consent', 'accepted'); } catch {} }} onShowPolicy={() => setShowLegalPage('privacy')} />
         )}
         {showLegalPage && <LegalPageModal page={showLegalPage} onClose={() => setShowLegalPage(null)} />}
+      </div>
+    );
+  }
+
+  // Account setup for invited users (need to set name + password)
+  if (needsSetup && user && profile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] via-[#1a1a2e] to-[#2a2a4e] flex items-center justify-center p-4">
+        {toast && (
+          <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
+            toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+          }`}>
+            {toast.msg}
+          </div>
+        )}
+        <AccountSetupPage 
+          profile={profile}
+          notify={notify}
+          onComplete={async (fullName, password) => {
+            try {
+              // Update auth password
+              const { error: authErr } = await supabase.auth.updateUser({ password });
+              if (authErr) {
+                notify(`Erreur mot de passe: ${authErr.message}`, 'error');
+                return;
+              }
+              // Update profile name
+              await supabase.from('profiles').update({ full_name: fullName }).eq('id', profile.id);
+              setProfile({ ...profile, full_name: fullName });
+              setNeedsSetup(false);
+              setPage('dashboard');
+              notify('Bienvenue ! Votre compte est prêt.');
+            } catch (err) {
+              notify(`Erreur: ${err.message}`, 'error');
+            }
+          }}
+        />
       </div>
     );
   }
@@ -7011,6 +7222,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     expiresAt.setDate(expiresAt.getDate() + 7);
     const permsForLevel = accessLevelToPerms(inviteData.access_level);
     
+    // 1. Create team_invitation record
     const { error } = await supabase.from('team_invitations').insert({
       company_id: profile.company_id,
       email: inviteData.email.toLowerCase(),
@@ -7023,9 +7235,8 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       expires_at: expiresAt.toISOString()
     });
     
-    setSaving(false);
-    
     if (error) {
+      setSaving(false);
       if (error.code === '23505') {
         notify('Une invitation pour cet email existe déjà', 'error');
       } else {
@@ -7033,13 +7244,54 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       }
       return;
     }
+
+    // 2. Create auth user via direct API call (sends verification email)
+    // Using fetch() so it doesn't affect the admin's current session
+    const tempPassword = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)) + 'Aa1!';
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const redirectUrl = window.location.origin + '/customer';
     
-    notify(`Invitation créée pour ${inviteData.email}!`);
+    try {
+      const signupRes = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey
+        },
+        body: JSON.stringify({
+          email: inviteData.email.toLowerCase(),
+          password: tempPassword,
+          data: { invited: true, invite_token: token },
+          gotrue_meta_supabase: {
+            redirect_to: redirectUrl
+          }
+        })
+      });
+      
+      const signupData = await signupRes.json();
+      
+      if (signupRes.ok) {
+        notify(`Email de vérification envoyé à ${inviteData.email} ! L'utilisateur doit cliquer le lien pour activer son compte.`);
+      } else if (signupData?.msg?.includes('already registered') || signupData?.message?.includes('already registered')) {
+        // User already has an auth account - they just need to login
+        notify(`Invitation créée pour ${inviteData.email}. Cet utilisateur a déjà un compte — il peut se connecter directement.`);
+      } else {
+        // Signup failed but invite was created - show manual link
+        const baseUrl = window.location.origin + '/customer';
+        const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
+        setLastInviteLink(inviteLink);
+        notify(`Invitation créée. L'envoi automatique a échoué — partagez le lien manuellement.`);
+      }
+    } catch (fetchErr) {
+      // API call failed - fallback to manual link
+      const baseUrl = window.location.origin + '/customer';
+      const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
+      setLastInviteLink(inviteLink);
+      notify(`Invitation créée. Partagez le lien d'inscription manuellement.`);
+    }
     
-    const baseUrl = window.location.origin + window.location.pathname;
-    const inviteLink = `${baseUrl}?invite=${token}&email=${encodeURIComponent(inviteData.email.toLowerCase())}`;
-    setLastInviteLink(inviteLink);
-    
+    setSaving(false);
     setInviteData({ email: '', access_level: 'viewer' });
     
     const { data: invites } = await supabase
@@ -7927,14 +8179,14 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
 
                 {/* Last invite link */}
                 {lastInviteLink && (
-                  <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                    <p className="font-medium text-green-700 mb-2">🔗 Lien d'invitation</p>
-                    <p className="text-sm text-green-600 mb-2">Partagez ce lien avec le nouveau membre :</p>
+                  <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                    <p className="font-medium text-amber-700 mb-2">⚠️ Lien d'invitation (secours)</p>
+                    <p className="text-sm text-amber-600 mb-2">L'envoi automatique a échoué. Partagez ce lien manuellement :</p>
                     <div className="flex gap-2">
-                      <input type="text" readOnly value={lastInviteLink} className="flex-1 px-3 py-2 text-sm bg-white border border-green-300 rounded-lg font-mono" />
+                      <input type="text" readOnly value={lastInviteLink} className="flex-1 px-3 py-2 text-sm bg-white border border-amber-300 rounded-lg font-mono" />
                       <button
                         onClick={() => { navigator.clipboard.writeText(lastInviteLink); notify('Lien copié!'); }}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+                        className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700"
                       >
                         Copier
                       </button>
@@ -16835,6 +17087,111 @@ function LoginPage({ t, login, setPage }) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// ============================================
+// ACCOUNT SETUP PAGE (for invited users)
+// ============================================
+function AccountSetupPage({ profile, notify, onComplete }) {
+  const [fullName, setFullName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!fullName.trim()) {
+      setError('Veuillez entrer votre nom');
+      return;
+    }
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      setError('Le mot de passe doit contenir au moins 8 caractères, une majuscule, un chiffre et un caractère spécial');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Les mots de passe ne correspondent pas');
+      return;
+    }
+
+    setSaving(true);
+    await onComplete(fullName.trim(), password);
+    setSaving(false);
+  };
+
+  return (
+    <div className="w-full max-w-md">
+      <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden shadow-2xl">
+        <div className="bg-[#00A651]/20 backdrop-blur-sm px-8 py-8 border-b border-white/10 text-center">
+          <div className="w-16 h-16 bg-[#00A651] rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl text-white">🎉</span>
+          </div>
+          <h1 className="text-2xl font-bold text-white">Bienvenue chez Lighthouse France</h1>
+          <p className="text-white/60 text-sm mt-2">
+            Votre email a été vérifié. Finalisez votre compte ci-dessous.
+          </p>
+          <p className="text-white/40 text-xs mt-1">{profile?.email}</p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="p-8 space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-white/80 mb-1.5">Votre nom complet *</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={e => setFullName(e.target.value)}
+              placeholder="Jean Dupont"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-white/80 mb-1.5">Créer un mot de passe *</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Minimum 8 caractères"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+              required
+            />
+            <p className="text-white/30 text-xs mt-1">Majuscule + chiffre + caractère spécial requis</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-white/80 mb-1.5">Confirmer le mot de passe *</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="Retapez le mot de passe"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-500/20 border border-red-400/30 text-red-200 px-4 py-3 rounded-xl text-sm">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full py-3.5 bg-[#00A651] text-white rounded-xl font-bold hover:bg-[#008C44] transition-colors disabled:opacity-50 text-lg"
+          >
+            {saving ? 'Activation...' : '✓ Activer mon compte'}
+          </button>
+        </form>
       </div>
     </div>
   );
