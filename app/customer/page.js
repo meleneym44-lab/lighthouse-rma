@@ -4088,37 +4088,6 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             </div>
           )}
 
-          {/* Recent Completed */}
-          {(completedService.length > 0 || completedParts.length > 0) && (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-100">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="font-bold text-[#1E3A5F] text-lg">✅ Récemment terminés</h2>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {[...completedService, ...completedParts]
-                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                  .slice(0, 5)
-                  .map(req => (
-                  <div 
-                    key={req.id}
-                    onClick={() => viewRequest(req)}
-                    className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                  >
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-medium text-gray-700">{req.request_number}</span>
-                        <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">
-                          {req.request_type === 'parts' ? 'Pièces' : 'Service'}
-                        </span>
-                      </div>
-                      <span className="text-green-600 text-sm font-medium">Terminé</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Empty State */}
           {requests.length === 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-12 text-center">
@@ -4822,7 +4791,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     address_id: addresses.find(a => a.is_default && !a.is_billing)?.id || '',
     showNewForm: false,
     newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
-    parcels: 0
+    parcels: 0,
+    return_shipping: 'standard' // 'standard', 'own_label', 'pickup'
   });
   const [saving, setSaving] = useState(false);
   const [billingChoice, setBillingChoice] = useState('');
@@ -4981,8 +4951,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
     
-    // Validate parcels
-    if (!shipping.parcels || shipping.parcels < 1) {
+    // Validate parcels (only for standard shipping)
+    if (shipping.return_shipping === 'standard' && (!shipping.parcels || shipping.parcels < 1)) {
       notify('Veuillez indiquer le nombre de colis', 'error');
       return;
     }
@@ -5027,13 +4997,14 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           serial_number: devices[0].serial_number,
           equipment_type: 'particle_counter',
           requested_service: devices[0].service_type === 'other' ? devices[0].service_other : devices[0].service_type,
-          problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n'),
+          problem_description: devices.map(d => `[${d.brand === 'other' ? d.brand_other : 'Lighthouse'}] ${d.model} - ${d.serial_number}\nService: ${d.service_type === 'other' ? d.service_other : d.service_type}\nAccessoires: ${d.accessories.join(', ') || 'Aucun'}\nNotes: ${d.notes}`).join('\n\n---\n\n') + (shipping.return_shipping !== 'standard' ? `\n\n--- RETOUR ---\n${shipping.return_shipping === 'own_label' ? '⚠️ Le client fournira sa propre étiquette de retour' : '⚠️ Le client récupérera l\'appareil lui-même'}` : ''),
           urgency: 'normal',
           shipping_address_id: addressId,
           billing_address_id: finalBillingAddressId,
           billing_siret: profile?.companies?.siret || null,
           billing_tva: profile?.companies?.tva_number || null,
-          parcels_count: shipping.parcels || 1,
+          parcels_count: shipping.return_shipping === 'standard' ? (shipping.parcels || 1) : 0,
+          return_shipping: shipping.return_shipping || 'standard',
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -5273,7 +5244,13 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                         <p>{retAddr.postal_code} {retAddr.city}, {retAddr.country || 'France'}</p>
                       </div>
                     )}
-                    <p className="text-xs text-gray-400 mt-1">{shipping.parcels} colis</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {shipping.return_shipping === 'own_label' 
+                        ? '🏷️ Étiquette de retour fournie par le client' 
+                        : shipping.return_shipping === 'pickup' 
+                          ? '🏢 Récupération sur place par le client' 
+                          : `${shipping.parcels} colis`}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Facturation</p>
@@ -6159,6 +6136,7 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
       </h2>
 
       {/* Number of Parcels - FIRST */}
+      {(!shipping.return_shipping || shipping.return_shipping === 'standard') && (
       <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
         <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
           📦 Nombre de colis *
@@ -6195,6 +6173,69 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
         {(shipping.parcels || 0) === 0 && (
           <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
         )}
+      </div>
+      )}
+
+      {/* Return Shipping Options */}
+      <div className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
+        <label className="block text-sm font-bold text-[#1E3A5F] mb-3">
+          🚚 Options de retour
+        </label>
+        <div className="space-y-3">
+          <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+            shipping.return_shipping === 'standard' || !shipping.return_shipping
+              ? 'border-[#3B7AB4] bg-blue-50' 
+              : 'border-gray-200 hover:border-gray-300'
+          }`}>
+            <input
+              type="radio"
+              name="return_shipping"
+              checked={shipping.return_shipping === 'standard' || !shipping.return_shipping}
+              onChange={() => setShipping({ ...shipping, return_shipping: 'standard' })}
+              className="mt-1 w-4 h-4 text-[#3B7AB4]"
+            />
+            <div>
+              <span className="font-medium text-[#1E3A5F]">Retour standard par Lighthouse</span>
+              <p className="text-xs text-gray-500 mt-0.5">Nous organisons le retour de vos appareils (frais de port inclus dans le devis)</p>
+            </div>
+          </label>
+
+          <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+            shipping.return_shipping === 'own_label'
+              ? 'border-amber-400 bg-amber-50' 
+              : 'border-gray-200 hover:border-gray-300'
+          }`}>
+            <input
+              type="radio"
+              name="return_shipping"
+              checked={shipping.return_shipping === 'own_label'}
+              onChange={() => setShipping({ ...shipping, return_shipping: 'own_label' })}
+              className="mt-1 w-4 h-4 text-amber-500"
+            />
+            <div>
+              <span className="font-medium text-[#1E3A5F]">Je fournis ma propre étiquette de retour</span>
+              <p className="text-xs text-gray-500 mt-0.5">Vous nous enverrez votre étiquette de transport pour le retour</p>
+            </div>
+          </label>
+
+          <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+            shipping.return_shipping === 'pickup'
+              ? 'border-green-400 bg-green-50' 
+              : 'border-gray-200 hover:border-gray-300'
+          }`}>
+            <input
+              type="radio"
+              name="return_shipping"
+              checked={shipping.return_shipping === 'pickup'}
+              onChange={() => setShipping({ ...shipping, return_shipping: 'pickup' })}
+              className="mt-1 w-4 h-4 text-green-500"
+            />
+            <div>
+              <span className="font-medium text-[#1E3A5F]">Je récupère l'appareil moi-même</span>
+              <p className="text-xs text-gray-500 mt-0.5">Vous viendrez récupérer vos appareils à notre atelier à Créteil</p>
+            </div>
+          </label>
+        </div>
       </div>
 
       {/* Existing Addresses */}
@@ -6694,21 +6735,10 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
           </p>
         </div>
 
-        {/* Save Device Option */}
+        {/* Auto-save notice */}
         {!device.fromSaved && (
           <div className="md:col-span-2 mt-2 p-3 bg-green-50 rounded-lg border border-green-200">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={device.saveDevice || false}
-                onChange={e => updateDevice(device.id, 'saveDevice', e.target.checked)}
-                className="w-5 h-5 rounded border-green-400 text-green-600"
-              />
-              <div>
-                <span className="font-medium text-green-800">💾 Enregistrer cet appareil</span>
-                <p className="text-xs text-green-600">Pour le retrouver facilement lors de vos prochaines demandes</p>
-              </div>
-            </label>
+            <p className="text-sm text-green-700">✅ Cet appareil sera automatiquement enregistré dans vos équipements</p>
           </div>
         )}
 
