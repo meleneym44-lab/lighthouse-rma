@@ -80,6 +80,11 @@ export async function POST(request) {
       .update({ accepted_at: new Date().toISOString(), accepted_by: userId })
       .eq('id', invite.id);
 
+    // Ensure email is confirmed (needed for password reset to work later)
+    await supabaseAdmin.auth.admin.updateUserById(userId, {
+      email_confirm: true
+    });
+
     return NextResponse.json({ 
       success: true,
       companyId: invite.company_id,
