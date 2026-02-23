@@ -3134,7 +3134,9 @@ export default function CustomerPortal() {
           siret: reg.siret || null,
           tva_number: reg.vatNumber || null,
           phone: reg.phone,
-          email: userEmail
+          email: userEmail,
+          chorus_invoicing: reg.chorusInvoicing || false,
+          chorus_service_code: reg.chorusInvoicing ? (reg.chorusServiceCode || null) : null
         }).select().single();
 
         if (company) {
@@ -3352,7 +3354,9 @@ export default function CustomerPortal() {
         siret: formData.siret || null,
         tva_number: formData.vatNumber || null,
         phone: formData.phone,
-        email: formData.email
+        email: formData.email,
+        chorus_invoicing: formData.chorusInvoicing || false,
+        chorus_service_code: formData.chorusInvoicing ? (formData.chorusServiceCode || null) : null
       }).select().single();
       
       if (companyError) {
@@ -3369,7 +3373,9 @@ export default function CustomerPortal() {
             postalCode: formData.postalCode,
             country: formData.country || 'France',
             siret: formData.siret,
-            vatNumber: formData.vatNumber
+            vatNumber: formData.vatNumber,
+            chorusInvoicing: formData.chorusInvoicing || false,
+            chorusServiceCode: formData.chorusServiceCode || ''
           }));
           setPage('login');
           return null;
@@ -5015,6 +5021,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [newBillingAddress, setNewBillingAddress] = useState({ label: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '' });
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [chorusInvoicing, setChorusInvoicing] = useState(profile?.companies?.chorus_invoicing || false);
+  const [chorusServiceCode, setChorusServiceCode] = useState(profile?.companies?.chorus_service_code || '');
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -5171,6 +5179,18 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
 
+    // Validate Chorus fields
+    if (chorusInvoicing) {
+      if (!profile?.companies?.siret) {
+        notify('Le numéro SIRET est requis pour la facturation Chorus Pro. Complétez-le dans Paramètres > Entreprise.', 'error');
+        return;
+      }
+      if (!chorusServiceCode.trim()) {
+        notify('Le numéro de service Chorus Pro est requis', 'error');
+        return;
+      }
+    }
+
     setShowReviewModal(true);
   };
 
@@ -5226,6 +5246,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           billing_tva: profile?.companies?.tva_number || null,
           parcels_count: shipping.return_shipping === 'standard' ? (shipping.parcels || 1) : 0,
           return_shipping: shipping.return_shipping || 'standard',
+          chorus_invoicing: chorusInvoicing || false,
+          chorus_service_code: chorusInvoicing ? (chorusServiceCode || null) : null,
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -5382,6 +5404,57 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               <button type="button" onClick={() => setPage('settings')} className="text-[#3B7AB4] underline ml-auto">Compléter</button>
             )}
           </div>
+
+          {/* Chorus Pro invoicing */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Facturation via Chorus Pro</span>
+                <div className="relative group">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-xs cursor-help font-bold">?</span>
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg invisible group-hover:visible z-50">
+                    <p className="font-bold mb-1">Chorus Pro</p>
+                    <p>Plateforme de facturation électronique obligatoire pour le secteur public français. Activez cette option si votre organisation reçoit ses factures via Chorus Pro.</p>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChorusInvoicing(!chorusInvoicing)}
+                className={`relative w-12 h-6 rounded-full transition-colors ${chorusInvoicing ? 'bg-[#00A651]' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${chorusInvoicing ? 'translate-x-6' : ''}`} />
+              </button>
+            </div>
+            {chorusInvoicing && (
+              <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
+                <p className="text-xs text-blue-600">La facture sera transmise via Chorus Pro. Veuillez vérifier vos identifiants.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">SIRET *</label>
+                    <input
+                      type="text"
+                      value={profile?.companies?.siret || ''}
+                      readOnly
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500"
+                    />
+                    {!profile?.companies?.siret && <p className="text-xs text-red-500 mt-0.5">Requis — <button type="button" onClick={() => setPage('settings')} className="underline">compléter dans les paramètres</button></p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">N° Service Chorus *</label>
+                    <input
+                      type="text"
+                      value={chorusServiceCode}
+                      onChange={e => setChorusServiceCode(e.target.value)}
+                      placeholder="Ex: SERVICE-12345"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#3B7AB4]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Submit Buttons */}
@@ -5493,6 +5566,12 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                       <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500 space-y-0.5">
                         {co.siret && <p>SIRET: <span className="font-mono">{co.siret}</span></p>}
                         {co.tva_number && <p>TVA: <span className="font-mono">{co.tva_number}</span></p>}
+                      </div>
+                    )}
+                    {chorusInvoicing && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
+                        {chorusServiceCode && <span className="text-xs text-gray-500 ml-2">Service: <span className="font-mono">{chorusServiceCode}</span></span>}
                       </div>
                     )}
                   </div>
@@ -7110,7 +7189,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     billing_city: profile?.companies?.billing_city || '',
     billing_postal_code: profile?.companies?.billing_postal_code || '',
     siret: profile?.companies?.siret || '',
-    tva_number: profile?.companies?.tva_number || ''
+    tva_number: profile?.companies?.tva_number || '',
+    chorus_invoicing: profile?.companies?.chorus_invoicing || false,
+    chorus_service_code: profile?.companies?.chorus_service_code || ''
   });
   
   // Password change
@@ -7782,6 +7863,44 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                     />
                   </div>
                 </div>
+                
+                {/* Chorus Pro */}
+                <div className="pt-4 mt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Facturation via Chorus Pro</label>
+                      <div className="relative group">
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-xs cursor-help font-bold">?</span>
+                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg invisible group-hover:visible z-50">
+                          <p className="font-bold mb-1">Chorus Pro</p>
+                          <p>Chorus Pro est la plateforme de facturation électronique obligatoire pour les entités du secteur public en France (État, collectivités, hôpitaux, universités, etc.). Si votre organisation utilise Chorus Pro, vos factures seront transmises via cette plateforme.</p>
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCompanyData({ ...companyData, chorus_invoicing: !companyData.chorus_invoicing })}
+                      className={`relative w-12 h-6 rounded-full transition-colors ${companyData.chorus_invoicing ? 'bg-[#00A651]' : 'bg-gray-300'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${companyData.chorus_invoicing ? 'translate-x-6' : ''}`} />
+                    </button>
+                  </div>
+                  {companyData.chorus_invoicing && (
+                    <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
+                      <p className="text-xs text-blue-600">Veuillez renseigner votre numéro de service Chorus Pro pour la facturation.</p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">N° Service Chorus Pro *</label>
+                        <input
+                          type="text"
+                          value={companyData.chorus_service_code}
+                          onChange={e => setCompanyData({ ...companyData, chorus_service_code: e.target.value })}
+                          placeholder="Ex: SERVICE-12345"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                        />
+                      </div>
+                    </div>
+                  )}
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => {
@@ -7792,7 +7911,9 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                         billing_city: profile?.companies?.billing_city || '',
                         billing_postal_code: profile?.companies?.billing_postal_code || '',
                         siret: profile?.companies?.siret || '',
-                        tva_number: profile?.companies?.tva_number || ''
+                        tva_number: profile?.companies?.tva_number || '',
+                        chorus_invoicing: profile?.companies?.chorus_invoicing || false,
+                        chorus_service_code: profile?.companies?.chorus_service_code || ''
                       });
                     }}
                     className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
@@ -7829,6 +7950,19 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                 <div>
                   <p className="text-sm text-gray-500">N° TVA</p>
                   <p className="font-medium text-[#1E3A5F]">{profile?.companies?.tva_number || '—'}</p>
+                </div>
+                <div className="md:col-span-2">
+                  <p className="text-sm text-gray-500">Facturation Chorus Pro</p>
+                  {profile?.companies?.chorus_invoicing ? (
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">✓ Activé</span>
+                      {profile?.companies?.chorus_service_code && (
+                        <span className="text-sm text-gray-600">N° Service: <span className="font-mono font-medium">{profile.companies.chorus_service_code}</span></span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="font-medium text-gray-400">Non activé</p>
+                  )}
                 </div>
               </div>
             )}
@@ -17282,7 +17416,8 @@ function RegisterPage({ t, register, setPage, notify }) {
     email: inviteEmail, password: '', confirmPassword: '',
     companyName: '', contactName: '', phone: '',
     address: '', city: '', postalCode: '', country: 'France',
-    siret: '', vatNumber: '', inviteToken: inviteToken
+    siret: '', vatNumber: '', inviteToken: inviteToken,
+    chorusInvoicing: false, chorusServiceCode: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17409,6 +17544,42 @@ function RegisterPage({ t, register, setPage, notify }) {
                       ? 'Ces informations seront utilisées pour la facturation.' 
                       : 'These details will be used for invoicing. Leave blank if not applicable.'}
                   </p>
+                  
+                  {/* Chorus Pro */}
+                  {(formData.country || 'France').toLowerCase() === 'france' && (
+                    <div className="mt-4 pt-4 border-t border-white/10">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-white/80">Facturation via Chorus Pro</span>
+                          <div className="relative group">
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-white/20 text-white/60 text-xs cursor-help font-bold">?</span>
+                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 p-3 bg-white text-gray-800 text-xs rounded-lg shadow-lg invisible group-hover:visible z-50">
+                              <p className="font-bold mb-1">Chorus Pro</p>
+                              <p>Chorus Pro est la plateforme de facturation électronique obligatoire pour les entités du secteur public en France (État, collectivités territoriales, hôpitaux, universités, établissements publics, etc.).</p>
+                              <p className="mt-1">Si votre organisation utilise Chorus Pro pour recevoir ses factures, activez cette option. Vous devrez fournir votre numéro SIRET et votre code service Chorus.</p>
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-white"></div>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateField('chorusInvoicing', !formData.chorusInvoicing)}
+                          className={`relative w-12 h-6 rounded-full transition-colors ${formData.chorusInvoicing ? 'bg-[#00A651]' : 'bg-white/20'}`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${formData.chorusInvoicing ? 'translate-x-6' : ''}`} />
+                        </button>
+                      </div>
+                      {formData.chorusInvoicing && (
+                        <div className="mt-3 p-3 bg-blue-500/10 rounded-lg border border-blue-400/20 space-y-3">
+                          <p className="text-xs text-blue-300">Veuillez renseigner votre numéro de service Chorus Pro.</p>
+                          <div>
+                            <label className="block text-sm font-medium text-white/80 mb-1">N° Service Chorus Pro *</label>
+                            <input type="text" value={formData.chorusServiceCode || ''} onChange={(e) => updateField('chorusServiceCode', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="Ex: SERVICE-12345" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 </>)}
 
