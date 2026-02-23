@@ -18045,6 +18045,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, b
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Company' : 'Entreprise'}</th>
+                <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'SF #' : 'N° SF'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'Primary contact' : 'Contact principal'}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{t('city')}</th>
                 <th className="px-4 py-3 text-left text-sm font-bold text-gray-600">{lang === 'en' ? 'RMAs' : 'RMAs'}</th>
@@ -18058,6 +18059,7 @@ function ClientsSheet({ clients, requests, equipment, notify, reload, isAdmin, b
                 return (
                   <tr key={client.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedClient(client)}>
                     <td className="px-4 py-3"><p className="font-medium text-gray-800">{client.name}</p></td>
+                    <td className="px-4 py-3">{client.salesforce_id ? <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-mono font-medium">{client.salesforce_id}</span> : <span className="text-gray-300 text-xs">—</span>}</td>
                     <td className="px-4 py-3">{mainContact ? <div><p className={`text-sm ${mainContact.invitation_status === 'gdpr_erased' ? 'text-red-400' : ''}`}>{mainContact.full_name} {mainContact.invitation_status === 'gdpr_erased' ? '🗑' : ''}</p><p className="text-xs text-gray-400">{mainContact.invitation_status !== 'gdpr_erased' ? mainContact.email : ''}</p></div> : <span className="text-gray-400">—</span>}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{client.billing_city || '—'}</td>
                     <td className="px-4 py-3"><span className="text-sm">{stats.rmas} RMA{stats.pos > 0 && <span className="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs">{stats.pos} PO</span>}{stats.active > 0 && <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{stats.active} actif</span>}</span></td>
@@ -18079,7 +18081,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const t = k => k;
   const [activeTab, setActiveTab] = useState('rmas');
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', tva_number: client.tva_number || '' });
+  const [editData, setEditData] = useState({ name: client.name || '', billing_address: client.billing_address || '', billing_city: client.billing_city || '', billing_postal_code: client.billing_postal_code || '', siret: client.siret || '', tva_number: client.tva_number || '', salesforce_id: client.salesforce_id || '', chorus_invoicing: client.chorus_invoicing || false, chorus_service_code: client.chorus_service_code || '' });
   const [saving, setSaving] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [clientContracts, setClientContracts] = useState([]);
@@ -18147,7 +18149,17 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
         <div className="px-6 py-4 border-b bg-gradient-to-r from-[#1a1a2e] to-[#2d2d44] text-white flex justify-between items-center shrink-0">
           <div>
             <h2 className="text-xl font-bold">{client.name}</h2>
-            <p className="text-sm text-gray-300">{client.billing_city}</p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-sm text-gray-300">{client.billing_city}</p>
+              {client.salesforce_id ? (
+                <span className="px-2 py-0.5 bg-green-500/20 text-green-300 rounded-full text-xs font-medium">SF #{client.salesforce_id}</span>
+              ) : (
+                <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded-full text-xs font-medium">{lang === 'en' ? 'No SF ID' : 'Pas de N° SF'}</span>
+              )}
+              {client.chorus_invoicing && (
+                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full text-xs font-medium">Chorus Pro</span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
         </div>
@@ -18435,6 +18447,44 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'SIRET' : 'SIRET'}</label><input type="text" value={editData.siret} onChange={e => setEditData({...editData, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'VAT #' : 'N° TVA'}</label><input type="text" value={editData.tva_number} onChange={e => setEditData({...editData, tva_number: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" /></div>
                   </div>
+                  
+                  {/* Salesforce ID */}
+                  <div className="pt-4 mt-4 border-t border-gray-200">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {lang === 'en' ? 'Salesforce Client #' : 'N° Client Salesforce'}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input type="text" value={editData.salesforce_id} onChange={e => setEditData({...editData, salesforce_id: e.target.value})} placeholder={lang === 'en' ? 'e.g. FR-94-0001' : 'Ex: FR-94-0001'} className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
+                      {editData.salesforce_id && <span className="text-green-500 text-lg">✓</span>}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Salesforce-assigned client number' : 'Numéro client attribué par Salesforce'}</p>
+                  </div>
+                  
+                  {/* Chorus Pro */}
+                  <div className="pt-4 mt-4 border-t border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium text-gray-700">{lang === 'en' ? 'Chorus Pro Invoicing' : 'Facturation Chorus Pro'}</label>
+                        <div className="relative group">
+                          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-xs cursor-help font-bold">?</span>
+                          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg invisible group-hover:visible z-50">
+                            <p className="font-bold mb-1">Chorus Pro</p>
+                            <p>{lang === 'en' ? 'Mandatory e-invoicing platform for French public sector entities. Enable if this client receives invoices via Chorus Pro.' : 'Plateforme de facturation électronique obligatoire pour le secteur public français. Activez si ce client reçoit ses factures via Chorus Pro.'}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => setEditData({...editData, chorus_invoicing: !editData.chorus_invoicing})} className={`relative w-12 h-6 rounded-full transition-colors ${editData.chorus_invoicing ? 'bg-[#00A651]' : 'bg-gray-300'}`}>
+                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editData.chorus_invoicing ? 'translate-x-6' : ''}`} />
+                      </button>
+                    </div>
+                    {editData.chorus_invoicing && (
+                      <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Chorus Service Code' : 'N° Service Chorus Pro'}</label>
+                        <input type="text" value={editData.chorus_service_code} onChange={e => setEditData({...editData, chorus_service_code: e.target.value})} placeholder="Ex: SERVICE-12345" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                      </div>
+                    )}
+                  </div>
+                  
                   <div className="flex gap-2 pt-2">
                     <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 rounded-lg">{t('cancel')}</button>
                     <button onClick={saveClient} disabled={saving} className="px-4 py-2 bg-[#00A651] text-white rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
@@ -18448,6 +18498,25 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{t('address')}</p><p className="font-medium">{client.billing_address || '—'}</p><p className="text-sm text-gray-600">{client.billing_postal_code} {client.billing_city}</p></div>
                     <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'SIRET' : 'SIRET'}</p><p className="font-medium">{client.siret || '—'}</p></div>
                     <div className="bg-gray-50 rounded-lg p-4"><p className="text-sm text-gray-500">{lang === 'en' ? 'VAT #' : 'N° TVA'}</p><p className="font-medium">{client.tva_number || '—'}</p></div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm text-gray-500">{lang === 'en' ? 'Salesforce Client #' : 'N° Client Salesforce'}</p>
+                      {client.salesforce_id ? (
+                        <p className="font-medium font-mono text-green-700">{client.salesforce_id}</p>
+                      ) : (
+                        <p className="font-medium text-amber-500">{lang === 'en' ? 'Not linked' : 'Non lié'}</p>
+                      )}
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm text-gray-500">{lang === 'en' ? 'Chorus Pro' : 'Chorus Pro'}</p>
+                      {client.chorus_invoicing ? (
+                        <div>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">✓ {lang === 'en' ? 'Enabled' : 'Activé'}</span>
+                          {client.chorus_service_code && <p className="text-xs text-gray-500 mt-1">Service: <span className="font-mono">{client.chorus_service_code}</span></p>}
+                        </div>
+                      ) : (
+                        <p className="font-medium text-gray-400">{lang === 'en' ? 'Disabled' : 'Non activé'}</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -25167,6 +25236,9 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
       {/* ===== QUOTE CONTENT SETTINGS ===== */}
       <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} lang={lang} />
 
+      {/* ===== SALESFORCE CLIENT LINKING ===== */}
+      <SalesforceLinkingTool notify={notify} lang={lang} />
+
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
           <div className="text-3xl mb-3">💰</div>
@@ -25274,6 +25346,341 @@ const CAL_TYPE_LABELS = {
   temp_humidity: { icon: '🌡️', label: { en: 'Temp/Humidity Sensor', fr: 'Capteur Temp/Humidité' } },
   other: { icon: '⚙️', label: { en: 'Other Equipment', fr: 'Autre Équipement' } }
 };
+
+};
+
+// ============================================
+// SALESFORCE CLIENT LINKING TOOL
+// ============================================
+function SalesforceLinkingTool({ notify, lang = 'fr' }) {
+  const [expanded, setExpanded] = useState(false);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState('single'); // 'single' or 'csv'
+  
+  // Single mode
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [sfIdInput, setSfIdInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  
+  // CSV mode
+  const [csvText, setCsvText] = useState('');
+  const [csvParsed, setCsvParsed] = useState(null);
+  const [csvSaving, setCsvSaving] = useState(false);
+  
+  const loadClients = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('companies').select('id, name, salesforce_id, billing_city, siret').order('name');
+    if (data) setClients(data);
+    setLoading(false);
+  };
+  
+  useEffect(() => { if (expanded) loadClients(); }, [expanded]);
+  
+  const linkedCount = clients.filter(c => c.salesforce_id).length;
+  const unlinkedCount = clients.filter(c => !c.salesforce_id).length;
+  
+  // Single link
+  const linkSingle = async () => {
+    if (!selectedClientId || !sfIdInput.trim()) { notify(lang === 'en' ? 'Select a client and enter a Salesforce ID' : 'Sélectionnez un client et entrez un N° Salesforce', 'error'); return; }
+    setSaving(true);
+    const { error } = await supabase.from('companies').update({ salesforce_id: sfIdInput.trim() }).eq('id', selectedClientId);
+    if (error) { notify('Erreur: ' + error.message, 'error'); }
+    else {
+      notify(lang === 'en' ? 'Salesforce ID linked!' : 'N° Salesforce lié!');
+      setSelectedClientId('');
+      setSfIdInput('');
+      setClientSearch('');
+      await loadClients();
+    }
+    setSaving(false);
+  };
+  
+  // CSV parse
+  const parseCSV = () => {
+    if (!csvText.trim()) return;
+    const lines = csvText.trim().split('\n').map(l => l.split(/[,;\t]/).map(c => c.trim().replace(/^"|"$/g, '')));
+    // Rows need at least 2 columns: name + SF ID
+    const parsed = lines.filter(row => row.length >= 2 && row[0].trim() && row[1].trim()).map(row => {
+      const name = row[0];
+      const sfId = row[1];
+      // Try to fuzzy match to existing clients
+      const exactMatch = clients.find(c => c.name?.toLowerCase() === name.toLowerCase());
+      const partialMatch = !exactMatch ? clients.find(c => c.name?.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(c.name?.toLowerCase())) : null;
+      const siretMatch = !exactMatch && !partialMatch && row[2] ? clients.find(c => c.siret && c.siret === row[2]) : null;
+      return {
+        csvName: name,
+        sfId: sfId,
+        csvSiret: row[2] || null,
+        matched: exactMatch || partialMatch || siretMatch || null,
+        matchType: exactMatch ? 'exact' : partialMatch ? 'partial' : siretMatch ? 'siret' : 'none',
+        confirmed: !!exactMatch,
+        manualClientId: ''
+      };
+    });
+    setCsvParsed(parsed);
+  };
+  
+  const toggleConfirm = (idx) => {
+    const updated = [...csvParsed];
+    updated[idx].confirmed = !updated[idx].confirmed;
+    setCsvParsed(updated);
+  };
+  
+  const setManualMatch = (idx, clientId) => {
+    const updated = [...csvParsed];
+    updated[idx].manualClientId = clientId;
+    updated[idx].matched = clients.find(c => c.id === clientId) || null;
+    updated[idx].matchType = 'manual';
+    updated[idx].confirmed = true;
+    setCsvParsed(updated);
+  };
+  
+  const applyCSV = async () => {
+    const toApply = csvParsed.filter(r => r.confirmed && r.matched && r.sfId);
+    if (toApply.length === 0) { notify(lang === 'en' ? 'No confirmed matches to apply' : 'Aucune correspondance confirmée', 'error'); return; }
+    setCsvSaving(true);
+    let success = 0;
+    let errors = 0;
+    for (const row of toApply) {
+      const { error } = await supabase.from('companies').update({ salesforce_id: row.sfId }).eq('id', row.matched.id);
+      if (error) errors++;
+      else success++;
+    }
+    notify(`${success} ${lang === 'en' ? 'linked' : 'liés'}, ${errors} ${lang === 'en' ? 'errors' : 'erreurs'}`);
+    setCsvParsed(null);
+    setCsvText('');
+    await loadClients();
+    setCsvSaving(false);
+  };
+  
+  const filteredClients = clientSearch ? clients.filter(c => c.name?.toLowerCase().includes(clientSearch.toLowerCase()) || c.salesforce_id?.includes(clientSearch)) : clients;
+  
+  return (
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <div 
+        className="px-6 py-4 border-b bg-gradient-to-r from-orange-600 to-amber-600 flex justify-between items-center cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div>
+          <h2 className="text-lg font-bold text-white">🔗 {lang === 'en' ? 'Salesforce Client Linking' : 'Liaison Clients Salesforce'}</h2>
+          <p className="text-orange-100 text-sm">
+            {lang === 'en' 
+              ? `Link portal companies to Salesforce IDs • ${linkedCount} linked, ${unlinkedCount} unlinked` 
+              : `Relier les entreprises aux N° Salesforce • ${linkedCount} liés, ${unlinkedCount} non liés`}
+          </p>
+        </div>
+        <span className="text-white text-2xl">{expanded ? '▲' : '▼'}</span>
+      </div>
+      
+      {expanded && (
+        <div className="p-6 space-y-6">
+          {loading ? (
+            <div className="text-center py-8 text-gray-400">{lang === 'en' ? 'Loading clients...' : 'Chargement des clients...'}</div>
+          ) : (<>
+          
+          {/* Stats bar */}
+          <div className="flex gap-4 text-sm">
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg">
+              <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+              <span className="font-medium text-green-700">{linkedCount} {lang === 'en' ? 'linked' : 'liés'}</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg">
+              <span className="w-3 h-3 bg-amber-500 rounded-full"></span>
+              <span className="font-medium text-amber-700">{unlinkedCount} {lang === 'en' ? 'unlinked' : 'non liés'}</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+              <span className="font-medium text-gray-600">{clients.length} total</span>
+            </div>
+          </div>
+          
+          {/* Mode tabs */}
+          <div className="flex gap-2 border-b border-gray-200 pb-1">
+            <button onClick={() => setMode('single')} className={`px-4 py-2 rounded-t-lg font-medium text-sm ${mode === 'single' ? 'bg-white border border-b-white border-gray-200 text-[#00A651] -mb-px' : 'text-gray-500 hover:text-gray-700'}`}>
+              ✏️ {lang === 'en' ? 'One-by-one' : 'Un par un'}
+            </button>
+            <button onClick={() => setMode('csv')} className={`px-4 py-2 rounded-t-lg font-medium text-sm ${mode === 'csv' ? 'bg-white border border-b-white border-gray-200 text-[#00A651] -mb-px' : 'text-gray-500 hover:text-gray-700'}`}>
+              📋 {lang === 'en' ? 'CSV / Bulk' : 'CSV / En masse'}
+            </button>
+          </div>
+          
+          {/* SINGLE MODE */}
+          {mode === 'single' && (
+            <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Select client' : 'Sélectionner le client'}</label>
+                  <input
+                    type="text"
+                    placeholder={lang === 'en' ? '🔍 Search client...' : '🔍 Rechercher client...'}
+                    value={clientSearch}
+                    onChange={e => setClientSearch(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
+                  />
+                  <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y">
+                    {filteredClients.filter(c => !c.salesforce_id).slice(0, 20).map(c => (
+                      <div 
+                        key={c.id} 
+                        onClick={() => { setSelectedClientId(c.id); setClientSearch(c.name); }}
+                        className={`px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 ${selectedClientId === c.id ? 'bg-blue-100 font-medium' : ''}`}
+                      >
+                        {c.name} <span className="text-gray-400 text-xs">{c.billing_city || ''}</span>
+                      </div>
+                    ))}
+                    {filteredClients.filter(c => !c.salesforce_id).length === 0 && (
+                      <div className="px-3 py-4 text-center text-gray-400 text-sm">{lang === 'en' ? 'All clients linked!' : 'Tous les clients sont liés!'}</div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Salesforce ID' : 'N° Salesforce'}</label>
+                  <input
+                    type="text"
+                    placeholder={lang === 'en' ? 'Enter Salesforce ID (e.g. FR-94-0001)' : 'Entrez le N° Salesforce (ex: FR-94-0001)'}
+                    value={sfIdInput}
+                    onChange={e => setSfIdInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono"
+                  />
+                  <button
+                    onClick={linkSingle}
+                    disabled={saving || !selectedClientId || !sfIdInput.trim()}
+                    className="mt-3 w-full px-4 py-2.5 bg-[#00A651] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[#008C44]"
+                  >
+                    {saving ? '...' : (lang === 'en' ? '🔗 Link Client' : '🔗 Lier le client')}
+                  </button>
+                </div>
+              </div>
+              
+              {/* Already linked list */}
+              <div className="mt-4">
+                <p className="text-sm font-medium text-gray-500 mb-2">{lang === 'en' ? 'Already linked:' : 'Déjà liés:'}</p>
+                <div className="max-h-40 overflow-y-auto border rounded-lg divide-y">
+                  {clients.filter(c => c.salesforce_id).map(c => (
+                    <div key={c.id} className="px-3 py-2 flex justify-between items-center text-sm">
+                      <span>{c.name}</span>
+                      <span className="font-mono text-green-700 bg-green-50 px-2 py-0.5 rounded">{c.salesforce_id}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* CSV MODE */}
+          {mode === 'csv' && (
+            <div className="space-y-4">
+              {!csvParsed ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {lang === 'en' ? 'Paste CSV data (Company Name, Salesforce ID, optional SIRET)' : 'Collez les données CSV (Nom entreprise, N° Salesforce, SIRET optionnel)'}
+                    </label>
+                    <textarea
+                      value={csvText}
+                      onChange={e => setCsvText(e.target.value)}
+                      rows={8}
+                      placeholder={lang === 'en' 
+                        ? 'Company Name, Salesforce ID, SIRET (optional)\nAcme Corp, FR-94-0001\nTech Industries, FR-75-0002, 12345678901234'
+                        : 'Nom entreprise, N° Salesforce, SIRET (optionnel)\nAcme Corp, FR-94-0001\nTech Industries, FR-75-0002, 12345678901234'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Accepts comma, semicolon, or tab-separated values' : 'Accepte les valeurs séparées par virgule, point-virgule ou tabulation'}</p>
+                  </div>
+                  <button
+                    onClick={parseCSV}
+                    disabled={!csvText.trim()}
+                    className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700"
+                  >
+                    {lang === 'en' ? '🔍 Parse & Match' : '🔍 Analyser & Associer'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium text-gray-700">
+                      {lang === 'en' ? `${csvParsed.length} rows parsed — review matches:` : `${csvParsed.length} lignes analysées — vérifiez les correspondances:`}
+                    </p>
+                    <button onClick={() => setCsvParsed(null)} className="text-sm text-gray-500 hover:text-gray-700">{lang === 'en' ? '← Back' : '← Retour'}</button>
+                  </div>
+                  
+                  <div className="max-h-96 overflow-y-auto border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left">✓</th>
+                          <th className="px-3 py-2 text-left">{lang === 'en' ? 'CSV Name' : 'Nom CSV'}</th>
+                          <th className="px-3 py-2 text-left">{lang === 'en' ? 'SF ID' : 'N° SF'}</th>
+                          <th className="px-3 py-2 text-left">{lang === 'en' ? 'Match' : 'Correspondance'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {csvParsed.map((row, idx) => (
+                          <tr key={idx} className={row.confirmed ? 'bg-green-50' : row.matchType === 'none' ? 'bg-red-50' : 'bg-amber-50'}>
+                            <td className="px-3 py-2">
+                              <input 
+                                type="checkbox" 
+                                checked={row.confirmed} 
+                                onChange={() => toggleConfirm(idx)}
+                                disabled={!row.matched && !row.manualClientId}
+                                className="w-4 h-4"
+                              />
+                            </td>
+                            <td className="px-3 py-2 font-medium">{row.csvName}</td>
+                            <td className="px-3 py-2 font-mono text-blue-700">{row.sfId}</td>
+                            <td className="px-3 py-2">
+                              {row.matched ? (
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${row.matchType === 'exact' ? 'bg-green-100 text-green-700' : row.matchType === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    {row.matchType === 'exact' ? '✓ Exact' : row.matchType === 'manual' ? '✓ Manual' : '~ Partial'}
+                                  </span>
+                                  <span className="text-gray-700">{row.matched.name}</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">{lang === 'en' ? 'No match' : 'Pas de correspondance'}</span>
+                                  <select 
+                                    value={row.manualClientId}
+                                    onChange={e => setManualMatch(idx, e.target.value)}
+                                    className="text-xs border rounded px-1 py-0.5"
+                                  >
+                                    <option value="">{lang === 'en' ? '— Select —' : '— Choisir —'}</option>
+                                    {clients.filter(c => !c.salesforce_id).map(c => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm text-gray-500">
+                      {csvParsed.filter(r => r.confirmed && r.matched).length} / {csvParsed.length} {lang === 'en' ? 'confirmed' : 'confirmés'}
+                    </p>
+                    <button
+                      onClick={applyCSV}
+                      disabled={csvSaving || csvParsed.filter(r => r.confirmed && r.matched).length === 0}
+                      className="px-6 py-2.5 bg-[#00A651] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[#008C44]"
+                    >
+                      {csvSaving ? '...' : (lang === 'en' ? `🔗 Apply ${csvParsed.filter(r => r.confirmed && r.matched).length} Links` : `🔗 Appliquer ${csvParsed.filter(r => r.confirmed && r.matched).length} liaisons`)}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          
+          </>)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function QuoteContentSettings({ businessSettings, setBusinessSettings, notify, lang }) {
   const t = k => k;
