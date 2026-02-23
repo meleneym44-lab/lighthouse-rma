@@ -7343,6 +7343,33 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     }
   };
 
+  const resendInvite = async (invite) => {
+    try {
+      const redirectUrl = window.location.origin + '/customer';
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: invite.email,
+          redirectUrl,
+          resend: true
+        })
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        // Also refresh the expiry on the invitation record
+        await supabase.from('team_invitations')
+          .update({ expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() })
+          .eq('id', invite.id);
+        notify(`Invitation renvoyée à ${invite.email} !`);
+      } else {
+        notify(`Erreur: ${result.error || 'Échec du renvoi'}`, 'error');
+      }
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+  };
+
   // Save profile
   const saveProfile = async () => {
     setSaving(true);
@@ -8138,12 +8165,20 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                               {' • '}Expire: {new Date(invite.expires_at).toLocaleDateString('fr-FR')}
                             </p>
                           </div>
-                          <button
-                            onClick={() => cancelInvite(invite.id)}
-                            className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                          >
-                            Annuler
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => resendInvite(invite)}
+                              className="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
+                            >
+                              Renvoyer
+                            </button>
+                            <button
+                              onClick={() => cancelInvite(invite.id)}
+                              className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                            >
+                              Annuler
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
