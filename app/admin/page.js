@@ -25594,8 +25594,6 @@ const CAL_TYPE_LABELS = {
   other: { icon: '⚙️', label: { en: 'Other Equipment', fr: 'Autre Équipement' } }
 };
 
-};
-
 
 // ============================================
 // SALESFORCE CLIENT LINKING TOOL
