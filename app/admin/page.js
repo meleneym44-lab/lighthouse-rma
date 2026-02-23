@@ -25765,8 +25765,8 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
           <h2 className="text-lg font-bold text-white">{'\uD83D\uDD17'} {lang === 'en' ? 'Salesforce Client Linking' : 'Liaison Clients Salesforce'}</h2>
           <p className="text-orange-100 text-sm">
             {lang === 'en'
-              ? sfClients.length + ' SF clients uploaded \u2022 ' + pendingSf.length + ' pending \u2022 ' + linkedSf.length + ' linked'
-              : sfClients.length + ' clients SF import\u00e9s \u2022 ' + pendingSf.length + ' en attente \u2022 ' + linkedSf.length + ' li\u00e9s'}
+              ? sfClients.length + ' SF clients uploaded \u2022 ' + pendingSf.length + ' pending \u2022 ' + linkedSf.length + ' linked \u2022 ' + portalClients.filter(c => !c.salesforce_id).length + ' portal unlinked'
+              : sfClients.length + ' clients SF import\u00e9s \u2022 ' + pendingSf.length + ' en attente \u2022 ' + linkedSf.length + ' li\u00e9s \u2022 ' + portalClients.filter(c => !c.salesforce_id).length + ' portail sans N\u00b0 SF'}
           </p>
         </div>
         <span className="text-white text-2xl">{expanded ? '\u25B2' : '\u25BC'}</span>
@@ -25794,12 +25794,18 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
             <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
               <span className="font-medium text-gray-600">{portalClients.length} {lang === 'en' ? 'portal companies' : 'entreprises portail'}</span>
             </div>
+            {portalClients.filter(c => !c.salesforce_id).length > 0 && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-lg border border-red-200">
+                <span className="w-2.5 h-2.5 bg-red-500 rounded-full"></span>
+                <span className="font-medium text-red-700">{portalClients.filter(c => !c.salesforce_id).length} {lang === 'en' ? 'portal without SF ID' : 'portail sans N\u00b0 SF'}</span>
+              </div>
+            )}
           </div>
           
           {/* Tab bar */}
           <div className="flex gap-2 border-b border-gray-200 pb-1">
             <button onClick={() => setTab('pending')} className={'px-4 py-2 rounded-t-lg font-medium text-sm ' + (tab === 'pending' ? 'bg-white border border-b-white border-gray-200 text-amber-600 -mb-px' : 'text-gray-500 hover:text-gray-700')}>
-              {'\u23F3'} {lang === 'en' ? 'Pending (' + pendingSf.length + ')' : 'En attente (' + pendingSf.length + ')'}
+              {'\u23F3'} {lang === 'en' ? 'Unlinked (' + (pendingSf.length + portalClients.filter(c => !c.salesforce_id).length) + ')' : 'Non li\u00e9s (' + (pendingSf.length + portalClients.filter(c => !c.salesforce_id).length) + ')'}
             </button>
             <button onClick={() => setTab('linked')} className={'px-4 py-2 rounded-t-lg font-medium text-sm ' + (tab === 'linked' ? 'bg-white border border-b-white border-gray-200 text-green-600 -mb-px' : 'text-gray-500 hover:text-gray-700')}>
               {'\u2705'} {lang === 'en' ? 'Linked (' + linkedSf.length + ')' : 'Li\u00e9s (' + linkedSf.length + ')'}
@@ -25812,45 +25818,80 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
           {/* ========== PENDING TAB ========== */}
           {tab === 'pending' && (
             <div className="space-y-4">
-              {pendingSf.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-4xl mb-2">{'\uD83C\uDF89'}</p>
-                  <p className="text-gray-500">{lang === 'en' ? 'All Salesforce clients are linked!' : 'Tous les clients Salesforce sont li\u00e9s!'}</p>
-                  <button onClick={() => setTab('upload')} className="mt-3 text-blue-600 text-sm hover:underline">{lang === 'en' ? 'Upload more \u2192' : 'Importer plus \u2192'}</button>
-                </div>
-              ) : (<>
-                <input type="text" placeholder={lang === 'en' ? '\uD83D\uDD0D Search pending SF clients...' : '\uD83D\uDD0D Rechercher clients SF en attente...'} value={!linkingClient ? linkSearch : ''} onChange={e => setLinkSearch(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                
-                <div className="max-h-[500px] overflow-y-auto border rounded-lg divide-y">
-                  {filteredPending.map(sf => (
-                    <div key={sf.id} className="p-4 hover:bg-amber-50 transition-colors">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">{sf.salesforce_id}</span>
-                            <span className="font-medium text-gray-800">{sf.company_name}</span>
-                          </div>
-                          {(sf.salesforce_assets || []).length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {(sf.salesforce_assets || []).map((a, i) => (
-                                <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">
-                                  {a.model_name} {'\u2014'} {a.serial_number}
-                                </span>
-                              ))}
+              <input type="text" placeholder={lang === 'en' ? '\uD83D\uDD0D Search companies...' : '\uD83D\uDD0D Rechercher entreprises...'} value={!linkingClient ? linkSearch : ''} onChange={e => setLinkSearch(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+              
+              {/* Pending SF clients (uploaded but not linked) */}
+              {pendingSf.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">{lang === 'en' ? 'Uploaded SF Clients — Not Yet Linked' : 'Clients SF import\u00e9s — Pas encore li\u00e9s'} ({filteredPending.length})</p>
+                  <div className="max-h-[300px] overflow-y-auto border border-amber-200 rounded-lg divide-y">
+                    {filteredPending.map(sf => (
+                      <div key={sf.id} className="p-3 hover:bg-amber-50 transition-colors">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">{sf.salesforce_id}</span>
+                              <span className="font-medium text-gray-800">{sf.company_name}</span>
                             </div>
-                          )}
+                            {(sf.salesforce_assets || []).length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {(sf.salesforce_assets || []).map((a, i) => (
+                                  <span key={i} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">
+                                    {a.model_name} {'\u2014'} {a.serial_number}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => { setLinkingClient(sf); setLinkSearch(''); }}
+                            className="px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm font-medium hover:bg-[#008C44] whitespace-nowrap"
+                          >
+                            {'\uD83D\uDD17'} {lang === 'en' ? 'Link' : 'Lier'}
+                          </button>
                         </div>
-                        <button
-                          onClick={() => { setLinkingClient(sf); setLinkSearch(''); }}
-                          className="px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm font-medium hover:bg-[#008C44] whitespace-nowrap"
-                        >
-                          {'\uD83D\uDD17'} {lang === 'en' ? 'Link' : 'Lier'}
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                    {filteredPending.length === 0 && <div className="p-3 text-center text-gray-400 text-sm">{lang === 'en' ? 'No matches' : 'Aucun r\u00e9sultat'}</div>}
+                  </div>
                 </div>
-              </>)}
+              )}
+              
+              {/* Portal companies without SF ID */}
+              {(() => {
+                const unlinkedPortal = portalClients.filter(c => !c.salesforce_id);
+                const filteredUnlinked = linkSearch && !linkingClient
+                  ? unlinkedPortal.filter(c => c.name?.toLowerCase().includes(linkSearch.toLowerCase()) || c.billing_city?.toLowerCase().includes(linkSearch.toLowerCase()) || c.siret?.includes(linkSearch))
+                  : unlinkedPortal;
+                return unlinkedPortal.length > 0 ? (
+                  <div>
+                    <p className="text-xs font-semibold text-red-700 uppercase tracking-wide mb-2">{lang === 'en' ? 'Portal Companies — No SF ID' : 'Entreprises portail — Sans N\u00b0 SF'} ({filteredUnlinked.length})</p>
+                    <div className="max-h-[400px] overflow-y-auto border border-red-200 rounded-lg divide-y">
+                      {filteredUnlinked.map(c => (
+                        <div key={c.id} className="p-3 flex justify-between items-center hover:bg-red-50 transition-colors">
+                          <div>
+                            <p className="font-medium text-gray-800">{c.name}</p>
+                            <p className="text-xs text-gray-400">{[c.billing_city, c.siret].filter(Boolean).join(' \u2022 ')}</p>
+                          </div>
+                          <span className="text-xs text-red-400 bg-red-50 px-2 py-1 rounded-full">{lang === 'en' ? 'No SF ID' : 'Sans N\u00b0 SF'}</span>
+                        </div>
+                      ))}
+                      {filteredUnlinked.length === 0 && <div className="p-3 text-center text-gray-400 text-sm">{lang === 'en' ? 'No matches' : 'Aucun r\u00e9sultat'}</div>}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-green-600 font-medium">{'\u2705'} {lang === 'en' ? 'All portal companies have SF IDs!' : 'Toutes les entreprises portail ont un N\u00b0 SF!'}</p>
+                  </div>
+                );
+              })()}
+              
+              {pendingSf.length === 0 && portalClients.filter(c => !c.salesforce_id).length === 0 && (
+                <div className="text-center py-6">
+                  <p className="text-4xl mb-2">{'\uD83C\uDF89'}</p>
+                  <p className="text-gray-500">{lang === 'en' ? 'Everything is linked!' : 'Tout est li\u00e9!'}</p>
+                </div>
+              )}
               
               {/* Link Modal */}
               {linkingClient && (
