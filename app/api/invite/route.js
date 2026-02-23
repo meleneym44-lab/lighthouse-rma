@@ -1,15 +1,11 @@
 // Place this file at: /app/api/invite/route.js
-//
-// Server-side API route to invite users via email.
-// Uses SUPABASE_SERVICE_ROLE_KEY (add to your Vercel env vars).
-// Supabase's inviteUserByEmail() creates the auth user AND sends the invite email.
 
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   try {
-    const { email, redirectUrl } = await request.json();
+    const { email, redirectUrl, resend } = await request.json();
 
     if (!email) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
@@ -25,12 +21,35 @@ export async function POST(request) {
       );
     }
 
-    // Admin client (service_role bypasses RLS)
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    // inviteUserByEmail: creates user + sends invite email in one call
+    // If resending, delete the old auth user first so we can send a fresh invite
+    if (resend) {
+      const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
+      const existingUser = users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+      if (existingUser) {
+        // Only delete if they haven't created a profile yet (no real account)
+        const { data: hasProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .eq('id', existingUser.id)
+          .single();
+        
+        if (!hasProfile) {
+          await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
+        } else {
+          return NextResponse.json({ 
+            success: true, 
+            alreadyExists: true,
+            message: 'Cet utilisateur a déjà activé son compte.'
+          });
+        }
+      }
+    }
+
+    // inviteUserByEmail: creates user + sends invite email
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       email.toLowerCase(),
       {
@@ -40,7 +59,6 @@ export async function POST(request) {
     );
 
     if (error) {
-      // If user already exists, that's okay
       if (error.message?.includes('already been registered') || 
           error.message?.includes('already exists') ||
           error.message?.includes('unique')) {
@@ -56,7 +74,7 @@ export async function POST(request) {
     return NextResponse.json({ 
       success: true, 
       userId: data?.user?.id,
-      message: 'Invitation email sent'
+      message: resend ? 'Invitation resent' : 'Invitation email sent'
     });
 
   } catch (err) {
