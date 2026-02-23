@@ -3112,7 +3112,7 @@ export default function CustomerPortal() {
       console.log('[Invite] Accept result:', result);
       
       if (res.ok && result.success) {
-        return true;
+        return 'invite';
       } else {
         console.error('[Invite] Accept failed:', result.error);
       }
@@ -3125,46 +3125,33 @@ export default function CustomerPortal() {
     if (pendingReg) {
       try {
         const reg = JSON.parse(pendingReg);
-        const { data: company } = await supabase.from('companies').insert({
-          name: reg.companyName,
-          billing_address: reg.address,
-          billing_city: reg.city,
-          billing_postal_code: reg.postalCode,
-          country: reg.country || 'France',
-          siret: reg.siret || null,
-          tva_number: reg.vatNumber || null,
-          phone: reg.phone,
-          email: userEmail,
-          chorus_invoicing: reg.chorusInvoicing || false,
-          chorus_service_code: reg.chorusInvoicing ? (reg.chorusServiceCode || null) : null
-        }).select().single();
-
-        if (company) {
-          await supabase.from('profiles').insert({
-            id: userId,
-            email: userEmail,
-            full_name: reg.contactName,
-            role: 'admin',
-            company_id: company.id,
+        console.log('[Auth] Found pending registration, completing via API...');
+        const res = await fetch('/api/complete-registration', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            userEmail,
+            contactName: reg.contactName,
             phone: reg.phone,
-            invitation_status: 'active',
-            can_view: true,
-            can_request: true,
-            can_invoice: true
-          });
-
-          await supabase.from('shipping_addresses').insert({
-            company_id: company.id,
-            label: 'Principal',
-            address_line1: reg.address,
+            companyName: reg.companyName,
+            address: reg.address,
             city: reg.city,
-            postal_code: reg.postalCode,
+            postalCode: reg.postalCode,
             country: reg.country || 'France',
-            is_default: true
-          });
-
+            siret: reg.siret,
+            vatNumber: reg.vatNumber,
+            chorusInvoicing: reg.chorusInvoicing || false,
+            chorusServiceCode: reg.chorusServiceCode || ''
+          })
+        });
+        const result = await res.json();
+        console.log('[Auth] Registration result:', result);
+        if (res.ok && result.success) {
           localStorage.removeItem('lhf_pending_registration');
-          return true;
+          return 'registration';
+        } else {
+          console.error('[Auth] Registration API error:', result.error);
         }
       } catch (err) {
         console.error('Pending registration error:', err);
@@ -3175,69 +3162,117 @@ export default function CustomerPortal() {
   };
   // Auth check
   useEffect(() => {
-    // If URL has hash with access_token from invite link,
-    // let Supabase process it, then reload clean
-    const hash = window.location.hash;
-    if (hash && hash.includes('access_token')) {
-      setTimeout(() => window.location.replace(window.location.pathname), 1000);
+    let cancelled = false;
+    const hasHashTokens = window.location.hash?.includes('access_token');
+    const hasErrorHash = window.location.hash?.includes('error=');
+
+    // If URL has error hash (expired link etc), show login page
+    if (hasErrorHash) {
+      console.log('[Auth] Error in URL hash:', window.location.hash);
+      // Strip the error hash so it doesn't persist
+      window.history.replaceState(null, '', window.location.pathname);
+      setLoading(false);
       return;
     }
 
-    let cancelled = false;
-    const checkAuth = async () => {
+    const processUser = async (session) => {
+      if (!session?.user || cancelled) return false;
+      console.log('[Auth] Processing user:', session.user.email);
+
+      let p = null;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user || cancelled) return;
+        const res = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
+        p = res.data;
+      } catch (e) { console.error('[Auth] Profile query error:', e); }
 
-        let p = null;
-        try {
-          const res = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
-          p = res.data;
-        } catch (e) { console.error('[Auth] Profile query error:', e); }
-
-        if (p) {
-          if (p.role === 'lh_admin' || p.role === 'lh_employee') { window.location.href = '/admin'; return; }
-          if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
-            await supabase.auth.signOut({ scope: 'local' }); return;
-          }
-          setUser(session.user);
-          setProfile(p);
-          setLang(p.preferred_language || 'fr');
-          try { await loadData(p); } catch (e) { console.error('[Auth] loadData error:', e); }
-        } else {
-          // No profile - try invite
-          console.log('[Auth] No profile, trying invite for:', session.user.email);
-          try {
-            const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
-            if (processed) {
-              const { data: newP } = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
-              if (newP) {
-                setUser(session.user);
-                setProfile(newP);
-                setLang(newP.preferred_language || 'fr');
-                setNeedsSetup(true);
-                try { await loadData(newP); } catch (e) { console.error('[Auth] loadData error:', e); }
-                return;
-              }
-            }
-          } catch (e) { console.error('[Auth] Invite error:', e); }
-          await supabase.auth.signOut({ scope: 'local' });
+      if (p) {
+        if (p.role === 'lh_admin' || p.role === 'lh_employee') { window.location.href = '/admin'; return true; }
+        if (p.invitation_status === 'deactivated' || p.invitation_status === 'gdpr_erased') {
+          await supabase.auth.signOut({ scope: 'local' }); return false;
         }
-      } catch (err) {
-        console.error('[Auth] Fatal error:', err);
-      } finally {
-        if (!cancelled) setLoading(false);
+        setUser(session.user);
+        setProfile(p);
+        setLang(p.preferred_language || 'fr');
+        try { await loadData(p); } catch (e) { console.error('[Auth] loadData error:', e); }
+        return true;
+      } else {
+        // No profile - try invite or pending registration
+        console.log('[Auth] No profile, trying invite for:', session.user.email);
+        try {
+          const processed = await processInviteOnFirstLogin(session.user.id, session.user.email);
+          if (processed) {
+            const { data: newP } = await supabase.from('profiles').select('*, companies(*)').eq('id', session.user.id).single();
+            if (newP) {
+              setUser(session.user);
+              setProfile(newP);
+              setLang(newP.preferred_language || 'fr');
+              if (processed === 'invite') {
+                setNeedsSetup(true); // Invite users need to set name + password
+              } else {
+                setPage('dashboard'); // Registration users already set everything
+              }
+              try { await loadData(newP); } catch (e) { console.error('[Auth] loadData error:', e); }
+              return true;
+            }
+          }
+        } catch (e) { console.error('[Auth] Invite error:', e); }
+        await supabase.auth.signOut({ scope: 'local' });
+        return false;
       }
     };
-    checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    // Listen for auth events - this handles hash tokens (invite links, email confirmation, password recovery)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[Auth] Event:', event);
+      if (cancelled) return;
+      
       if (event === 'PASSWORD_RECOVERY') {
         setRecoveryMode(true);
         setUser(session?.user || null);
         setLoading(false);
+        // Strip hash
+        window.history.replaceState(null, '', window.location.pathname);
+        return;
+      }
+      
+      if (event === 'SIGNED_IN' && session?.user && hasHashTokens) {
+        // This fires when Supabase processes hash tokens from email links
+        console.log('[Auth] SIGNED_IN from hash tokens for:', session.user.email);
+        // Strip hash tokens from URL now that they're processed
+        window.history.replaceState(null, '', window.location.pathname);
+        await processUser(session);
+        if (!cancelled) setLoading(false);
       }
     });
+
+    // Normal page load - check for existing session (no hash tokens)
+    if (!hasHashTokens) {
+      const checkAuth = async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            await processUser(session);
+          }
+        } catch (err) {
+          console.error('[Auth] Fatal error:', err);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      };
+      checkAuth();
+    } else {
+      // Has hash tokens - wait for onAuthStateChange SIGNED_IN to fire
+      // Set a timeout fallback in case Supabase fails to process tokens
+      console.log('[Auth] Waiting for Supabase to process hash tokens...');
+      const fallback = setTimeout(() => {
+        if (!cancelled) {
+          console.log('[Auth] Hash token processing timed out');
+          window.history.replaceState(null, '', window.location.pathname);
+          setLoading(false);
+        }
+      }, 5000);
+      return () => { cancelled = true; clearTimeout(fallback); subscription?.unsubscribe(); };
+    }
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('invite')) setPage('register');
@@ -3304,7 +3339,11 @@ export default function CustomerPortal() {
           setProfile(newP);
           if (newP.preferred_language) setLang(newP.preferred_language);
           else setLang('fr');
-          setNeedsSetup(true); // New invite user needs to set name + password
+          if (processed === 'invite') {
+            setNeedsSetup(true); // Invite users need to set name + password
+          } else {
+            setPage('dashboard'); // Registration users already set everything
+          }
           await loadData(newP);
           return null;
         }
