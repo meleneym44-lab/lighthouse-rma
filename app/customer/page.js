@@ -3472,36 +3472,73 @@ export default function CustomerPortal() {
   // Account setup for invited users (need to set name + password)
   if (needsSetup && user && profile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        {toast && (
-          <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
-            toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
-          }`}>
-            {toast.msg}
+      <div className="min-h-screen">
+        {/* Fixed Background - same as login page */}
+        <div className="fixed inset-0 z-0">
+          <img 
+            src="/images/products/hero-background.png" 
+            alt="" 
+            className="w-full h-full object-cover"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e]/90 via-[#1a1a2e]/85 to-[#1a1a2e]/80"></div>
+        </div>
+        
+        <div className="relative z-10">
+          {/* Header */}
+          <header className="bg-[#1a1a2e]/50 backdrop-blur-md border-b border-white/10">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6">
+              <div className="flex justify-between items-center h-16">
+                <div className="flex items-center gap-3">
+                  <img 
+                    src="/images/logos/lighthouse-logo.png" 
+                    alt="Lighthouse France" 
+                    className="h-10 w-auto invert brightness-0 invert"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      e.target.nextSibling.style.display = 'flex';
+                    }}
+                  />
+                  <div className="items-center gap-2 hidden text-white">
+                    <span className="font-bold text-2xl tracking-tight">LIGHTHOUSE</span>
+                    <span className="font-semibold text-sm text-[#00A651]">FRANCE</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Setup Form */}
+          <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+            {toast && (
+              <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white font-medium ${
+                toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+              }`}>
+                {toast.msg}
+              </div>
+            )}
+            <AccountSetupPage 
+              profile={profile}
+              notify={notify}
+              onComplete={async (fullName, password) => {
+                try {
+                  const { error: authErr } = await supabase.auth.updateUser({ password });
+                  if (authErr) {
+                    notify(`Erreur mot de passe: ${authErr.message}`, 'error');
+                    return;
+                  }
+                  await supabase.from('profiles').update({ full_name: fullName }).eq('id', profile.id);
+                  setProfile({ ...profile, full_name: fullName });
+                  setNeedsSetup(false);
+                  setPage('dashboard');
+                  notify('Bienvenue ! Votre compte est prêt.');
+                } catch (err) {
+                  notify(`Erreur: ${err.message}`, 'error');
+                }
+              }}
+            />
           </div>
-        )}
-        <AccountSetupPage 
-          profile={profile}
-          notify={notify}
-          onComplete={async (fullName, password) => {
-            try {
-              // Update auth password
-              const { error: authErr } = await supabase.auth.updateUser({ password });
-              if (authErr) {
-                notify(`Erreur mot de passe: ${authErr.message}`, 'error');
-                return;
-              }
-              // Update profile name
-              await supabase.from('profiles').update({ full_name: fullName }).eq('id', profile.id);
-              setProfile({ ...profile, full_name: fullName });
-              setNeedsSetup(false);
-              setPage('dashboard');
-              notify('Bienvenue ! Votre compte est prêt.');
-            } catch (err) {
-              notify(`Erreur: ${err.message}`, 'error');
-            }
-          }}
-        />
+        </div>
       </div>
     );
   }
@@ -16194,6 +16231,9 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     );
   };
 
+  const [showLimits, setShowLimits] = useState({ rma: 10, parts: 10, contract: 10, rental: 10 });
+  const [historyLimits, setHistoryLimits] = useState({ rma: 10, parts: 10, contract: 10, rental: 10 });
+
   // Render a section
   const renderSection = (title, icon, items, type) => {
     if (items.length === 0) return null;
@@ -16217,6 +16257,12 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
 
     const activeItems = filteredItems.filter(i => isActive(i.status));
     const completedItems = filteredItems.filter(i => !isActive(i.status));
+    const activeLimit = showLimits[type] || 10;
+    const historyLimit = historyLimits[type] || 10;
+    const visibleActive = activeItems.slice(0, activeLimit);
+    const visibleCompleted = completedItems.slice(0, historyLimit);
+    const hasMoreActive = activeItems.length > activeLimit;
+    const hasMoreCompleted = completedItems.length > historyLimit;
 
     return (
       <div className="mb-8">
@@ -16228,7 +16274,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
         
         {activeItems.length > 0 && (
           <div className="space-y-3 mb-4">
-            {activeItems.map(item => (
+            {visibleActive.map(item => (
               <OrderCard 
                 key={item.id} 
                 item={item} 
@@ -16236,6 +16282,14 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
                 onClick={() => type === 'rma' || type === 'parts' ? openRMA(item) : type === 'contract' ? openContract(item) : openRental(item)} 
               />
             ))}
+            {hasMoreActive && (
+              <button
+                onClick={() => setShowLimits(prev => ({ ...prev, [type]: activeLimit + 10 }))}
+                className="w-full py-3 text-sm font-medium text-[#3B7AB4] bg-white border border-gray-200 rounded-xl hover:bg-[#E8F2F8] transition-colors"
+              >
+                Voir plus ({activeItems.length - activeLimit} restant{activeItems.length - activeLimit > 1 ? 's' : ''})
+              </button>
+            )}
           </div>
         )}
 
@@ -16246,7 +16300,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
               Historique ({completedItems.length})
             </summary>
             <div className="space-y-3 opacity-75">
-              {completedItems.map(item => (
+              {visibleCompleted.map(item => (
                 <OrderCard 
                   key={item.id} 
                   item={item} 
@@ -16254,6 +16308,14 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
                   onClick={() => type === 'rma' || type === 'parts' ? openRMA(item) : type === 'contract' ? openContract(item) : openRental(item)} 
                 />
               ))}
+              {hasMoreCompleted && (
+                <button
+                  onClick={() => setHistoryLimits(prev => ({ ...prev, [type]: historyLimit + 10 }))}
+                  className="w-full py-3 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  Voir plus ({completedItems.length - historyLimit} restant{completedItems.length - historyLimit > 1 ? 's' : ''})
+                </button>
+              )}
             </div>
           </details>
         )}
@@ -17135,59 +17197,59 @@ function AccountSetupPage({ profile, notify, onComplete }) {
 
   return (
     <div className="w-full max-w-md">
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-xl">
-        <div className="bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] px-8 py-8 text-center">
-          <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+      <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+        <div className="px-6 py-8 text-center border-b border-white/10">
+          <div className="w-16 h-16 bg-[#00A651]/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🎉</span>
           </div>
           <h1 className="text-2xl font-bold text-white">Bienvenue chez Lighthouse France</h1>
-          <p className="text-white/70 text-sm mt-2">
+          <p className="text-white/60 text-sm mt-2">
             Votre email a été vérifié. Finalisez votre compte ci-dessous.
           </p>
-          <p className="text-white/50 text-xs mt-1">{profile?.email}</p>
+          <p className="text-white/40 text-xs mt-1">{profile?.email}</p>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-8 space-y-5">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Votre nom complet *</label>
+            <label className="block text-sm font-medium text-white/80 mb-1">Votre nom complet *</label>
             <input
               type="text"
               value={fullName}
               onChange={e => setFullName(e.target.value)}
               placeholder="Jean Dupont"
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
               required
               autoFocus
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Créer un mot de passe *</label>
+            <label className="block text-sm font-medium text-white/80 mb-1">Créer un mot de passe *</label>
             <input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="Minimum 8 caractères"
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
               required
             />
-            <p className="text-gray-400 text-xs mt-1">Majuscule + chiffre + caractère spécial requis</p>
+            <p className="text-white/30 text-xs mt-1">Majuscule + chiffre + caractère spécial requis</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirmer le mot de passe *</label>
+            <label className="block text-sm font-medium text-white/80 mb-1">Confirmer le mot de passe *</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               placeholder="Retapez le mot de passe"
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#3B7AB4] focus:border-transparent"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
               required
             />
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+            <div className="bg-red-500/20 border border-red-400/30 text-red-200 px-4 py-3 rounded-lg text-sm">
               {error}
             </div>
           )}
@@ -17195,7 +17257,7 @@ function AccountSetupPage({ profile, notify, onComplete }) {
           <button
             type="submit"
             disabled={saving}
-            className="w-full py-3.5 bg-gradient-to-r from-[#1E3A5F] to-[#3B7AB4] text-white rounded-xl font-bold hover:from-[#162d4a] hover:to-[#2d6494] transition-all disabled:opacity-50 text-lg shadow-lg"
+            className="w-full py-3.5 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008C44] transition-colors disabled:opacity-50 text-lg"
           >
             {saving ? 'Activation...' : '✓ Activer mon compte'}
           </button>
