@@ -18090,6 +18090,16 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
   const [clientRentals, setClientRentals] = useState([]);
   const [selectedRental, setSelectedRental] = useState(null);
   
+  // Device management
+  const [showDeviceModal, setShowDeviceModal] = useState(false);
+  const [editingDevice, setEditingDevice] = useState(null); // null = add, object = edit
+  const [deviceForm, setDeviceForm] = useState({ model_name: '', serial_number: '', brand: 'Lighthouse', brand_other: '', nickname: '', notes: '', equipment_type: 'particle_counter' });
+  const [deviceSaving, setDeviceSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [deleteTyped, setDeleteTyped] = useState('');
+  const [clientEquipment, setClientEquipment] = useState(equipment || []);
+  const [deviceFilter, setDeviceFilter] = useState('active'); // 'active', 'archived', 'all'
+  
   const partsOrdersList = partsOrders || [];
 
   const loadContracts = async () => {
@@ -18120,11 +18130,99 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
     if (tabId === 'contracts' && clientContracts.length === 0) loadContracts();
     if (tabId === 'sites' && clientLocations.length === 0) loadLocations();
     if (tabId === 'rentals' && clientRentals.length === 0) loadRentals();
+    if (tabId === 'devices') reloadDevices();
   };
 
   const saveClient = async () => { setSaving(true); const { error } = await supabase.from('companies').update(editData).eq('id', client.id); if (error) notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error'); else { notify((lang === 'en' ? 'Client updated!' : 'Client mis à jour!')); setEditing(false); reload(); } setSaving(false); };
   
   const handleSelectItem = (item) => { onClose(); if (onSelectRMA) onSelectRMA(item); };
+  
+  // ---- Device CRUD ----
+  const reloadDevices = async () => {
+    const { data } = await supabase.from('equipment').select('*, companies(name)').eq('company_id', client.id).order('created_at', { ascending: false });
+    if (data) setClientEquipment(data);
+  };
+  
+  const openAddDevice = () => {
+    setEditingDevice(null);
+    setDeviceForm({ model_name: '', serial_number: '', brand: 'Lighthouse', brand_other: '', nickname: '', notes: '', equipment_type: 'particle_counter' });
+    setShowDeviceModal(true);
+  };
+  
+  const openEditDevice = (device) => {
+    setEditingDevice(device);
+    setDeviceForm({
+      model_name: device.model_name || '',
+      serial_number: device.serial_number || '',
+      brand: ['Lighthouse', 'Particle Measuring Systems', 'TSI', 'Beckman Coulter', 'Climet'].includes(device.brand) ? device.brand : 'other',
+      brand_other: ['Lighthouse', 'Particle Measuring Systems', 'TSI', 'Beckman Coulter', 'Climet'].includes(device.brand) ? '' : (device.brand || ''),
+      nickname: device.nickname || '',
+      notes: device.notes || '',
+      equipment_type: device.equipment_type || 'particle_counter'
+    });
+    setShowDeviceModal(true);
+  };
+  
+  const saveDevice = async () => {
+    if (!deviceForm.serial_number.trim() || !deviceForm.model_name.trim()) {
+      notify(lang === 'en' ? 'Serial number and model are required' : 'N° série et modèle sont obligatoires', 'error');
+      return;
+    }
+    setDeviceSaving(true);
+    const data = {
+      company_id: client.id,
+      model_name: deviceForm.model_name.trim(),
+      serial_number: deviceForm.serial_number.trim(),
+      brand: deviceForm.brand === 'other' ? deviceForm.brand_other.trim() : deviceForm.brand,
+      nickname: deviceForm.nickname.trim() || null,
+      notes: deviceForm.notes.trim() || null,
+      equipment_type: deviceForm.equipment_type,
+      added_by: profile?.id || null
+    };
+    let error;
+    if (editingDevice) {
+      const res = await supabase.from('equipment').update(data).eq('id', editingDevice.id);
+      error = res.error;
+    } else {
+      const res = await supabase.from('equipment').insert(data);
+      error = res.error;
+    }
+    if (error) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + error.message, 'error');
+    } else {
+      notify(editingDevice ? (lang === 'en' ? 'Device updated!' : 'Appareil modifié!') : (lang === 'en' ? 'Device added!' : 'Appareil ajouté!'));
+      setShowDeviceModal(false);
+      setEditingDevice(null);
+      await reloadDevices();
+      reload();
+    }
+    setDeviceSaving(false);
+  };
+  
+  const archiveDevice = async (device) => {
+    const { error } = await supabase.from('equipment').update({ hidden_by_customer: true }).eq('id', device.id);
+    if (error) notify('Erreur: ' + error.message, 'error');
+    else { notify(lang === 'en' ? 'Device archived' : 'Appareil archivé'); await reloadDevices(); reload(); }
+  };
+  
+  const unarchiveDevice = async (device) => {
+    const { error } = await supabase.from('equipment').update({ hidden_by_customer: false }).eq('id', device.id);
+    if (error) notify('Erreur: ' + error.message, 'error');
+    else { notify(lang === 'en' ? 'Device restored' : 'Appareil restauré'); await reloadDevices(); reload(); }
+  };
+  
+  const hardDeleteDevice = async (device) => {
+    const { error } = await supabase.from('equipment').delete().eq('id', device.id);
+    if (error) notify('Erreur: ' + error.message, 'error');
+    else { 
+      notify(lang === 'en' ? 'Device permanently deleted' : 'Appareil supprimé définitivement'); 
+      setShowDeleteConfirm(null); 
+      setDeleteTyped('');
+      setSelectedEquipment(null);
+      await reloadDevices(); 
+      reload(); 
+    }
+  };
   
   const getDeviceRMAHistory = (serialNumber) => {
     return requests.filter(r => r.request_devices?.some(d => d.serial_number === serialNumber))
@@ -18136,7 +18234,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
     { id: 'parts', label: lang === 'en' ? 'Parts' : 'Pièces', icon: '🔩', count: partsOrdersList.length },
     { id: 'rentals', label: lang === 'en' ? 'Rentals' : 'Locations', icon: '📅' },
     { id: 'contracts', label: lang === 'en' ? 'Contracts' : 'Contrats', icon: '📑' },
-    { id: 'devices', label: lang === 'en' ? 'Devices' : 'Appareils', icon: '🔧', count: equipment.length, badge: equipment.filter(e => e.hidden_by_customer).length > 0 ? equipment.filter(e => e.hidden_by_customer).length + ' 📦' : null },
+    { id: 'devices', label: lang === 'en' ? 'Devices' : 'Appareils', icon: '🔧', count: clientEquipment.filter(e => !e.hidden_by_customer).length, badge: clientEquipment.filter(e => e.hidden_by_customer).length > 0 ? clientEquipment.filter(e => e.hidden_by_customer).length + ' 📦' : null },
     { id: 'sites', label: lang === 'en' ? 'Sites' : 'Sites', icon: '📍' },
     { id: 'info', label: 'Info', icon: 'ℹ️' },
     { id: 'contacts', label: lang === 'en' ? 'Contacts' : 'Contacts', icon: '👤', count: client.profiles?.filter(p => p.invitation_status !== 'gdpr_erased').length || 0 }
@@ -18380,27 +18478,118 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
           
           {/* === Devices === */}
           {activeTab === 'devices' && !selectedEquipment && (
-            <div className="space-y-3">
-              {equipment.length === 0 ? <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No devices' : 'Aucun appareil'}</p> : equipment.map(eq => { 
-                const rmaCount = getDeviceRMAHistory(eq.serial_number).length;
-                const isArchived = eq.hidden_by_customer === true;
-                return (
-                  <div key={eq.id} onClick={() => setSelectedEquipment(eq)} className={`rounded-lg p-4 flex justify-between items-center hover:bg-gray-100 cursor-pointer transition-colors ${isArchived ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
-                    <div>
-                      <p className="font-medium flex items-center gap-2">
-                        {getDeviceImageUrl(eq.model_name) && <img src={getDeviceImageUrl(eq.model_name)} alt="" className="w-5 h-5 object-contain" />}
-                        {eq.model_name}
-                        {isArchived && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived by client' : '📦 Archivé par le client'}</span>}
-                      </p>
-                      <p className="text-sm text-gray-500">SN: {eq.serial_number}</p>
+            <div className="space-y-4">
+              {/* Toolbar */}
+              <div className="flex justify-between items-center">
+                <div className="flex gap-2">
+                  {['active', 'archived', 'all'].map(f => (
+                    <button key={f} onClick={() => setDeviceFilter(f)} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${deviceFilter === f ? 'bg-[#1a1a2e] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                      {f === 'active' ? (lang === 'en' ? `Active (${clientEquipment.filter(e => !e.hidden_by_customer).length})` : `Actifs (${clientEquipment.filter(e => !e.hidden_by_customer).length})`) 
+                       : f === 'archived' ? (lang === 'en' ? `Archived (${clientEquipment.filter(e => e.hidden_by_customer).length})` : `Archivés (${clientEquipment.filter(e => e.hidden_by_customer).length})`) 
+                       : (lang === 'en' ? `All (${clientEquipment.length})` : `Tous (${clientEquipment.length})`)}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={openAddDevice} className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm font-medium hover:bg-[#008C44]">
+                  + {lang === 'en' ? 'Add Device' : 'Ajouter un appareil'}
+                </button>
+              </div>
+              
+              {/* Device list */}
+              {clientEquipment.filter(e => deviceFilter === 'all' ? true : deviceFilter === 'archived' ? e.hidden_by_customer : !e.hidden_by_customer).length === 0 ? (
+                <p className="text-center text-gray-400 py-8">{lang === 'en' ? 'No devices' : 'Aucun appareil'}</p>
+              ) : (
+                clientEquipment.filter(e => deviceFilter === 'all' ? true : deviceFilter === 'archived' ? e.hidden_by_customer : !e.hidden_by_customer).map(eq => { 
+                  const rmaCount = getDeviceRMAHistory(eq.serial_number).length;
+                  const isArchived = eq.hidden_by_customer === true;
+                  return (
+                    <div key={eq.id} className={`rounded-lg p-4 flex justify-between items-center transition-colors ${isArchived ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                      <div className="flex-1 cursor-pointer" onClick={() => setSelectedEquipment(eq)}>
+                        <p className="font-medium flex items-center gap-2">
+                          {getDeviceImageUrl(eq.model_name) && <img src={getDeviceImageUrl(eq.model_name)} alt="" className="w-5 h-5 object-contain" />}
+                          {eq.model_name}
+                          {eq.nickname && <span className="text-xs text-gray-400">({eq.nickname})</span>}
+                          {isArchived && <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">📦 {lang === 'en' ? 'Archived' : 'Archivé'}</span>}
+                        </p>
+                        <p className="text-sm text-gray-500">SN: <span className="font-mono">{eq.serial_number}</span></p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-400 mr-2">{eq.brand}</span>
+                        {rmaCount > 0 && <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{rmaCount} RMA</span>}
+                        <button onClick={(e) => { e.stopPropagation(); openEditDevice(eq); }} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title={lang === 'en' ? 'Edit' : 'Modifier'}>✏️</button>
+                        {isArchived ? (
+                          <button onClick={(e) => { e.stopPropagation(); unarchiveDevice(eq); }} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title={lang === 'en' ? 'Restore' : 'Restaurer'}>♻️</button>
+                        ) : (
+                          <button onClick={(e) => { e.stopPropagation(); archiveDevice(eq); }} className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded" title={lang === 'en' ? 'Archive' : 'Archiver'}>📦</button>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-sm text-gray-400">{eq.brand}</span>
-                      {rmaCount > 0 && <p className="text-xs text-blue-600 mt-1">{rmaCount} RMA(s)</p>}
+                  ); 
+                })
+              )}
+              
+              {/* Add/Edit Device Modal */}
+              {showDeviceModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50" onClick={() => setShowDeviceModal(false)}>
+                  <div className="bg-white rounded-xl w-full max-w-lg p-6 space-y-4" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-lg font-bold text-gray-800">
+                      {editingDevice ? (lang === 'en' ? '✏️ Edit Device' : '✏️ Modifier l\'appareil') : (lang === 'en' ? '➕ Add Device' : '➕ Ajouter un appareil')}
+                    </h3>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Serial Number *' : 'N° de série *'}</label>
+                        <input type="text" value={deviceForm.serial_number} onChange={e => setDeviceForm({...deviceForm, serial_number: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" placeholder="e.g. 2109300456" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Model *' : 'Modèle *'}</label>
+                        <input type="text" value={deviceForm.model_name} onChange={e => setDeviceForm({...deviceForm, model_name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="e.g. SOLAIR 3100" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Brand' : 'Marque'}</label>
+                        <select value={deviceForm.brand} onChange={e => setDeviceForm({...deviceForm, brand: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                          <option value="Lighthouse">Lighthouse</option>
+                          <option value="Particle Measuring Systems">PMS</option>
+                          <option value="TSI">TSI</option>
+                          <option value="Beckman Coulter">Beckman Coulter</option>
+                          <option value="Climet">Climet</option>
+                          <option value="other">{lang === 'en' ? 'Other' : 'Autre'}</option>
+                        </select>
+                        {deviceForm.brand === 'other' && (
+                          <input type="text" value={deviceForm.brand_other} onChange={e => setDeviceForm({...deviceForm, brand_other: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-2" placeholder={lang === 'en' ? 'Brand name' : 'Nom de la marque'} />
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Equipment Type' : 'Type d\'équipement'}</label>
+                        <select value={deviceForm.equipment_type} onChange={e => setDeviceForm({...deviceForm, equipment_type: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                          <option value="particle_counter">{lang === 'en' ? 'Particle Counter' : 'Compteur de particules'}</option>
+                          <option value="bio_collector">{lang === 'en' ? 'Bio Collector' : 'Bio collecteur'}</option>
+                          <option value="liquid_counter">{lang === 'en' ? 'Liquid Particle Counter' : 'Compteur particules liquide'}</option>
+                          <option value="temp_humidity">{lang === 'en' ? 'Temp/Humidity Sensor' : 'Capteur Temp/Humidité'}</option>
+                          <option value="other">{lang === 'en' ? 'Other' : 'Autre'}</option>
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Nickname' : 'Surnom'}</label>
+                          <input type="text" value={deviceForm.nickname} onChange={e => setDeviceForm({...deviceForm, nickname: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder={lang === 'en' ? 'e.g. Line 3 counter' : 'Ex: Compteur ligne 3'} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Notes' : 'Notes'}</label>
+                          <input type="text" value={deviceForm.notes} onChange={e => setDeviceForm({...deviceForm, notes: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button onClick={() => setShowDeviceModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg text-sm">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
+                      <button onClick={saveDevice} disabled={deviceSaving} className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                        {deviceSaving ? '...' : (editingDevice ? (lang === 'en' ? 'Save Changes' : 'Enregistrer') : (lang === 'en' ? 'Add Device' : 'Ajouter'))}
+                      </button>
                     </div>
                   </div>
-                ); 
-              })}
+                </div>
+              )}
             </div>
           )}
           
@@ -18408,13 +18597,68 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
             <div className="space-y-4">
               <button onClick={() => setSelectedEquipment(null)} className="text-sm text-blue-600 hover:underline">{lang === 'en' ? '← Back' : '← Retour'}</button>
               <div className={`rounded-lg p-4 border ${selectedEquipment.hidden_by_customer ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200'}`}>
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-bold flex items-center gap-2 ${selectedEquipment.hidden_by_customer ? 'text-orange-800' : 'text-blue-800'}`}>{getDeviceImageUrl(selectedEquipment.model_name) && <img src={getDeviceImageUrl(selectedEquipment.model_name)} alt="" className="w-6 h-6 object-contain" />}{selectedEquipment.model_name}</h3>
-                  {selectedEquipment.hidden_by_customer && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{lang === 'en' ? '📦 Archived by client' : '📦 Archivé par le client'}</span>}
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className={`font-bold flex items-center gap-2 ${selectedEquipment.hidden_by_customer ? 'text-orange-800' : 'text-blue-800'}`}>{getDeviceImageUrl(selectedEquipment.model_name) && <img src={getDeviceImageUrl(selectedEquipment.model_name)} alt="" className="w-6 h-6 object-contain" />}{selectedEquipment.model_name}</h3>
+                      {selectedEquipment.hidden_by_customer && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">📦 {lang === 'en' ? 'Archived' : 'Archivé'}</span>}
+                    </div>
+                    <p className={`text-sm font-mono ${selectedEquipment.hidden_by_customer ? 'text-orange-600' : 'text-blue-600'}`}>SN: {selectedEquipment.serial_number}</p>
+                    {selectedEquipment.brand && <p className="text-sm text-gray-500 mt-1">{selectedEquipment.brand}</p>}
+                    {selectedEquipment.nickname && <p className="text-sm text-gray-400">{lang === 'en' ? 'Nickname' : 'Surnom'}: {selectedEquipment.nickname}</p>}
+                    {selectedEquipment.notes && <p className="text-sm text-gray-400">{lang === 'en' ? 'Notes' : 'Notes'}: {selectedEquipment.notes}</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => openEditDevice(selectedEquipment)} className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm hover:bg-blue-200">✏️ {lang === 'en' ? 'Edit' : 'Modifier'}</button>
+                    {selectedEquipment.hidden_by_customer ? (
+                      <button onClick={() => unarchiveDevice(selectedEquipment)} className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm hover:bg-green-200">♻️ {lang === 'en' ? 'Restore' : 'Restaurer'}</button>
+                    ) : (
+                      <button onClick={() => archiveDevice(selectedEquipment)} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-sm hover:bg-orange-200">📦 {lang === 'en' ? 'Archive' : 'Archiver'}</button>
+                    )}
+                    {isAdmin && (
+                      <button onClick={() => { setShowDeleteConfirm(selectedEquipment); setDeleteTyped(''); }} className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm hover:bg-red-200">🗑️ {lang === 'en' ? 'Delete' : 'Supprimer'}</button>
+                    )}
+                  </div>
                 </div>
-                <p className={`text-sm ${selectedEquipment.hidden_by_customer ? 'text-orange-600' : 'text-blue-600'}`}>SN: {selectedEquipment.serial_number}</p>
-                {selectedEquipment.brand && <p className="text-sm text-gray-500 mt-1">{selectedEquipment.brand}</p>}
               </div>
+              
+              {/* Hard Delete Confirmation */}
+              {showDeleteConfirm && showDeleteConfirm.id === selectedEquipment.id && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">⚠️</span>
+                    <div>
+                      <p className="font-bold text-red-800">{lang === 'en' ? 'Permanent Deletion' : 'Suppression définitive'}</p>
+                      <p className="text-sm text-red-700 mt-1">
+                        {lang === 'en' 
+                          ? `This will permanently delete "${selectedEquipment.model_name}" (SN: ${selectedEquipment.serial_number}) from the database. This cannot be undone. Consider archiving instead.`
+                          : `Cela supprimera définitivement "${selectedEquipment.model_name}" (SN: ${selectedEquipment.serial_number}) de la base de données. Cette action est irréversible. Pensez à archiver plutôt.`}
+                      </p>
+                      <p className="text-sm text-red-800 font-medium mt-2">
+                        {lang === 'en' ? 'Type "DELETE" to confirm:' : 'Tapez "SUPPRIMER" pour confirmer:'}
+                      </p>
+                      <input 
+                        type="text" 
+                        value={deleteTyped} 
+                        onChange={e => setDeleteTyped(e.target.value)}
+                        className="mt-1 px-3 py-2 border-2 border-red-300 rounded-lg w-48 font-mono text-red-800 bg-white"
+                        placeholder={lang === 'en' ? 'DELETE' : 'SUPPRIMER'}
+                      />
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => { setShowDeleteConfirm(null); setDeleteTyped(''); }} className="px-4 py-2 bg-gray-200 rounded-lg text-sm">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
+                        <button 
+                          onClick={() => hardDeleteDevice(selectedEquipment)}
+                          disabled={deleteTyped !== (lang === 'en' ? 'DELETE' : 'SUPPRIMER')}
+                          className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-30 hover:bg-red-700"
+                        >
+                          🗑️ {lang === 'en' ? 'Permanently Delete' : 'Supprimer définitivement'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <h4 className="font-medium text-gray-700">{lang === 'en' ? 'RMA History:' : 'Historique RMAs:'}</h4>
               <div className="space-y-3">
                 {getDeviceRMAHistory(selectedEquipment.serial_number).map(rma => {
@@ -18428,6 +18672,9 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     </div>
                   );
                 })}
+                {getDeviceRMAHistory(selectedEquipment.serial_number).length === 0 && (
+                  <p className="text-center text-gray-400 py-4 text-sm">{lang === 'en' ? 'No RMA history for this device' : 'Aucun historique RMA pour cet appareil'}</p>
+                )}
               </div>
             </div>
           )}
@@ -25349,6 +25596,7 @@ const CAL_TYPE_LABELS = {
 
 };
 
+
 // ============================================
 // SALESFORCE CLIENT LINKING TOOL
 // ============================================
@@ -25356,7 +25604,7 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
   const [expanded, setExpanded] = useState(false);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState('single'); // 'single' or 'csv'
+  const [mode, setMode] = useState('single'); // 'single', 'csv', 'import'
   
   // Single mode
   const [selectedClientId, setSelectedClientId] = useState('');
@@ -25368,6 +25616,12 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
   const [csvText, setCsvText] = useState('');
   const [csvParsed, setCsvParsed] = useState(null);
   const [csvSaving, setCsvSaving] = useState(false);
+  
+  // Import mode (Salesforce asset import)
+  const [importText, setImportText] = useState('');
+  const [importParsed, setImportParsed] = useState(null);
+  const [importSaving, setImportSaving] = useState(false);
+  const [importProgress, setImportProgress] = useState(null);
   
   const loadClients = async () => {
     setLoading(true);
@@ -25381,95 +25635,114 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
   const linkedCount = clients.filter(c => c.salesforce_id).length;
   const unlinkedCount = clients.filter(c => !c.salesforce_id).length;
   
-  // Single link
+  // === SINGLE LINK ===
   const linkSingle = async () => {
     if (!selectedClientId || !sfIdInput.trim()) { notify(lang === 'en' ? 'Select a client and enter a Salesforce ID' : 'Sélectionnez un client et entrez un N° Salesforce', 'error'); return; }
     setSaving(true);
     const { error } = await supabase.from('companies').update({ salesforce_id: sfIdInput.trim() }).eq('id', selectedClientId);
     if (error) { notify('Erreur: ' + error.message, 'error'); }
-    else {
-      notify(lang === 'en' ? 'Salesforce ID linked!' : 'N° Salesforce lié!');
-      setSelectedClientId('');
-      setSfIdInput('');
-      setClientSearch('');
-      await loadClients();
-    }
+    else { notify(lang === 'en' ? 'Salesforce ID linked!' : 'N° Salesforce lié!'); setSelectedClientId(''); setSfIdInput(''); setClientSearch(''); await loadClients(); }
     setSaving(false);
   };
   
-  // CSV parse
+  // === CSV PARSE (client linking) ===
   const parseCSV = () => {
     if (!csvText.trim()) return;
     const lines = csvText.trim().split('\n').map(l => l.split(/[,;\t]/).map(c => c.trim().replace(/^"|"$/g, '')));
-    // Rows need at least 2 columns: name + SF ID
     const parsed = lines.filter(row => row.length >= 2 && row[0].trim() && row[1].trim()).map(row => {
-      const name = row[0];
-      const sfId = row[1];
-      // Try to fuzzy match to existing clients
+      const name = row[0], sfId = row[1];
       const exactMatch = clients.find(c => c.name?.toLowerCase() === name.toLowerCase());
       const partialMatch = !exactMatch ? clients.find(c => c.name?.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(c.name?.toLowerCase())) : null;
       const siretMatch = !exactMatch && !partialMatch && row[2] ? clients.find(c => c.siret && c.siret === row[2]) : null;
-      return {
-        csvName: name,
-        sfId: sfId,
-        csvSiret: row[2] || null,
-        matched: exactMatch || partialMatch || siretMatch || null,
-        matchType: exactMatch ? 'exact' : partialMatch ? 'partial' : siretMatch ? 'siret' : 'none',
-        confirmed: !!exactMatch,
-        manualClientId: ''
-      };
+      return { csvName: name, sfId, csvSiret: row[2] || null, matched: exactMatch || partialMatch || siretMatch || null, matchType: exactMatch ? 'exact' : partialMatch ? 'partial' : siretMatch ? 'siret' : 'none', confirmed: !!exactMatch, manualClientId: '' };
     });
     setCsvParsed(parsed);
   };
-  
-  const toggleConfirm = (idx) => {
-    const updated = [...csvParsed];
-    updated[idx].confirmed = !updated[idx].confirmed;
-    setCsvParsed(updated);
-  };
-  
-  const setManualMatch = (idx, clientId) => {
-    const updated = [...csvParsed];
-    updated[idx].manualClientId = clientId;
-    updated[idx].matched = clients.find(c => c.id === clientId) || null;
-    updated[idx].matchType = 'manual';
-    updated[idx].confirmed = true;
-    setCsvParsed(updated);
-  };
-  
+  const toggleConfirm = (idx) => { const u = [...csvParsed]; u[idx].confirmed = !u[idx].confirmed; setCsvParsed(u); };
+  const setManualMatch = (idx, clientId) => { const u = [...csvParsed]; u[idx].manualClientId = clientId; u[idx].matched = clients.find(c => c.id === clientId) || null; u[idx].matchType = 'manual'; u[idx].confirmed = true; setCsvParsed(u); };
   const applyCSV = async () => {
     const toApply = csvParsed.filter(r => r.confirmed && r.matched && r.sfId);
-    if (toApply.length === 0) { notify(lang === 'en' ? 'No confirmed matches to apply' : 'Aucune correspondance confirmée', 'error'); return; }
+    if (toApply.length === 0) { notify(lang === 'en' ? 'No confirmed matches' : 'Aucune correspondance confirmée', 'error'); return; }
     setCsvSaving(true);
-    let success = 0;
-    let errors = 0;
-    for (const row of toApply) {
-      const { error } = await supabase.from('companies').update({ salesforce_id: row.sfId }).eq('id', row.matched.id);
-      if (error) errors++;
-      else success++;
-    }
+    let success = 0, errors = 0;
+    for (const row of toApply) { const { error } = await supabase.from('companies').update({ salesforce_id: row.sfId }).eq('id', row.matched.id); if (error) errors++; else success++; }
     notify(`${success} ${lang === 'en' ? 'linked' : 'liés'}, ${errors} ${lang === 'en' ? 'errors' : 'erreurs'}`);
-    setCsvParsed(null);
-    setCsvText('');
-    await loadClients();
-    setCsvSaving(false);
+    setCsvParsed(null); setCsvText(''); await loadClients(); setCsvSaving(false);
+  };
+  
+  // === ASSET IMPORT ===
+  const parseImport = () => {
+    if (!importText.trim()) return;
+    const lines = importText.trim().split('\n').map(l => l.split(/[,;\t]/).map(c => c.trim().replace(/^"|"$/g, '')));
+    
+    // Detect header row
+    let headerIdx = -1, colMap = {};
+    for (let i = 0; i < Math.min(lines.length, 3); i++) {
+      const row = lines[i].map(c => c.toLowerCase());
+      const sfCol = row.findIndex(c => c.includes('client') || c.includes('salesforce') || c.includes('sf') || c.includes('account') || c.includes('customer') || c.includes('n°'));
+      const snCol = row.findIndex(c => c.includes('serial') || c.includes('sn') || c.includes('série') || c.includes('numero serie'));
+      const modelCol = row.findIndex(c => c.includes('model') || c.includes('modèle') || c.includes('product') || c.includes('produit') || c.includes('asset'));
+      const brandCol = row.findIndex(c => c.includes('brand') || c.includes('marque') || c.includes('manufacturer') || c.includes('fabricant'));
+      if (sfCol >= 0 && snCol >= 0) { headerIdx = i; colMap = { sf: sfCol, sn: snCol, model: modelCol >= 0 ? modelCol : -1, brand: brandCol >= 0 ? brandCol : -1 }; break; }
+    }
+    if (headerIdx === -1) { colMap = { sf: 0, sn: 1, model: 2, brand: 3 }; }
+    
+    const dataLines = lines.slice(headerIdx + 1).filter(row => row.length >= 2 && row[colMap.sf]?.trim() && row[colMap.sn]?.trim());
+    
+    // Group by SF client ID
+    const byClient = {};
+    dataLines.forEach(row => {
+      const sfId = row[colMap.sf]?.trim();
+      if (!sfId) return;
+      if (!byClient[sfId]) byClient[sfId] = [];
+      byClient[sfId].push({
+        serial_number: row[colMap.sn]?.trim() || '',
+        model_name: colMap.model >= 0 ? (row[colMap.model]?.trim() || '') : '',
+        brand: colMap.brand >= 0 ? (row[colMap.brand]?.trim() || '') : 'Lighthouse'
+      });
+    });
+    
+    const results = Object.entries(byClient).map(([sfId, assets]) => {
+      const company = clients.find(c => c.salesforce_id === sfId);
+      return { sfId, company: company || null, assets: assets.filter(a => a.serial_number), confirmed: !!company, manualClientId: '' };
+    });
+    setImportParsed(results);
+  };
+  
+  const setImportManualMatch = (idx, clientId) => { const u = [...importParsed]; u[idx].manualClientId = clientId; u[idx].company = clients.find(c => c.id === clientId) || null; u[idx].confirmed = true; setImportParsed(u); };
+  const toggleImportConfirm = (idx) => { const u = [...importParsed]; u[idx].confirmed = !u[idx].confirmed; setImportParsed(u); };
+  
+  const applyImport = async () => {
+    const toApply = importParsed.filter(r => r.confirmed && r.company);
+    if (toApply.length === 0) { notify(lang === 'en' ? 'No confirmed imports' : 'Aucune importation confirmée', 'error'); return; }
+    setImportSaving(true);
+    const totalAssets = toApply.reduce((sum, r) => sum + r.assets.length, 0);
+    let done = 0, created = 0, skipped = 0, errors = 0;
+    for (const row of toApply) {
+      for (const asset of row.assets) {
+        setImportProgress({ done, total: totalAssets });
+        const { data: existing } = await supabase.from('equipment').select('id').eq('company_id', row.company.id).eq('serial_number', asset.serial_number).limit(1);
+        if (existing && existing.length > 0) { skipped++; }
+        else {
+          const { error } = await supabase.from('equipment').insert({ company_id: row.company.id, serial_number: asset.serial_number, model_name: asset.model_name || 'Unknown', brand: asset.brand || 'Lighthouse', equipment_type: 'particle_counter', notes: `Imported from Salesforce (${row.sfId})` });
+          if (error) errors++; else created++;
+        }
+        done++;
+      }
+    }
+    setImportProgress(null);
+    notify(`${created} ${lang === 'en' ? 'devices created' : 'appareils créés'}, ${skipped} ${lang === 'en' ? 'already existed' : 'déjà existants'}, ${errors} ${lang === 'en' ? 'errors' : 'erreurs'}`);
+    setImportParsed(null); setImportText(''); setImportSaving(false);
   };
   
   const filteredClients = clientSearch ? clients.filter(c => c.name?.toLowerCase().includes(clientSearch.toLowerCase()) || c.salesforce_id?.includes(clientSearch)) : clients;
   
   return (
     <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-      <div 
-        className="px-6 py-4 border-b bg-gradient-to-r from-orange-600 to-amber-600 flex justify-between items-center cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
-      >
+      <div className="px-6 py-4 border-b bg-gradient-to-r from-orange-600 to-amber-600 flex justify-between items-center cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div>
           <h2 className="text-lg font-bold text-white">🔗 {lang === 'en' ? 'Salesforce Client Linking' : 'Liaison Clients Salesforce'}</h2>
-          <p className="text-orange-100 text-sm">
-            {lang === 'en' 
-              ? `Link portal companies to Salesforce IDs • ${linkedCount} linked, ${unlinkedCount} unlinked` 
-              : `Relier les entreprises aux N° Salesforce • ${linkedCount} liés, ${unlinkedCount} non liés`}
-          </p>
+          <p className="text-orange-100 text-sm">{lang === 'en' ? `Link companies to Salesforce IDs & import assets • ${linkedCount} linked, ${unlinkedCount} unlinked` : `Relier les entreprises aux N° Salesforce & importer les actifs • ${linkedCount} liés, ${unlinkedCount} non liés`}</p>
         </div>
         <span className="text-white text-2xl">{expanded ? '▲' : '▼'}</span>
       </div>
@@ -25482,172 +25755,90 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
           
           {/* Stats bar */}
           <div className="flex gap-4 text-sm">
-            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg">
-              <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-              <span className="font-medium text-green-700">{linkedCount} {lang === 'en' ? 'linked' : 'liés'}</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg">
-              <span className="w-3 h-3 bg-amber-500 rounded-full"></span>
-              <span className="font-medium text-amber-700">{unlinkedCount} {lang === 'en' ? 'unlinked' : 'non liés'}</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
-              <span className="font-medium text-gray-600">{clients.length} total</span>
-            </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg"><span className="w-3 h-3 bg-green-500 rounded-full"></span><span className="font-medium text-green-700">{linkedCount} {lang === 'en' ? 'linked' : 'liés'}</span></div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg"><span className="w-3 h-3 bg-amber-500 rounded-full"></span><span className="font-medium text-amber-700">{unlinkedCount} {lang === 'en' ? 'unlinked' : 'non liés'}</span></div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg"><span className="font-medium text-gray-600">{clients.length} total</span></div>
           </div>
           
           {/* Mode tabs */}
           <div className="flex gap-2 border-b border-gray-200 pb-1">
-            <button onClick={() => setMode('single')} className={`px-4 py-2 rounded-t-lg font-medium text-sm ${mode === 'single' ? 'bg-white border border-b-white border-gray-200 text-[#00A651] -mb-px' : 'text-gray-500 hover:text-gray-700'}`}>
-              ✏️ {lang === 'en' ? 'One-by-one' : 'Un par un'}
-            </button>
-            <button onClick={() => setMode('csv')} className={`px-4 py-2 rounded-t-lg font-medium text-sm ${mode === 'csv' ? 'bg-white border border-b-white border-gray-200 text-[#00A651] -mb-px' : 'text-gray-500 hover:text-gray-700'}`}>
-              📋 {lang === 'en' ? 'CSV / Bulk' : 'CSV / En masse'}
-            </button>
+            <button onClick={() => setMode('single')} className={`px-4 py-2 rounded-t-lg font-medium text-sm ${mode === 'single' ? 'bg-white border border-b-white border-gray-200 text-[#00A651] -mb-px' : 'text-gray-500 hover:text-gray-700'}`}>✏️ {lang === 'en' ? 'One-by-one' : 'Un par un'}</button>
+            <button onClick={() => setMode('csv')} className={`px-4 py-2 rounded-t-lg font-medium text-sm ${mode === 'csv' ? 'bg-white border border-b-white border-gray-200 text-[#00A651] -mb-px' : 'text-gray-500 hover:text-gray-700'}`}>📋 {lang === 'en' ? 'Bulk Link' : 'Liaison en masse'}</button>
+            <button onClick={() => setMode('import')} className={`px-4 py-2 rounded-t-lg font-medium text-sm ${mode === 'import' ? 'bg-white border border-b-white border-gray-200 text-blue-600 -mb-px' : 'text-gray-500 hover:text-gray-700'}`}>📥 {lang === 'en' ? 'Import Assets' : 'Importer actifs'}</button>
           </div>
           
-          {/* SINGLE MODE */}
+          {/* ========== SINGLE MODE ========== */}
           {mode === 'single' && (
             <div className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Select client' : 'Sélectionner le client'}</label>
-                  <input
-                    type="text"
-                    placeholder={lang === 'en' ? '🔍 Search client...' : '🔍 Rechercher client...'}
-                    value={clientSearch}
-                    onChange={e => setClientSearch(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-                  />
+                  <input type="text" placeholder={lang === 'en' ? '🔍 Search client...' : '🔍 Rechercher client...'} value={clientSearch} onChange={e => setClientSearch(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2" />
                   <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y">
                     {filteredClients.filter(c => !c.salesforce_id).slice(0, 20).map(c => (
-                      <div 
-                        key={c.id} 
-                        onClick={() => { setSelectedClientId(c.id); setClientSearch(c.name); }}
-                        className={`px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 ${selectedClientId === c.id ? 'bg-blue-100 font-medium' : ''}`}
-                      >
+                      <div key={c.id} onClick={() => { setSelectedClientId(c.id); setClientSearch(c.name); }} className={`px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 ${selectedClientId === c.id ? 'bg-blue-100 font-medium' : ''}`}>
                         {c.name} <span className="text-gray-400 text-xs">{c.billing_city || ''}</span>
                       </div>
                     ))}
-                    {filteredClients.filter(c => !c.salesforce_id).length === 0 && (
-                      <div className="px-3 py-4 text-center text-gray-400 text-sm">{lang === 'en' ? 'All clients linked!' : 'Tous les clients sont liés!'}</div>
-                    )}
+                    {filteredClients.filter(c => !c.salesforce_id).length === 0 && <div className="px-3 py-4 text-center text-gray-400 text-sm">{lang === 'en' ? 'All clients linked!' : 'Tous les clients sont liés!'}</div>}
                   </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Salesforce ID' : 'N° Salesforce'}</label>
-                  <input
-                    type="text"
-                    placeholder={lang === 'en' ? 'Enter Salesforce ID (e.g. FR-94-0001)' : 'Entrez le N° Salesforce (ex: FR-94-0001)'}
-                    value={sfIdInput}
-                    onChange={e => setSfIdInput(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono"
-                  />
-                  <button
-                    onClick={linkSingle}
-                    disabled={saving || !selectedClientId || !sfIdInput.trim()}
-                    className="mt-3 w-full px-4 py-2.5 bg-[#00A651] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[#008C44]"
-                  >
-                    {saving ? '...' : (lang === 'en' ? '🔗 Link Client' : '🔗 Lier le client')}
-                  </button>
+                  <input type="text" placeholder={lang === 'en' ? 'Enter Salesforce ID (e.g. FR-94-0001)' : 'Entrez le N° Salesforce (ex: FR-94-0001)'} value={sfIdInput} onChange={e => setSfIdInput(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
+                  <button onClick={linkSingle} disabled={saving || !selectedClientId || !sfIdInput.trim()} className="mt-3 w-full px-4 py-2.5 bg-[#00A651] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[#008C44]">{saving ? '...' : (lang === 'en' ? '🔗 Link Client' : '🔗 Lier le client')}</button>
                 </div>
               </div>
-              
-              {/* Already linked list */}
               <div className="mt-4">
                 <p className="text-sm font-medium text-gray-500 mb-2">{lang === 'en' ? 'Already linked:' : 'Déjà liés:'}</p>
                 <div className="max-h-40 overflow-y-auto border rounded-lg divide-y">
                   {clients.filter(c => c.salesforce_id).map(c => (
-                    <div key={c.id} className="px-3 py-2 flex justify-between items-center text-sm">
-                      <span>{c.name}</span>
-                      <span className="font-mono text-green-700 bg-green-50 px-2 py-0.5 rounded">{c.salesforce_id}</span>
-                    </div>
+                    <div key={c.id} className="px-3 py-2 flex justify-between items-center text-sm"><span>{c.name}</span><span className="font-mono text-green-700 bg-green-50 px-2 py-0.5 rounded">{c.salesforce_id}</span></div>
                   ))}
                 </div>
               </div>
             </div>
           )}
           
-          {/* CSV MODE */}
+          {/* ========== CSV BULK LINK MODE ========== */}
           {mode === 'csv' && (
             <div className="space-y-4">
               {!csvParsed ? (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {lang === 'en' ? 'Paste CSV data (Company Name, Salesforce ID, optional SIRET)' : 'Collez les données CSV (Nom entreprise, N° Salesforce, SIRET optionnel)'}
-                    </label>
-                    <textarea
-                      value={csvText}
-                      onChange={e => setCsvText(e.target.value)}
-                      rows={8}
-                      placeholder={lang === 'en' 
-                        ? 'Company Name, Salesforce ID, SIRET (optional)\nAcme Corp, FR-94-0001\nTech Industries, FR-75-0002, 12345678901234'
-                        : 'Nom entreprise, N° Salesforce, SIRET (optionnel)\nAcme Corp, FR-94-0001\nTech Industries, FR-75-0002, 12345678901234'}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
-                    />
-                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Accepts comma, semicolon, or tab-separated values' : 'Accepte les valeurs séparées par virgule, point-virgule ou tabulation'}</p>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Paste CSV data (Company Name, Salesforce ID, optional SIRET)' : 'Collez les données CSV (Nom entreprise, N° Salesforce, SIRET optionnel)'}</label>
+                    <textarea value={csvText} onChange={e => setCsvText(e.target.value)} rows={8} placeholder={lang === 'en' ? 'Company Name, Salesforce ID, SIRET (optional)\nAcme Corp, FR-94-0001\nTech Industries, FR-75-0002, 12345678901234' : 'Nom entreprise, N° Salesforce, SIRET (optionnel)\nAcme Corp, FR-94-0001\nTech Industries, FR-75-0002, 12345678901234'} className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm" />
+                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Accepts comma, semicolon, or tab-separated values' : 'Accepte virgule, point-virgule ou tabulation'}</p>
                   </div>
-                  <button
-                    onClick={parseCSV}
-                    disabled={!csvText.trim()}
-                    className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700"
-                  >
-                    {lang === 'en' ? '🔍 Parse & Match' : '🔍 Analyser & Associer'}
-                  </button>
+                  <button onClick={parseCSV} disabled={!csvText.trim()} className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700">{lang === 'en' ? '🔍 Parse & Match' : '🔍 Analyser & Associer'}</button>
                 </>
               ) : (
                 <>
                   <div className="flex justify-between items-center">
-                    <p className="text-sm font-medium text-gray-700">
-                      {lang === 'en' ? `${csvParsed.length} rows parsed — review matches:` : `${csvParsed.length} lignes analysées — vérifiez les correspondances:`}
-                    </p>
+                    <p className="text-sm font-medium text-gray-700">{lang === 'en' ? `${csvParsed.length} rows — review matches:` : `${csvParsed.length} lignes — vérifiez:`}</p>
                     <button onClick={() => setCsvParsed(null)} className="text-sm text-gray-500 hover:text-gray-700">{lang === 'en' ? '← Back' : '← Retour'}</button>
                   </div>
-                  
                   <div className="max-h-96 overflow-y-auto border rounded-lg">
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-3 py-2 text-left">✓</th>
-                          <th className="px-3 py-2 text-left">{lang === 'en' ? 'CSV Name' : 'Nom CSV'}</th>
-                          <th className="px-3 py-2 text-left">{lang === 'en' ? 'SF ID' : 'N° SF'}</th>
-                          <th className="px-3 py-2 text-left">{lang === 'en' ? 'Match' : 'Correspondance'}</th>
-                        </tr>
-                      </thead>
+                      <thead className="bg-gray-50 sticky top-0"><tr><th className="px-3 py-2 text-left">✓</th><th className="px-3 py-2 text-left">{lang === 'en' ? 'CSV Name' : 'Nom CSV'}</th><th className="px-3 py-2 text-left">{lang === 'en' ? 'SF ID' : 'N° SF'}</th><th className="px-3 py-2 text-left">{lang === 'en' ? 'Match' : 'Correspondance'}</th></tr></thead>
                       <tbody className="divide-y">
                         {csvParsed.map((row, idx) => (
                           <tr key={idx} className={row.confirmed ? 'bg-green-50' : row.matchType === 'none' ? 'bg-red-50' : 'bg-amber-50'}>
-                            <td className="px-3 py-2">
-                              <input 
-                                type="checkbox" 
-                                checked={row.confirmed} 
-                                onChange={() => toggleConfirm(idx)}
-                                disabled={!row.matched && !row.manualClientId}
-                                className="w-4 h-4"
-                              />
-                            </td>
+                            <td className="px-3 py-2"><input type="checkbox" checked={row.confirmed} onChange={() => toggleConfirm(idx)} disabled={!row.matched && !row.manualClientId} className="w-4 h-4" /></td>
                             <td className="px-3 py-2 font-medium">{row.csvName}</td>
                             <td className="px-3 py-2 font-mono text-blue-700">{row.sfId}</td>
                             <td className="px-3 py-2">
                               {row.matched ? (
                                 <div className="flex items-center gap-2">
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${row.matchType === 'exact' ? 'bg-green-100 text-green-700' : row.matchType === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                    {row.matchType === 'exact' ? '✓ Exact' : row.matchType === 'manual' ? '✓ Manual' : '~ Partial'}
-                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${row.matchType === 'exact' ? 'bg-green-100 text-green-700' : row.matchType === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>{row.matchType === 'exact' ? '✓ Exact' : row.matchType === 'manual' ? '✓ Manual' : '~ Partial'}</span>
                                   <span className="text-gray-700">{row.matched.name}</span>
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-2">
-                                  <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">{lang === 'en' ? 'No match' : 'Pas de correspondance'}</span>
-                                  <select 
-                                    value={row.manualClientId}
-                                    onChange={e => setManualMatch(idx, e.target.value)}
-                                    className="text-xs border rounded px-1 py-0.5"
-                                  >
+                                  <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">{lang === 'en' ? 'No match' : 'Aucune'}</span>
+                                  <select value={row.manualClientId} onChange={e => setManualMatch(idx, e.target.value)} className="text-xs border rounded px-1 py-0.5">
                                     <option value="">{lang === 'en' ? '— Select —' : '— Choisir —'}</option>
-                                    {clients.filter(c => !c.salesforce_id).map(c => (
-                                      <option key={c.id} value={c.id}>{c.name}</option>
-                                    ))}
+                                    {clients.filter(c => !c.salesforce_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                   </select>
                                 </div>
                               )}
@@ -25657,17 +25848,91 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
                       </tbody>
                     </table>
                   </div>
-                  
                   <div className="flex justify-between items-center">
-                    <p className="text-sm text-gray-500">
-                      {csvParsed.filter(r => r.confirmed && r.matched).length} / {csvParsed.length} {lang === 'en' ? 'confirmed' : 'confirmés'}
-                    </p>
-                    <button
-                      onClick={applyCSV}
-                      disabled={csvSaving || csvParsed.filter(r => r.confirmed && r.matched).length === 0}
-                      className="px-6 py-2.5 bg-[#00A651] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[#008C44]"
-                    >
-                      {csvSaving ? '...' : (lang === 'en' ? `🔗 Apply ${csvParsed.filter(r => r.confirmed && r.matched).length} Links` : `🔗 Appliquer ${csvParsed.filter(r => r.confirmed && r.matched).length} liaisons`)}
+                    <p className="text-sm text-gray-500">{csvParsed.filter(r => r.confirmed && r.matched).length} / {csvParsed.length} {lang === 'en' ? 'confirmed' : 'confirmés'}</p>
+                    <button onClick={applyCSV} disabled={csvSaving || csvParsed.filter(r => r.confirmed && r.matched).length === 0} className="px-6 py-2.5 bg-[#00A651] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[#008C44]">{csvSaving ? '...' : (lang === 'en' ? `🔗 Apply ${csvParsed.filter(r => r.confirmed && r.matched).length} Links` : `🔗 Appliquer ${csvParsed.filter(r => r.confirmed && r.matched).length} liaisons`)}</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          
+          {/* ========== IMPORT ASSETS MODE ========== */}
+          {mode === 'import' && (
+            <div className="space-y-4">
+              {/* Info banner */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800 font-medium">📥 {lang === 'en' ? 'Salesforce Asset Import' : 'Importation des actifs Salesforce'}</p>
+                <p className="text-xs text-blue-600 mt-1">{lang === 'en' ? 'Paste data from a Salesforce export. The system matches Salesforce Client IDs to linked companies and creates equipment entries for each serial number. Existing serial numbers for the same company are automatically skipped.' : 'Collez les données d\'un export Salesforce. Le système associe les N° Client SF aux entreprises liées et crée les fiches appareils pour chaque N° de série. Les N° de série déjà existants pour la même entreprise sont automatiquement ignorés.'}</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">{lang === 'en' ? 'Required: SF Client ID' : 'Requis: N° Client SF'}</span>
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded">{lang === 'en' ? 'Required: Serial Number' : 'Requis: N° de série'}</span>
+                  <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded">{lang === 'en' ? 'Optional: Model' : 'Optionnel: Modèle'}</span>
+                  <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded">{lang === 'en' ? 'Optional: Brand' : 'Optionnel: Marque'}</span>
+                </div>
+              </div>
+              
+              {!importParsed ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Paste Salesforce export data' : 'Collez les données d\'export Salesforce'}</label>
+                    <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={10} placeholder={lang === 'en' ? 'Client ID, Serial Number, Model, Brand\nFR-94-0001, 2109300456, SOLAIR 3100, Lighthouse\nFR-94-0001, 2203100789, ApexR5, Lighthouse\nFR-75-0002, 1908200123, SOLAIR 1100, Lighthouse\n\nOr paste directly from Excel (tab-separated).\nHeaders are auto-detected.' : 'N° Client, N° Série, Modèle, Marque\nFR-94-0001, 2109300456, SOLAIR 3100, Lighthouse\nFR-94-0001, 2203100789, ApexR5, Lighthouse\nFR-75-0002, 1908200123, SOLAIR 1100, Lighthouse\n\nOu collez directement depuis Excel.\nLes en-têtes sont auto-détectés.'} className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm" />
+                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Paste from Excel, or comma/semicolon/tab-separated. Headers auto-detected.' : 'Collez depuis Excel, ou séparé par virgule/point-virgule/tab. En-têtes auto-détectés.'}</p>
+                  </div>
+                  <button onClick={parseImport} disabled={!importText.trim()} className="px-4 py-2.5 bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 hover:bg-blue-700">{lang === 'en' ? '🔍 Parse & Preview' : '🔍 Analyser & Prévisualiser'}</button>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium text-gray-700">{lang === 'en' ? `${importParsed.length} client(s), ${importParsed.reduce((s, r) => s + r.assets.length, 0)} total assets` : `${importParsed.length} client(s), ${importParsed.reduce((s, r) => s + r.assets.length, 0)} actifs au total`}</p>
+                    <button onClick={() => setImportParsed(null)} className="text-sm text-gray-500 hover:text-gray-700">{lang === 'en' ? '← Back' : '← Retour'}</button>
+                  </div>
+                  
+                  <div className="flex gap-3 text-xs">
+                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-lg font-medium">✓ {importParsed.filter(r => r.company).length} {lang === 'en' ? 'matched' : 'associés'}</span>
+                    <span className="px-2 py-1 bg-red-100 text-red-700 rounded-lg font-medium">✗ {importParsed.filter(r => !r.company).length} {lang === 'en' ? 'unmatched' : 'non associés'}</span>
+                  </div>
+                  
+                  <div className="max-h-[500px] overflow-y-auto space-y-3">
+                    {importParsed.map((row, idx) => (
+                      <div key={idx} className={`border rounded-lg overflow-hidden ${row.confirmed && row.company ? 'border-green-300' : row.company ? 'border-gray-200' : 'border-red-300'}`}>
+                        <div className={`px-4 py-3 flex items-center justify-between ${row.confirmed && row.company ? 'bg-green-50' : row.company ? 'bg-gray-50' : 'bg-red-50'}`}>
+                          <div className="flex items-center gap-3">
+                            <input type="checkbox" checked={row.confirmed} onChange={() => toggleImportConfirm(idx)} disabled={!row.company} className="w-4 h-4" />
+                            <span className="font-mono text-sm font-medium text-blue-700">{row.sfId}</span>
+                            {row.company ? (
+                              <span className="text-sm"><span className="text-gray-400">→</span> <span className="font-medium text-gray-800">{row.company.name}</span> <span className="text-green-600 ml-1 text-xs">✓</span></span>
+                            ) : (
+                              <span className="flex items-center gap-2">
+                                <span className="text-xs text-red-600 font-medium">{lang === 'en' ? 'No linked company' : 'Aucune entreprise liée'}</span>
+                                <select value={row.manualClientId} onChange={e => setImportManualMatch(idx, e.target.value)} className="text-xs border rounded px-2 py-1">
+                                  <option value="">{lang === 'en' ? '— Select —' : '— Choisir —'}</option>
+                                  {clients.map(c => <option key={c.id} value={c.id}>{c.name} {c.salesforce_id ? `(SF: ${c.salesforce_id})` : ''}</option>)}
+                                </select>
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded">{row.assets.length} {lang === 'en' ? 'device(s)' : 'appareil(s)'}</span>
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                          {row.assets.slice(0, 10).map((asset, ai) => (
+                            <div key={ai} className="px-4 py-2 flex items-center gap-4 text-sm bg-white">
+                              <span className="text-gray-400 text-xs w-6">{ai + 1}.</span>
+                              <span className="font-mono font-medium text-gray-800 w-36">{asset.serial_number}</span>
+                              <span className="text-gray-600 flex-1">{asset.model_name || <span className="text-gray-300 italic">{lang === 'en' ? 'No model' : 'Pas de modèle'}</span>}</span>
+                              <span className="text-gray-400 text-xs">{asset.brand}</span>
+                            </div>
+                          ))}
+                          {row.assets.length > 10 && <div className="px-4 py-2 text-xs text-gray-400 text-center bg-gray-50">+{row.assets.length - 10} {lang === 'en' ? 'more' : 'autres'}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="flex justify-between items-center pt-2 border-t">
+                    <p className="text-sm text-gray-500">{importParsed.filter(r => r.confirmed && r.company).reduce((s, r) => s + r.assets.length, 0)} {lang === 'en' ? 'devices to import for' : 'appareils à importer pour'} {importParsed.filter(r => r.confirmed && r.company).length} {lang === 'en' ? 'client(s)' : 'client(s)'}</p>
+                    <button onClick={applyImport} disabled={importSaving || importParsed.filter(r => r.confirmed && r.company).length === 0} className="px-6 py-2.5 bg-[#00A651] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[#008C44]">
+                      {importSaving ? (importProgress ? `${importProgress.done}/${importProgress.total}...` : '...') : (lang === 'en' ? `📥 Import ${importParsed.filter(r => r.confirmed && r.company).reduce((s, r) => s + r.assets.length, 0)} Devices` : `📥 Importer ${importParsed.filter(r => r.confirmed && r.company).reduce((s, r) => s + r.assets.length, 0)} appareils`)}
                     </button>
                   </div>
                 </>
