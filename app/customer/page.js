@@ -7174,7 +7174,10 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
         .is('accepted_at', null)
         .gt('expires_at', new Date().toISOString());
       
-      if (invites) setPendingInvites(invites);
+      // Filter out invites where user already has a profile (account created)
+      const memberEmails = (members || []).map(m => m.email?.toLowerCase());
+      const trulyPending = (invites || []).filter(i => !memberEmails.includes(i.email?.toLowerCase()));
+      setPendingInvites(trulyPending);
       setLoadingTeam(false);
     };
     loadTeam();
