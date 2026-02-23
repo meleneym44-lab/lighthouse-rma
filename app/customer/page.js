@@ -7901,6 +7901,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                       </div>
                     </div>
                   )}
+                </div>
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => {
