@@ -14525,7 +14525,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     const labelData = upsLabels[pkgIndex];
     
     if (labelData) {
-      // Download real UPS PDF label
+      // Real UPS label (base64 PDF) — open sized for 4x6 thermal printer (Zebra ZD421d)
       try {
         const byteCharacters = atob(labelData);
         const byteNumbers = new Array(byteCharacters.length);
@@ -14536,10 +14536,9 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         const blob = new Blob([byteArray], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         
-        // Open in new tab for printing
+        // Open in new tab for thermal printing
         const w = window.open(url, '_blank');
         if (!w) {
-          // Fallback: download the file
           const a = document.createElement('a');
           a.href = url;
           a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.pdf`;
@@ -14547,17 +14546,50 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         }
         
         setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
-        notify(lang === 'en' ? '📄 UPS label opened' : '📄 Étiquette UPS ouverte');
+        notify(lang === 'en' ? '📄 UPS label opened — print on Zebra (4×6)' : '📄 Étiquette UPS ouverte — imprimer sur Zebra (4×6)');
       } catch (err) {
         console.error('Error opening label:', err);
         notify(lang === 'en' ? 'Error opening label' : 'Erreur ouverture étiquette', 'error');
       }
     } else {
-      // Fallback to generated label if no real PDF
+      // Fallback label — formatted for 4x6 thermal (102mm × 152mm)
       const s = shipment;
       const w = window.open('', '_blank');
       if (!w) { notify(lang === 'en' ? 'Popup blocked' : 'Popup bloqué', 'error'); return; }
-      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>${lang === 'en' ? 'RECIPIENT:' : 'DESTINATAIRE:'}</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l\'att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>${lang === 'en' ? 'SENDER:' : 'EXPÉDITEUR:'}</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${order.request_number}</p></div><script>window.print()</script></body></html>`);
+      w.document.write(`<html><head><title>UPS Label</title><style>
+        @page { size: 4in 6in; margin: 0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { width: 4in; height: 6in; font-family: Arial, sans-serif; padding: 8px; }
+        .header { text-align: center; border-bottom: 3px solid #351C15; padding-bottom: 6px; margin-bottom: 8px; }
+        .ups-logo { font-size: 28px; font-weight: bold; color: #351C15; }
+        .tracking { font-size: 16px; font-family: monospace; text-align: center; margin: 8px 0; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; font-weight: bold; letter-spacing: 1px; }
+        .addr-block { margin: 6px 0; padding: 8px; border: 1px solid #999; font-size: 11px; line-height: 1.4; }
+        .addr-label { font-size: 9px; font-weight: bold; text-transform: uppercase; color: #666; margin-bottom: 3px; }
+        .addr-name { font-size: 13px; font-weight: bold; }
+        .parcel-info { text-align: center; font-size: 18px; font-weight: bold; margin: 10px 0; }
+        .rma-ref { text-align: center; font-size: 11px; color: #666; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      </style></head><body>
+        <div class="header"><div class="ups-logo">UPS</div></div>
+        <div class="tracking">${s.trackingNumber}</div>
+        <div class="addr-block">
+          <div class="addr-label">${lang === 'en' ? 'SHIP TO:' : 'DESTINATAIRE:'}</div>
+          <div class="addr-name">${s.address.company_name}</div>
+          ${s.address.attention ? '<div>Att: ' + s.address.attention + '</div>' : ''}
+          <div>${s.address.address_line1}</div>
+          ${s.address.address_line2 ? '<div>' + s.address.address_line2 + '</div>' : ''}
+          <div>${s.address.postal_code} ${s.address.city}</div>
+          <div>${s.address.country}</div>
+        </div>
+        <div class="addr-block">
+          <div class="addr-label">${lang === 'en' ? 'SHIP FROM:' : 'EXPÉDITEUR:'}</div>
+          <div class="addr-name">LIGHTHOUSE FRANCE</div>
+          <div>6 Rue Michael Faraday</div>
+          <div>94000 Créteil, France</div>
+        </div>
+        <div class="parcel-info">${s.parcels} COLIS — ${s.weight} KG</div>
+        <div class="rma-ref">${order.request_number}</div>
+      <script>window.print()</script></body></html>`);
       w.document.close();
       setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
     }
