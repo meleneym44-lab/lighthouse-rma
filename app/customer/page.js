@@ -2812,7 +2812,7 @@ const STATUS_STYLES = {
 };
 
 // Step Progress Tracker Component (Chevron Style)
-const StepProgress = ({ status, serviceType }) => {
+const StepProgress = ({ status, serviceType, bcApproved = true }) => {
   // Define steps based on service type
   // RENTAL: 6 steps
   const rentalSteps = [
@@ -2921,13 +2921,15 @@ const StepProgress = ({ status, serviceType }) => {
           const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
           const isLast = index === steps.length - 1;
+          // Red highlight on "Devis Approuvé" (index 2) when device received but BC not approved
+          const isBCStepRed = !bcApproved && index === 2 && currentIndex > 2;
           
           return (
             <div key={step.id} className="flex items-center flex-1">
               <div 
                 className={`
                   relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
-                  ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
+                  ${isBCStepRed ? 'bg-red-500 text-white animate-pulse' : isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#1E3A5F] text-white' : 'bg-gray-200 text-gray-500'}
                   ${index === 0 ? 'rounded-l-md' : ''}
                   ${isLast ? 'rounded-r-md' : ''}
                 `}
@@ -2939,7 +2941,7 @@ const StepProgress = ({ status, serviceType }) => {
                       : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
                 }}
               >
-                <span className="truncate px-1">{step.label}</span>
+                <span className="truncate px-1">{isBCStepRed ? '⚠️ Pas de BC!' : step.label}</span>
               </div>
             </div>
           );
@@ -2959,6 +2961,7 @@ const StepProgress = ({ status, serviceType }) => {
             <div 
               key={step.id}
               className={`h-2 flex-1 rounded-full ${
+                !bcApproved && index === 2 && currentIndex > 2 ? 'bg-red-500 animate-pulse' :
                 index < currentIndex ? 'bg-[#3B7AB4]' : 
                 index === currentIndex ? 'bg-[#1E3A5F]' : 'bg-gray-200'
               }`}
@@ -4091,7 +4094,9 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
             // Regular action needed
             (['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at) ||
             // Supplement pending - needs customer action
-            (r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at)
+            (r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at) ||
+            // Device received but BC not approved
+            (!r.bc_approved_at && !r.bc_submitted_at && r.received_at)
           ).length > 0 || 
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0) ||
@@ -4125,6 +4130,25 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                       </span>
                     </div>
                     <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
+                      Agir →
+                    </span>
+                  </div>
+                ))}
+                {/* Device received but no BC — urgent */}
+                {serviceRequests
+                  .filter(r => !r.bc_approved_at && !r.bc_submitted_at && r.received_at &&
+                    !['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status))
+                  .map(req => (
+                  <div 
+                    key={'nobc-' + req.id}
+                    onClick={() => viewRequest(req)}
+                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-red-700">{req.request_number}</span>
+                      <span className="text-sm text-red-600">⚠️ Appareil reçu — Approbation requise</span>
+                    </div>
+                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
                       Agir →
                     </span>
                   </div>
@@ -9653,6 +9677,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   
   const needsCustomerAction = ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'bc_rejected'].includes(request.status) && request.status !== 'bc_review' && !request.bc_submitted_at;
   
+  // Device received but BC/quote never approved — customer needs to approve
+  const receivedWithoutBC = !request.bc_approved_at && !request.bc_submitted_at && 
+    (request.received_at || (request.request_devices || []).some(d => d.received_at)) &&
+    !needsQuoteAction && !needsCustomerAction;
+  
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
   const hasSignature = signatureData && luEtApprouve.toLowerCase().trim() === 'lu et approuvé';
@@ -10348,6 +10377,39 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               >
                 Soumettre BC / Approuver
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Device Received But No BC/Approval — Urgent alert */}
+        {receivedWithoutBC && (
+          <div className="bg-red-50 border-b border-red-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">⚠️</span>
+                </div>
+                <div>
+                  <p className="font-bold text-red-800 text-lg">Appareil reçu — Approbation requise</p>
+                  <p className="text-sm text-red-600">
+                    Votre appareil a été réceptionné dans nos locaux, mais nous n'avons pas encore reçu votre approbation. Veuillez approuver le devis et soumettre votre bon de commande pour que nous puissions commencer les travaux.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowQuoteModal(true)}
+                  className="px-4 py-2 bg-white border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 transition-colors"
+                >
+                  👁️ Voir le Devis
+                </button>
+                <button
+                  onClick={() => setShowBCModal(true)}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors animate-pulse"
+                >
+                  ✅ Approuver et soumettre BC
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -11587,7 +11649,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 </div>
                 
                 {/* Progress Bar */}
-                <StepProgress status={effectiveStatus} serviceType={serviceType} />
+                <StepProgress status={effectiveStatus} serviceType={serviceType} bcApproved={!!request.bc_approved_at} />
               </div>
               
               {/* Device Tabs */}
@@ -12032,7 +12094,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                               </div>
                               {/* Progress bar */}
                               <div className="px-4 pb-3">
-                                <StepProgress status={effectiveStatus} serviceType={serviceType} />
+                                <StepProgress status={effectiveStatus} serviceType={serviceType} bcApproved={!!request.bc_approved_at} />
                               </div>
                             </button>
                           );
