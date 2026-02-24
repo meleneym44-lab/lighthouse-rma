@@ -5865,11 +5865,15 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   // Avenant pending - sent but customer hasn't submitted BC yet (check both old and new field)
   const avenantPending = activeRMAs.filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.avenant_bc_submitted_at && !r.bc_submitted_at);
   
+  // Supplement recently approved — client approved additional work, ready to proceed
+  const supplementApproved = activeRMAs.filter(r => r.avenant_approved_at && !['shipped', 'completed', 'cancelled'].includes(r.status));
+  
   // Stats for the cards
   const stats = [
     { id: 'all', label: lang === 'en' ? 'Active RMAs' : 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
     { id: 'avenant', label: lang === 'en' ? 'Supplement pending' : 'Supplément en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
+    { id: 'avenant_ok', label: lang === 'en' ? 'Supplement ✓' : 'Supplément ✓', value: supplementApproved.length, color: 'bg-green-500', icon: '✅' },
     { id: 'waiting_bc', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
     { id: 'waiting_device', label: lang === 'en' ? 'Awaiting Device' : 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
   ];
@@ -5912,6 +5916,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       rmas = needsReview;
     } else if (filter === 'avenant') {
       rmas = avenantPending;
+    } else if (filter === 'avenant_ok') {
+      rmas = supplementApproved;
     } else if (filter === 'waiting_bc') {
       rmas = waitingBC;
     } else if (filter === 'waiting_device') {
@@ -6000,7 +6006,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
             onClick={() => setFilter(filter === stat.id ? null : stat.id)}
             className={`bg-white rounded-xl p-4 shadow-sm text-left transition-all ${
               filter === stat.id ? 'ring-2 ring-offset-2 ring-blue-500' : 'hover:shadow-md'
-            } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''} ${stat.value > 0 && stat.id === 'avenant' ? 'ring-2 ring-amber-500 animate-pulse' : ''}`}
+            } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''} ${stat.value > 0 && stat.id === 'avenant' ? 'ring-2 ring-amber-500 animate-pulse' : ''} ${stat.value > 0 && stat.id === 'avenant_ok' ? 'ring-2 ring-green-500' : ''}`}
           >
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-2xl text-white`}>{stat.icon}</div>
@@ -7166,6 +7172,8 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
   const isReadyToShip = allQCComplete && allReadyToShip;
   
   const hasAdditionalWork = devices.some(d => d.additional_work_needed) && !rma.avenant_sent_at && !rma.supplement_review_status;
+  const allDevicesInspected = devices.every(d => d.inspection_completed_at || d.report_complete || !d.additional_work_needed);
+  const canCreateSupplement = hasAdditionalWork && allDevicesInspected;
   const totalAdditionalWork = devices.reduce((sum, d) => {
     if (!d.additional_work_needed || !d.additional_work_items) return sum;
     return sum + d.additional_work_items.reduce((s, item) => s + (parseFloat(item.price) || 0), 0);
@@ -7348,13 +7356,18 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
           )}
           
           {/* Additional work found - show avenant button */}
-          {hasAdditionalWork && (
+          {canCreateSupplement && (
             <button
               onClick={onOpenAvenant}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
             >
               {lang === 'en' ? `📄 Create Supplement (€${totalAdditionalWork.toFixed(2)})` : `📄 Créer Supplément (€${totalAdditionalWork.toFixed(2)})`}
             </button>
+          )}
+          {hasAdditionalWork && !canCreateSupplement && (
+            <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium">
+              ⏳ {lang === 'en' ? 'Finish all inspections to create supplement' : 'Terminez toutes les inspections pour créer le supplément'}
+            </span>
           )}
           
           {/* Supplement pending review */}
@@ -7384,10 +7397,15 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
             );
           })()}
           
-          {/* Avenant sent indicator */}
-          {rma.avenant_sent_at && (
-            <span className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium">
-              {lang === 'en' ? `📄 Supplement sent ${rma.avenant_approved_at ? '✓ Approved' : '⏳ Pending'}` : `📄 Supplément envoyé ${rma.avenant_approved_at ? '✓ Approuvé' : '⏳ En attente'}`}
+          {/* Avenant sent — big clear status */}
+          {rma.avenant_sent_at && !rma.avenant_approved_at && (
+            <span className="px-4 py-2 bg-orange-100 border-2 border-orange-300 text-orange-800 rounded-lg text-sm font-bold flex items-center gap-2 animate-pulse">
+              ⏳ {lang === 'en' ? 'Supplement sent — AWAITING CLIENT APPROVAL' : 'Supplément envoyé — EN ATTENTE APPROBATION CLIENT'}
+            </span>
+          )}
+          {rma.avenant_approved_at && (
+            <span className="px-4 py-2 bg-green-100 border-2 border-green-300 text-green-800 rounded-lg text-sm font-bold flex items-center gap-2">
+              ✅ {lang === 'en' ? 'Supplement APPROVED — Work authorized' : 'Supplément APPROUVÉ — Travaux autorisés'}
             </span>
           )}
           
@@ -9202,6 +9220,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const withWork = devices.filter(d => d.additional_work_needed);
           const inspectedWork = withWork.filter(d => d.inspection_completed_at || d.report_complete).length;
           const totalWithWork = withWork.length;
+          const allDevicesInspectedForSupplement = devices.every(d => d.inspection_completed_at || d.report_complete);
           const allWorkInspected = totalWithWork > 0 && inspectedWork >= totalWithWork;
           const supplementPendingReview = rma.supplement_review_status === 'pending';
           const supplementNeedsCorrection = rma.supplement_review_status === 'corrections_needed' || withWork.some(d => d.supplement_rejection_notes);
@@ -9213,77 +9232,115 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           
           return (
             <>
-            <div className={`mx-4 mt-2 rounded-lg p-3 flex items-center justify-between ${
-              supplementApproved ? 'bg-green-50 border border-green-200' :
-              supplementSent ? 'bg-purple-50 border border-purple-200' :
-              supplementPendingReview ? 'bg-blue-50 border border-blue-200' :
-              supplementNeedsCorrection ? 'bg-amber-50 border-2 border-amber-300' :
-              allWorkInspected && supplementNeeded ? 'bg-amber-50 border border-amber-300' :
-              'bg-blue-50 border border-blue-200'
-            }`}>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                  {devices.map(d => (
-                    <span key={d.id} className={`w-2.5 h-2.5 rounded-full ${
-                      d.report_complete ? 'bg-green-500' :
-                      d.inspection_completed_at ? (d.additional_work_needed ? 'bg-amber-400' : 'bg-green-400') :
-                      d.additional_work_needed ? 'bg-red-300' :
-                      'bg-gray-300'
-                    }`} title={`${d.serial_number}`} />
-                  ))}
+            {/* APPROVED — big green banner */}
+            {supplementApproved && (
+              <div className="mx-4 mt-2 rounded-xl p-4 bg-green-50 border-2 border-green-400">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">✅</span>
+                    <div>
+                      <p className="font-bold text-green-800 text-base">{lang === 'en' ? 'SUPPLEMENT APPROVED — Work authorized' : 'SUPPLÉMENT APPROUVÉ — Travaux autorisés'}</p>
+                      <p className="text-green-600 text-sm">{lang === 'en' ? `${totalWithWork} device${totalWithWork > 1 ? 's' : ''} — client approved additional work` : `${totalWithWork} appareil${totalWithWork > 1 ? 's' : ''} — travaux supplémentaires approuvés par le client`}</p>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-sm font-medium">
-                  {totalWithWork > 0 && (
-                    <span className="text-amber-600">
-                      {lang === 'en' 
-                        ? `${totalWithWork} device${totalWithWork > 1 ? 's' : ''} need additional work`
-                        : `${totalWithWork} appareil${totalWithWork > 1 ? 's' : ''} — travaux supp.`}
-                      {!allWorkInspected && ` (${inspectedWork}/${totalWithWork} ${lang === 'en' ? 'inspected' : 'inspectés'})`}
-                    </span>
-                  )}
-                </span>
               </div>
-              <div>
-                {supplementApproved && (
-                  <span className="text-sm font-medium text-green-700">✅ {lang === 'en' ? 'Supplement approved' : 'Supplément approuvé'}</span>
-                )}
-                {supplementSent && (
-                  <span className="text-sm font-medium text-purple-700">⏳ {lang === 'en' ? 'Supplement sent — awaiting approval' : 'Supplément envoyé — attente approbation'}</span>
-                )}
-                {supplementPendingReview && (
-                  <span className="text-sm font-medium text-blue-700">📋 {lang === 'en' ? 'Supplement under review' : 'Supplément en vérification'}</span>
-                )}
-                {supplementNeedsCorrection && !supplementPendingReview && (() => {
-                  const deviceToFix = devices.find(d => d.supplement_rejection_notes);
-                  return deviceToFix ? (
-                    <button
-                      onClick={() => setShowServiceModal(deviceToFix)}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium animate-pulse"
-                    >
-                      ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'} — {deviceToFix.model_name} ({deviceToFix.serial_number})
+            )}
+            
+            {/* SENT — big orange pulsing banner */}
+            {supplementSent && (
+              <div className="mx-4 mt-2 rounded-xl p-4 bg-orange-50 border-2 border-orange-400 animate-pulse">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">⏳</span>
+                    <div>
+                      <p className="font-bold text-orange-800 text-base">{lang === 'en' ? 'SUPPLEMENT SENT — Awaiting client approval' : 'SUPPLÉMENT ENVOYÉ — En attente d\'approbation client'}</p>
+                      <p className="text-orange-600 text-sm">{lang === 'en' ? `${totalWithWork} device${totalWithWork > 1 ? 's' : ''} on hold — cannot proceed until approved` : `${totalWithWork} appareil${totalWithWork > 1 ? 's' : ''} en attente — travaux bloqués`}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* PENDING REVIEW — under internal review */}
+            {supplementPendingReview && (
+              <div className="mx-4 mt-2 rounded-xl p-4 bg-blue-50 border-2 border-blue-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">📋</span>
+                    <div>
+                      <p className="font-bold text-blue-800 text-base">{lang === 'en' ? 'Supplement under internal review' : 'Supplément en vérification interne'}</p>
+                      <p className="text-blue-600 text-sm">{lang === 'en' ? 'Waiting for admin approval before sending to client' : 'En attente de validation avant envoi au client'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* NEEDS CORRECTION */}
+            {supplementNeedsCorrection && !supplementPendingReview && (
+              <div className="mx-4 mt-2 rounded-xl p-4 bg-amber-50 border-2 border-amber-400">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">✏️</span>
+                    <div>
+                      <p className="font-bold text-amber-800 text-base">{lang === 'en' ? 'Supplement needs corrections' : 'Supplément à corriger'}</p>
+                      <p className="text-amber-600 text-sm">{lang === 'en' ? 'Review the notes below and update work items' : 'Consultez les notes ci-dessous et mettez à jour les travaux'}</p>
+                    </div>
+                  </div>
+                  {(() => {
+                    const deviceToFix = devices.find(d => d.supplement_rejection_notes);
+                    return deviceToFix ? (
+                      <button onClick={() => setShowServiceModal(deviceToFix)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold">
+                        ✏️ {lang === 'en' ? 'Fix' : 'Corriger'} — {deviceToFix.model_name}
+                      </button>
+                    ) : (
+                      <button onClick={() => setShowAvenantPreview(true)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold">
+                        ✏️ {lang === 'en' ? 'Fix Supplement' : 'Corriger Supplément'}
+                      </button>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+            
+            {/* NOT YET CREATED — ready or waiting for inspections */}
+            {supplementNeeded && !supplementNeedsCorrection && !supplementPendingReview && (
+              <div className={`mx-4 mt-2 rounded-xl p-4 ${allDevicesInspectedForSupplement ? 'bg-amber-50 border-2 border-amber-400' : 'bg-blue-50 border border-blue-200'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      {devices.map(d => (
+                        <span key={d.id} className={`w-2.5 h-2.5 rounded-full ${
+                          d.report_complete ? 'bg-green-500' :
+                          d.inspection_completed_at ? (d.additional_work_needed ? 'bg-amber-400' : 'bg-green-400') :
+                          'bg-gray-300'
+                        }`} title={`${d.serial_number}`} />
+                      ))}
+                    </div>
+                    <span className="text-sm font-medium">
+                      <span className="text-amber-700">
+                        {lang === 'en' 
+                          ? `${totalWithWork} device${totalWithWork > 1 ? 's' : ''} need additional work`
+                          : `${totalWithWork} appareil${totalWithWork > 1 ? 's' : ''} — travaux supplémentaires`}
+                      </span>
+                      {!allDevicesInspectedForSupplement && (
+                        <span className="text-gray-500 ml-2">
+                          ({inspectedWork}/{totalWithWork} {lang === 'en' ? 'inspected' : 'inspectés'})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {allDevicesInspectedForSupplement ? (
+                    <button onClick={() => setShowAvenantPreview(true)} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold">
+                      📄 {lang === 'en' ? 'Create Supplement' : 'Créer Supplément'}
                     </button>
                   ) : (
-                    <button
-                      onClick={() => setShowAvenantPreview(true)}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium animate-pulse"
-                    >
-                      ✏️ {lang === 'en' ? 'Correct Supplement' : 'Corriger Supplément'}
-                    </button>
-                  );
-                })()}
-                {allWorkInspected && supplementNeeded && !supplementNeedsCorrection && !supplementPendingReview && (
-                  <button
-                    onClick={() => setShowAvenantPreview(true)}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium"
-                  >
-                    📄 {lang === 'en' ? 'Create Supplement' : 'Créer Supplément'}
-                  </button>
-                )}
-                {!allWorkInspected && supplementNeeded && (
-                  <span className="text-sm text-amber-600">{lang === 'en' ? '⏳ Finish inspections to create supplement' : '⏳ Terminez les inspections pour créer supplément'}</span>
-                )}
+                    <span className="text-sm text-gray-500">{lang === 'en' ? '⏳ Finish all inspections first' : '⏳ Terminez toutes les inspections'}</span>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
             
             {/* Per-device supplement correction notes */}
             {devices.some(d => d.supplement_rejection_notes) && (
@@ -9880,9 +9937,9 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     if (inspectionLocked) return (<>
       <span className="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">{lang === 'en' ? '✅ Inspection done' : '✅ Inspection terminée'}</span>
       <button onClick={unlockInspection} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">{lang === 'en' ? '✏️ Edit' : '✏️ Modifier'}</button>
-      {inspectionStats.allWorkInspected && onOpenSupplement && !avenantSent && !rma.supplement_review_status
-        ? <button onClick={onOpenSupplement} className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">{lang === 'en' ? '📄 Create Supplement' : '📄 Créer Supplément'}</button>
-        : !avenantSent && !rma.supplement_review_status && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspected` : `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspectés`}</span>
+      {inspectionStats.allWorkInspected && !avenantSent && !rma.supplement_review_status
+        ? <button onClick={onBack} className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-sm font-medium">← {lang === 'en' ? 'Back to RMA to submit supplement' : 'Retour au RMA pour soumettre le supplément'}</button>
+        : !avenantSent && !rma.supplement_review_status && inspectionStats.totalWithWork > 0 && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm">{lang === 'en' ? `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspected` : `⏳ ${inspectionStats.inspectedWithWork}/${inspectionStats.totalWithWork} inspectés`}</span>
       }
       {rma.supplement_review_status === 'pending' && <span className="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium">📋 {lang === 'en' ? 'Supplement under review' : 'Supplément en vérification'}</span>}
       {rma.supplement_review_status === 'corrections_needed' && <span className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium animate-pulse">✏️ {lang === 'en' ? 'Correction needed — edit work items below' : 'Correction nécessaire — modifier les travaux ci-dessous'}</span>}
