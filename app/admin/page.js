@@ -7,6 +7,29 @@ if (typeof window !== 'undefined') {
   window.supabase = supabase;
 }
 
+// ============================================
+// EMAIL NOTIFICATION HELPER
+// Sends customer notifications via /api/send-notification
+// Events: rma_created, device_received, inspection_quote,
+//   qc_complete, shipped, invoice_sent, no_rma, no_bc
+// ============================================
+const sendNotification = async (event, companyId, data = {}) => {
+  if (!companyId) return;
+  try {
+    const res = await fetch('/api/send-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, companyId, data })
+    });
+    const result = await res.json();
+    if (result.sent > 0) console.log(`📧 Notification [${event}] sent to ${result.sent} recipient(s)`);
+    else if (result.sent === 0) console.log(`📧 Notification [${event}] — no portal users for company`);
+    return result;
+  } catch (err) {
+    console.error('Notification send error:', err);
+  }
+};
+
 // Product emoji image mapping — maps model names to custom product images
 const getDeviceImageUrl = (modelName) => {
   if (!modelName) return null;
@@ -4467,6 +4490,28 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       }).eq('id', review.id);
       
       notify(lang === 'en' ? '✅ Quote approved and sent!' : '✅ Devis approuvé et envoyé !');
+      
+      // Send email notification to customer
+      const notifCompanyId = sr?.company_id || review.quote_data?.companyId;
+      if (notifCompanyId) {
+        if (review.quote_type === 'initial') {
+          // RMA just created with initial quote
+          sendNotification('rma_created', notifCompanyId, {
+            rmaNumber: qd.rmaNumber || sr?.request_number,
+            deviceCount: (qd.devices || []).length
+          });
+        } else if (review.quote_type === 'repair' || review.quote_type === 'supplement') {
+          // Inspection found issues — repair or supplement quote
+          const affectedDevices = (qd.devices || []).map(d => ({
+            model: d.model_name || d.model || d.deviceType || '',
+            serial: d.serial_number || d.serial || d.serialNumber || ''
+          }));
+          sendNotification('inspection_quote', notifCompanyId, {
+            rmaNumber: qd.rmaNumber || sr?.request_number,
+            devices: affectedDevices
+          });
+        }
+      }
       setSelectedReview(null);
       loadReviews();
       reload();
@@ -7161,6 +7206,30 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       
       notify(lang === 'en' ? `✅ ${selectedToReceive.size} device(s) marked as received!` : `✅ ${selectedToReceive.size} appareil(s) marqué(s) comme reçu(s)!`);
       
+      // Send email notification — devices received
+      const receivedDevices = devices
+        .filter(d => selectedToReceive.has(d.id))
+        .map(d => ({
+          model: d.model_name || '',
+          serial: d.serial_number || ''
+        }));
+      sendNotification('device_received', rma.company_id, {
+        rmaNumber: rma.request_number,
+        devices: receivedDevices
+      });
+      
+      // Alert: No BC/PO approved — device received but order not yet approved
+      if (!rma.bc_approved_at && !rma.bc_submitted_at) {
+        for (const dev of receivedDevices) {
+          sendNotification('no_bc', rma.company_id, {
+            rmaNumber: rma.request_number,
+            serialNumber: dev.serial,
+            modelName: dev.model,
+            receivedDate: new Date().toLocaleDateString('fr-FR')
+          });
+        }
+      }
+      
       // Prompt to print labels for received devices
       const receivedDevicesList = devices.filter(d => selectedToReceive.has(d.id));
       if (receivedDevicesList.length > 0) {
@@ -7362,6 +7431,16 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
                     console.log('RMA', rma.id, 'marked as shipped');
                     
                     notify(lang === 'en' ? '🚚 RMA marked as shipped!' : '🚚 RMA marqué comme expédié!');
+                    
+                    // Send email notification
+                    const shippedDevices = devices.map(d => ({
+                      model: d.model_name || '',
+                      serial: d.serial_number || ''
+                    }));
+                    sendNotification('shipped', rma.company_id, {
+                      rmaNumber: rma.request_number,
+                      devices: shippedDevices
+                    });
                     reload();
                   } catch (err) {
                     console.error('Mark shipped error:', err);
@@ -16546,6 +16625,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       }).eq('id', rma.id);
       
       notify(lang === 'en' ? '🚚 RMA marked as shipped and closed!' : '🚚 RMA marqué comme expédié et fermé!');
+      
+      // Send email notification with tracking info
+      const firstTracking = shipments?.find(s => s.trackingNumber)?.trackingNumber;
+      const shippedDevices = devices.map(d => ({
+        model: d.model_name || '',
+        serial: d.serial_number || ''
+      }));
+      sendNotification('shipped', rma.company_id, {
+        rmaNumber: rma.request_number,
+        devices: shippedDevices,
+        trackingNumber: firstTracking || null,
+        carrier: firstTracking ? 'UPS' : null
+      });
       reload();
       onClose(); // Close modal, reload will update the view
     } catch (err) { 
@@ -18997,6 +19089,18 @@ function QCReviewModal({ device, rma, onBack, notify, profile, lang = 'fr' }) {
       }
       
       notify(reportUrl ? (lang === 'en' ? '✓ QC passed + Report saved!' : '✓ QC validé + Rapport enregistré!') : (lang === 'en' ? '✓ QC passed' : '✓ QC validé'));
+      
+      // Send email notification — only when ALL devices QC complete
+      if (allOthersReady) {
+        const allDeviceList = (rma.request_devices || []).map(d => ({
+          model: d.model_name || '',
+          serial: d.serial_number || ''
+        }));
+        sendNotification('qc_complete', rma.company_id, {
+          rmaNumber: rma.request_number,
+          devices: allDeviceList
+        });
+      }
       onBack();
     } catch (err) {
       console.error('approveQC error:', err);
@@ -24150,7 +24254,18 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
 
   const markAsSent = async () => {
     const { error } = await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
-    if (!error) { setInv({ ...inv, status: 'sent', sent_at: new Date().toISOString() }); notify(lang === 'en' ? '✅ Invoice marked as sent' : '✅ Facture marquée comme envoyée'); if (reload) reload(); }
+    if (!error) {
+      setInv({ ...inv, status: 'sent', sent_at: new Date().toISOString() });
+      notify(lang === 'en' ? '✅ Invoice marked as sent' : '✅ Facture marquée comme envoyée');
+      // Send email notification (Admin + Facturation only)
+      if (inv.company_id) {
+        sendNotification('invoice_sent', inv.company_id, {
+          rmaNumber: rma.request_number || '',
+          invoiceNumber: inv.invoice_number || ''
+        });
+      }
+      if (reload) reload();
+    }
   };
 
   const recordPayment = async () => {
@@ -24804,6 +24919,13 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                 )}
                 <button onClick={async () => { 
                   await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', savedInvoice.id);
+                  // Send email notification (Admin + Facturation only)
+                  if (savedInvoice.company_id) {
+                    sendNotification('invoice_sent', savedInvoice.company_id, {
+                      rmaNumber: rma?.request_number || '',
+                      invoiceNumber: savedInvoice.invoice_number || ''
+                    });
+                  }
                   notify(lang === 'en' ? '✅ Invoice sent!' : '✅ Facture envoyée!');
                   if (reload) reload();
                   onClose(); 
