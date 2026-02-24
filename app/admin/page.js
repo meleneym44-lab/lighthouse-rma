@@ -3971,12 +3971,6 @@ export default function AdminPortal() {
             <div className="text-sm text-gray-500">{lang === 'en' ? 'France • Admin Portal' : 'France • Admin Portal'}</div>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={() => setShowReceptions(true)} className="relative px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors" title={lang === 'en' ? 'Pending Arrivals' : 'Réceptions'}>
-              ⚠️ {lang === 'en' ? 'Arrivals' : 'Réceptions'}
-              {pendingArrivalsCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse">{pendingArrivalsCount}</span>
-              )}
-            </button>
             <div className="flex bg-gray-100 rounded-lg p-0.5">
               <button onClick={async () => { setLang('fr'); await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>FR</button>
               <button onClick={async () => { setLang('en'); await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>EN</button>
@@ -4050,7 +4044,9 @@ export default function AdminPortal() {
                 setSelectedRMA(rma);
               }}
               filter={dashboardFilter} 
-              setFilter={setDashboardFilter} 
+              setFilter={setDashboardFilter}
+              pendingArrivalsCount={pendingArrivalsCount}
+              onShowReceptions={() => setShowReceptions(true)}
             />}
             {activeSheet === 'quote_review' && <QuoteReviewSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts')} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
@@ -5754,7 +5750,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
   );
 }
 
-function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter, t = k=>k, lang = 'fr' }) {
+function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter, pendingArrivalsCount = 0, onShowReceptions, t = k=>k, lang = 'fr' }) {
   const [reviewingBC, setReviewingBC] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
@@ -5901,6 +5897,14 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
             </button>
           )}
           <button onClick={reload} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">{lang === 'en' ? '🔄 Refresh' : '🔄 Actualiser'}</button>
+          {onShowReceptions && (
+            <button onClick={onShowReceptions} className="relative px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-sm font-medium transition-colors">
+              ⚠️ {lang === 'en' ? 'Arrivals' : 'Réceptions'}
+              {pendingArrivalsCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse">{pendingArrivalsCount}</span>
+              )}
+            </button>
+          )}
         </div>
       </div>
       
