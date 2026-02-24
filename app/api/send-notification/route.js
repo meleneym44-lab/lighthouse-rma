@@ -491,13 +491,14 @@ export async function POST(request) {
     // Get users linked to this company
     let query = supabase
       .from('profiles')
-      .select('id, email, full_name, preferred_language, access_tier')
+      .select('id, email, full_name, preferred_language, can_invoice')
       .eq('company_id', companyId)
-      .eq('role', 'customer');
+      .eq('role', 'customer')
+      .eq('is_active', true);
 
-    // For billing-only events, filter to admin + facturation tiers
+    // For billing-only events, filter to users with invoice permission
     if (BILLING_ONLY_EVENTS.includes(event)) {
-      query = query.in('access_tier', ['admin', 'facturation']);
+      query = query.eq('can_invoice', true);
     }
 
     const { data: profiles, error: profileError } = await query;
