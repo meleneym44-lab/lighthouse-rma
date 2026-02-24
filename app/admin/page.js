@@ -3928,8 +3928,6 @@ export default function AdminPortal() {
     { id: 'usa_orders', label: t('usaOrders'), icon: '🇺🇸' },
     { id: 'clients', label: t('clients'), icon: '👥' },
     { id: 'pricing', label: t('pricing'), icon: '💰' },
-    { id: 'kpi', label: t('kpis'), icon: '📈' },
-    { id: 'settings', label: t('settings'), icon: '⚙️' },
     ...(isAdmin ? [{ id: 'admin', label: t('admin'), icon: '🔐' }] : [])
   ];
 
@@ -3957,6 +3955,10 @@ export default function AdminPortal() {
             <div className="text-sm text-gray-500">{lang === 'en' ? 'France • Admin Portal' : 'France • Admin Portal'}</div>
           </div>
           <div className="flex items-center gap-4">
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button onClick={async () => { setLang('fr'); await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>FR</button>
+              <button onClick={async () => { setLang('en'); await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>EN</button>
+            </div>
             <div className="text-right">
               <p className="font-medium">{profile?.full_name}</p>
               <p className="text-xs text-gray-500">{isAdmin ? t('administrator') : t('employee')}</p>
@@ -4029,7 +4031,6 @@ export default function AdminPortal() {
               setFilter={setDashboardFilter} 
             />}
             {activeSheet === 'quote_review' && <QuoteReviewSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
-            {activeSheet === 'kpi' && <KPISheet requests={requests} clients={clients} t={t} lang={lang} />}
             {activeSheet === 'requests' && <RequestsSheet requests={requests.filter(r => r.request_type !== 'parts')} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'parts' && <PartsOrdersSheet requests={partsOrders} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'clients' && <ClientsSheet
@@ -4070,8 +4071,7 @@ export default function AdminPortal() {
               profile={profile}
               businessSettings={businessSettings}
             />}
-            {activeSheet === 'settings' && <SettingsSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} t={t} lang={lang} setLang={setLang} />}
-            {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} t={t} lang={lang} />}
+            {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} requests={requests} clients={clients} t={t} lang={lang} setLang={setLang} />}
           </>
         )}
       </main>
@@ -24816,16 +24816,21 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 }
 
 
-function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang }) {
-  const [activeTab, setActiveTab] = useState('team');
+
+function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, setBusinessSettings, requests = [], clients = [], t = k=>k, lang = 'fr', setLang }) {
+  const [editingSettings, setEditingSettings] = useState(false);
+  const [tempSettings, setTempSettings] = useState(businessSettings);
+  const [saving, setSaving] = useState(false);
+  const [adminTab, setAdminTab] = useState('kpi');
+  
+  // Document numbering state
   const [documentTypes, setDocumentTypes] = useState([]);
   const [counters, setCounters] = useState([]);
   const [loadingCounters, setLoadingCounters] = useState(false);
   const [editingCounter, setEditingCounter] = useState(null);
   const [newValue, setNewValue] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [counterSaving, setCounterSaving] = useState(false);
   
-  // Get current MMYY
   const currentYearMonth = (() => {
     const now = new Date();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -24833,114 +24838,278 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
     return mm + yy;
   })();
   
-  // Load document types and counters
   const loadCounters = async () => {
     setLoadingCounters(true);
-    
-    // Load document types
-    const { data: types } = await supabase
-      .from('document_types')
-      .select('*')
-      .order('sort_order');
+    const { data: types } = await supabase.from('document_types').select('*').order('sort_order');
     if (types) setDocumentTypes(types);
-    
-    // Load all counters
-    const { data: ctrs } = await supabase
-      .from('document_counters')
-      .select('*')
-      .order('year_month', { ascending: false });
+    const { data: ctrs } = await supabase.from('document_counters').select('*').order('year_month', { ascending: false });
     if (ctrs) setCounters(ctrs);
-    
     setLoadingCounters(false);
   };
   
-  useEffect(() => {
-    if (activeTab === 'documents') {
-      loadCounters();
-    }
-  }, [activeTab]);
+  useEffect(() => { if (adminTab === 'documents') loadCounters(); }, [adminTab]);
   
-  // Save counter value
   const saveCounter = async (docType, yearMonth, value) => {
-    setSaving(true);
+    setCounterSaving(true);
     try {
       const numValue = parseInt(value) || 0;
-      
-      // Use RPC to call the set_doc_counter function
-      const { data, error } = await supabase.rpc('set_doc_counter', {
-        p_doc_type: docType,
-        p_year_month: yearMonth,
-        p_value: numValue
-      });
-      
+      const { error } = await supabase.rpc('set_doc_counter', { p_doc_type: docType, p_year_month: yearMonth, p_value: numValue });
       if (error) throw error;
-      
-      notify(lang === 'en' ? 'Counter updated' : 'Compteur mis à jour', 'success');
-      loadCounters();
+      notify(lang === 'en' ? 'Counter updated!' : 'Compteur mis \u00e0 jour!');
+      await loadCounters();
       setEditingCounter(null);
       setNewValue('');
     } catch (err) {
-      console.error('Error saving counter:', err);
       notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + err.message, 'error');
+    }
+    setCounterSaving(false);
+  };
+  
+  const getCounter = (docType, yearMonth) => counters.find(c => c.doc_type === docType && c.year_month === yearMonth);
+  
+  const formatYearMonth = (ym) => {
+    if (!ym || ym.length !== 4) return ym;
+    const months = ['Jan', 'F\u00e9v', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', (lang === 'en' ? 'Aug' : 'Ao\u00fb'), 'Sep', 'Oct', 'Nov', 'D\u00e9c'];
+    const mm = parseInt(ym.slice(0, 2)) - 1;
+    const yy = ym.slice(2);
+    return months[mm] + ' 20' + yy;
+  };
+  
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      const { error: updateError } = await supabase
+        .from('business_settings')
+        .upsert({ id: 1, ...tempSettings, updated_at: new Date().toISOString() });
+      if (updateError) throw updateError;
+      setBusinessSettings(tempSettings);
+      setEditingSettings(false);
+      notify(lang === 'en' ? '\u2705 Settings saved!' : '\u2705 Param\u00e8tres enregistr\u00e9s!');
+    } catch (err) {
+      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error');
     }
     setSaving(false);
   };
   
-  // Get counter for specific doc type and month
-  const getCounter = (docType, yearMonth) => {
-    return counters.find(c => c.doc_type === docType && c.year_month === yearMonth);
-  };
+  const adminTabs = [
+    { id: 'kpi', label: 'KPIs', icon: '\uD83D\uDCC8' },
+    { id: 'documents', label: lang === 'en' ? 'Doc Numbering' : 'Num\u00e9rotation', icon: '\uD83D\uDCC4' },
+    { id: 'company', label: lang === 'en' ? 'Company' : 'Entreprise', icon: '\uD83C\uDFE2' },
+    { id: 'team', label: lang === 'en' ? 'Team' : '\u00c9quipe', icon: '\uD83D\uDC65' },
+    { id: 'quotes', label: lang === 'en' ? 'Quote Content' : 'Contenu Devis', icon: '\u2705' }
+  ];
   
-  // Format year_month for display
-  const formatYearMonth = (ym) => {
-    if (!ym || ym.length !== 4) return ym;
-    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', (lang === 'en' ? 'Aug' : 'Aoû'), 'Sep', 'Oct', 'Nov', 'Déc'];
-    const mm = parseInt(ym.slice(0, 2)) - 1;
-    const yy = ym.slice(2);
-    return `${months[mm]} 20${yy}`;
-  };
-
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">{t('settings')}</h1>
+      <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? '\uD83D\uDD10 Administration' : '\uD83D\uDD10 Administration'}</h1>
       
-      {/* Tabs */}
+      {/* Tab bar */}
       <div className="bg-white rounded-xl shadow-sm">
-        <div className="border-b flex">
-          <button
-            onClick={() => setActiveTab('team')}
-            className={`px-6 py-3 font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === 'team' 
-                ? 'border-[#00A651] text-[#00A651]' 
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            👥 {t('team')}
-          </button>
-          <button
-            onClick={() => setActiveTab('documents')}
-            className={`px-6 py-3 font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === 'documents' 
-                ? 'border-[#00A651] text-[#00A651]' 
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            📄 {t('docNumbering')}
-          </button>
-          <button
-            onClick={() => setActiveTab('language')}
-            className={`px-6 py-3 font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === 'language' 
-                ? 'border-[#00A651] text-[#00A651]' 
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            🌐 {t('language')}
-          </button>
+        <div className="border-b flex overflow-x-auto">
+          {adminTabs.map(tab => (
+            <button key={tab.id} onClick={() => setAdminTab(tab.id)} className={'px-6 py-3 font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ' + (adminTab === tab.id ? 'border-[#00A651] text-[#00A651]' : 'border-transparent text-gray-500 hover:text-gray-700')}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
         </div>
-        
-        {/* Team Tab */}
-        {activeTab === 'team' && (
+      </div>
+      
+      {/* ========== KPI TAB ========== */}
+      {adminTab === 'kpi' && (
+        <KPISheet requests={requests} clients={clients} t={t} lang={lang} />
+      )}
+      
+      {/* ========== COMPANY TAB ========== */}
+      {adminTab === 'company' && (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 flex justify-between items-center">
+            <div>
+              <h2 className="text-lg font-bold text-white">{lang === 'en' ? "Company Information" : "Informations de l'entreprise"}</h2>
+              <p className="text-blue-100 text-sm">{lang === 'en' ? 'Used on DN, quotes and invoices' : 'Utilis\u00e9es sur les BL, devis et factures'}</p>
+            </div>
+            {!editingSettings && (
+              <button onClick={() => { setTempSettings(businessSettings); setEditingSettings(true); }} className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium">
+                \u270F\uFE0F {lang === 'en' ? 'Edit' : 'Modifier'}
+              </button>
+            )}
+          </div>
+          
+          <div className="p-6">
+            {editingSettings ? (
+              <div className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Company name' : 'Nom de la soci\u00e9t\u00e9'}</label>
+                    <input type="text" value={tempSettings.company_name} onChange={e => setTempSettings({...tempSettings, company_name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Capital' : 'Capital'}</label>
+                    <div className="flex">
+                      <input type="text" value={tempSettings.capital} onChange={e => setTempSettings({...tempSettings, capital: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-l-lg" />
+                      <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg">\u20AC</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('address')}</label>
+                  <input type="text" value={tempSettings.address} onChange={e => setTempSettings({...tempSettings, address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Postal code' : 'Code postal'}</label>
+                    <input type="text" value={tempSettings.postal_code} onChange={e => setTempSettings({...tempSettings, postal_code: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('city')}</label>
+                    <input type="text" value={tempSettings.city} onChange={e => setTempSettings({...tempSettings, city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('phone')}</label>
+                    <input type="text" value={tempSettings.phone} onChange={e => setTempSettings({...tempSettings, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
+                    <input type="email" value={tempSettings.email} onChange={e => setTempSettings({...tempSettings, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Website' : 'Site web'}</label>
+                  <input type="text" value={tempSettings.website} onChange={e => setTempSettings({...tempSettings, website: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                    <input type="text" value={tempSettings.siret} onChange={e => setTempSettings({...tempSettings, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Intra-community VAT' : 'TVA Intracommunautaire'}</label>
+                    <input type="text" value={tempSettings.tva} onChange={e => setTempSettings({...tempSettings, tva: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                </div>
+                
+                <div className="pt-4 mt-4 border-t border-dashed border-gray-300">
+                  <h4 className="text-sm font-bold text-gray-700 mb-3">{lang === 'en' ? '\u270D\uFE0F Quote signatory' : '\u270D\uFE0F Signataire des devis'}</h4>
+                  <div className="grid md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Signatory name' : 'Nom du signataire'}</label>
+                      <input type="text" value={tempSettings.quote_signatory || ''} onChange={e => setTempSettings({...tempSettings, quote_signatory: e.target.value})} placeholder="M. Meleney" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 mt-4 border-t border-dashed border-gray-300">
+                  <h4 className="text-sm font-bold text-gray-700 mb-3">{lang === 'en' ? '\uD83C\uDFE6 Bank Details (invoices)' : '\uD83C\uDFE6 Coordonn\u00e9es bancaires (factures)'}</h4>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Bank' : 'Banque'}</label>
+                      <input type="text" value={tempSettings.bank_name || ''} onChange={e => setTempSettings({...tempSettings, bank_name: e.target.value})} placeholder="SOCIETE GENERALE" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Branch / City' : 'Agence / Ville'}</label>
+                      <input type="text" value={tempSettings.bank_branch || ''} onChange={e => setTempSettings({...tempSettings, bank_branch: e.target.value})} placeholder="LAGNY sur Marne" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">IBAN</label>
+                    <input type="text" value={tempSettings.iban || ''} onChange={e => setTempSettings({...tempSettings, iban: e.target.value})} placeholder="FR76 3000 3008 8800 0200 1313 327" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'RIB (Bank Code / Branch / Account / Key)' : 'RIB (Code Banque / Guichet / Compte / Cl\u00e9)'}</label>
+                    <input type="text" value={tempSettings.rib || ''} onChange={e => setTempSettings({...tempSettings, rib: e.target.value})} placeholder="30003 00888 00020013133 27" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">BIC / SWIFT</label>
+                      <input type="text" value={tempSettings.bic || ''} onChange={e => setTempSettings({...tempSettings, bic: e.target.value})} placeholder="SOGEFRPP" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Payment terms (days)' : 'Conditions de paiement (jours)'}</label>
+                      <input type="number" value={tempSettings.payment_terms_days || 30} onChange={e => setTempSettings({...tempSettings, payment_terms_days: parseInt(e.target.value) || 30})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t">
+                  <button onClick={() => setEditingSettings(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
+                  <button onClick={saveSettings} disabled={saving} className="px-6 py-2 bg-[#00A651] hover:bg-[#008C44] text-white rounded-lg font-medium disabled:opacity-50">
+                    {saving ? '...' : (lang === 'en' ? 'Save' : 'Enregistrer')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-800 mb-3">{businessSettings.company_name}</h3>
+                    <div className="space-y-1 text-gray-600">
+                      <p>{businessSettings.address}</p>
+                      <p>{businessSettings.postal_code} {businessSettings.city}</p>
+                      <p>\uD83D\uDCDE {businessSettings.phone}</p>
+                      <p>\u2709\uFE0F {businessSettings.email}</p>
+                      <p>\uD83C\uDF10 {businessSettings.website}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-gray-700 mb-3">{lang === 'en' ? 'Legal Information' : 'Informations l\u00e9gales'}</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between py-2 border-b border-gray-100">
+                        <span className="text-gray-500">Capital</span>
+                        <span className="font-medium">{businessSettings.capital} \u20AC</span>
+                      </div>
+                      <div className="flex justify-between py-2 border-b border-gray-100">
+                        <span className="text-gray-500">SIRET</span>
+                        <span className="font-mono">{businessSettings.siret}</span>
+                      </div>
+                      <div className="flex justify-between py-2">
+                        <span className="text-gray-500">{t('tva')}</span>
+                        <span className="font-mono">{businessSettings.tva}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {(businessSettings.iban || businessSettings.bank_name) && (
+                  <div className="pt-4 mt-2 border-t border-dashed border-gray-200">
+                    <h4 className="font-medium text-gray-700 mb-3">{lang === 'en' ? '\uD83C\uDFE6 Bank Details' : '\uD83C\uDFE6 Coordonn\u00e9es bancaires'}</h4>
+                    <div className="space-y-2 text-sm">
+                      {businessSettings.bank_name && <div className="flex justify-between py-1"><span className="text-gray-500">{lang === 'en' ? 'Bank' : 'Banque'}</span><span>{businessSettings.bank_name}{businessSettings.bank_branch ? ' \u2014 ' + businessSettings.bank_branch : ''}</span></div>}
+                      {businessSettings.iban && <div className="flex justify-between py-1"><span className="text-gray-500">IBAN</span><span className="font-mono text-xs">{businessSettings.iban}</span></div>}
+                      {businessSettings.rib && <div className="flex justify-between py-1"><span className="text-gray-500">RIB</span><span className="font-mono text-xs">{businessSettings.rib}</span></div>}
+                      {businessSettings.bic && <div className="flex justify-between py-1"><span className="text-gray-500">BIC</span><span className="font-mono">{businessSettings.bic}</span></div>}
+                      <div className="flex justify-between py-1"><span className="text-gray-500">{lang === 'en' ? 'Payment terms' : 'Conditions paiement'}</span><span>{businessSettings.payment_terms_days || 30} jours</span></div>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-500 mb-2">{lang === 'en' ? 'Preview on documents:' : 'Aper\u00e7u sur les documents:'}</p>
+                  <p className="text-xs text-gray-600 text-center">
+                    <strong>{businessSettings.company_name}</strong> au capital de {businessSettings.capital} \u20AC<br/>
+                    {businessSettings.address}, {businessSettings.postal_code} {businessSettings.city} | T\u00e9l. {businessSettings.phone}<br/>
+                    SIRET {businessSettings.siret} | TVA {businessSettings.tva}<br/>
+                    {businessSettings.email} | {businessSettings.website}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* ========== TEAM TAB ========== */}
+      {adminTab === 'team' && (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b bg-gradient-to-r from-emerald-600 to-teal-600">
+            <h2 className="text-lg font-bold text-white">{lang === 'en' ? 'Team Members' : 'Membres de l\'\u00e9quipe'}</h2>
+            <p className="text-emerald-100 text-sm">{staffMembers.length} {lang === 'en' ? 'staff members' : 'employ\u00e9s'}</p>
+          </div>
           <div className="p-6 space-y-3">
             {staffMembers.map(member => (
               <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -24953,28 +25122,31 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                     <p className="text-sm text-gray-500">{member.email}</p>
                   </div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-sm ${
-                  member.role === 'lh_admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'
-                }`}>
-                  {member.role === 'lh_admin' ? '👑 Admin' : (lang === 'en' ? '👤 Employee' : '👤 Employé')}
+                <span className={'px-3 py-1 rounded-full text-sm ' + (member.role === 'lh_admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700')}>
+                  {member.role === 'lh_admin' ? '\uD83D\uDC51 Admin' : (lang === 'en' ? '\uD83D\uDC64 Employee' : '\uD83D\uDC64 Employ\u00e9')}
                 </span>
               </div>
             ))}
           </div>
-        )}
-        
-        {/* Documents Tab */}
-        {activeTab === 'documents' && (
+        </div>
+      )}
+      
+      {/* ========== DOCUMENTS TAB (numbering) ========== */}
+      {adminTab === 'documents' && (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b bg-gradient-to-r from-violet-600 to-purple-600">
+            <h2 className="text-lg font-bold text-white">{lang === 'en' ? 'Document Numbering' : 'Num\u00e9rotation des documents'}</h2>
+            <p className="text-violet-100 text-sm">{lang === 'en' ? 'RMA numbers, quotes, invoices, delivery notes' : 'Num\u00e9ros RMA, devis, factures, bons de livraison'}</p>
+          </div>
           <div className="p-6">
             {loadingCounters ? (
-              <div className="text-center py-8 text-gray-500">{t('loading')}</div>
+              <div className="text-center py-8 text-gray-500">{lang === 'en' ? 'Loading...' : 'Chargement...'}</div>
             ) : (
               <div className="space-y-6">
-                {/* RMA Counter - Special (doesn't reset monthly) */}
+                {/* RMA Counter */}
                 {(() => {
                   const rmaType = documentTypes.find(d => d.doc_type === 'RMA');
                   if (!rmaType) return null;
-                  
                   const rmaCounter = getCounter('RMA', 'RMA');
                   const rmaCurrentNum = rmaCounter?.current_number || 0;
                   const rmaNextNum = rmaCurrentNum + 1;
@@ -24983,63 +25155,36 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                   return (
                     <div>
                       <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <span className="text-lg">🔢</span>
-                        {lang === 'en' ? 'RMA Number (FR-XXXXX)' : 'Numéro RMA (FR-XXXXX)'}
+                        <span className="text-lg">\uD83D\uDD22</span>
+                        {lang === 'en' ? 'RMA Number (FR-XXXXX)' : 'Num\u00e9ro RMA (FR-XXXXX)'}
                       </h3>
                       <p className="text-sm text-gray-500 mb-4">
-                        {lang === 'en' ? 'RMA number is sequential and does not reset each month.' : 'Le numéro RMA est séquentiel et ne se réinitialise pas chaque mois.'}
+                        {lang === 'en' ? 'RMA number is sequential and does not reset each month.' : 'Le num\u00e9ro RMA est s\u00e9quentiel et ne se r\u00e9initialise pas chaque mois.'}
                       </p>
                       
                       <div className="bg-[#00A651]/10 rounded-xl p-4 border border-[#00A651]/30 max-w-xs">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-medium text-gray-500">RMA</span>
-                          <span className="text-xs bg-[#00A651] text-white px-2 py-0.5 rounded font-mono">{lang === 'en' ? 'FR' : 'FR'}</span>
+                          <span className="text-xs bg-[#00A651] text-white px-2 py-0.5 rounded font-mono">FR</span>
                         </div>
                         
                         {isEditingRMA ? (
                           <div className="space-y-2">
-                            <input
-                              type="number"
-                              value={newValue}
-                              onChange={e => setNewValue(e.target.value)}
-                              className="w-full px-3 py-2 border rounded-lg text-center font-mono"
-                              placeholder={lang === 'en' ? 'Current value' : 'Valeur actuelle'}
-                              min="0"
-                            />
+                            <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-center font-mono" min="0" />
                             <div className="flex gap-2">
-                              <button
-                                onClick={() => { setEditingCounter(null); setNewValue(''); }}
-                                className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm"
-                              >
-                                Annuler
-                              </button>
-                              <button
-                                onClick={() => saveCounter('RMA', 'RMA', newValue)}
-                                disabled={saving}
-                                className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50"
-                              >
-                                {saving ? '...' : 'OK'}
-                              </button>
+                              <button onClick={() => { setEditingCounter(null); setNewValue(''); }} className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
+                              <button onClick={() => saveCounter('RMA', 'RMA', newValue)} disabled={counterSaving} className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50">{counterSaving ? '...' : 'OK'}</button>
                             </div>
                           </div>
                         ) : (
                           <>
                             <div className="text-center mb-2">
-                              <p className="text-2xl font-bold text-[#00A651] font-mono">
-                                {String(rmaCurrentNum).padStart(5, '0')}
-                              </p>
-                              <p className="text-xs text-gray-400">{lang === 'en' ? 'last used' : 'dernier utilisé'}</p>
+                              <p className="text-2xl font-bold text-[#00A651] font-mono">{String(rmaCurrentNum).padStart(5, '0')}</p>
+                              <p className="text-xs text-gray-400">{lang === 'en' ? 'last used' : 'dernier utilis\u00e9'}</p>
                             </div>
                             <div className="flex items-center justify-between text-xs">
-                              <span className="text-gray-500">
-                                Prochain: <span className="font-mono font-medium text-[#00A651]">FR-{String(rmaNextNum).padStart(5, '0')}</span>
-                              </span>
-                              <button
-                                onClick={() => { setEditingCounter('RMA-GLOBAL'); setNewValue(String(rmaCurrentNum)); }}
-                                className="text-blue-600 hover:text-blue-800"
-                              >
-                                ✏️
-                              </button>
+                              <span className="text-gray-500">Prochain: <span className="font-mono font-medium text-[#00A651]">FR-{String(rmaNextNum).padStart(5, '0')}</span></span>
+                              <button onClick={() => { setEditingCounter('RMA-GLOBAL'); setNewValue(String(rmaCurrentNum)); }} className="text-blue-600 hover:text-blue-800">\u270F\uFE0F</button>
                             </div>
                           </>
                         )}
@@ -25048,14 +25193,14 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                   );
                 })()}
                 
-                {/* Current Month Overview - Monthly counters */}
+                {/* Monthly counters */}
                 <div>
                   <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <span className="text-lg">📊</span>
-                    Compteurs du mois actuel ({formatYearMonth(currentYearMonth)})
+                    <span className="text-lg">\uD83D\uDCCA</span>
+                    {lang === 'en' ? 'Current Month' : 'Mois actuel'} ({formatYearMonth(currentYearMonth)})
                   </h3>
                   <p className="text-sm text-gray-500 mb-4">
-                    {lang === 'en' ? 'Format: PREFIX-MMYY-NNN (e.g. DEV-0226-001). Counters reset each month.' : 'Format: PREFIX-MMYY-NNN (ex: DEV-0226-001). Les compteurs se réinitialisent chaque mois.'}
+                    {lang === 'en' ? 'Format: PREFIX-MMYY-NNN. Counters reset each month.' : 'Format: PREFIX-MMYY-NNN. Les compteurs se r\u00e9initialisent chaque mois.'}
                   </p>
                   
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -25063,7 +25208,7 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                       const counter = getCounter(docType.doc_type, currentYearMonth);
                       const currentNum = counter?.current_number || 0;
                       const nextNum = currentNum + 1;
-                      const isEditing = editingCounter === `${docType.doc_type}-${currentYearMonth}`;
+                      const isEditing = editingCounter === docType.doc_type + '-' + currentYearMonth;
                       
                       return (
                         <div key={docType.doc_type} className="bg-gray-50 rounded-xl p-4 border">
@@ -25074,48 +25219,21 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                           
                           {isEditing ? (
                             <div className="space-y-2">
-                              <input
-                                type="number"
-                                value={newValue}
-                                onChange={e => setNewValue(e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg text-center font-mono"
-                                placeholder={lang === 'en' ? 'Current value' : 'Valeur actuelle'}
-                                min="0"
-                              />
+                              <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-center font-mono" min="0" />
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => { setEditingCounter(null); setNewValue(''); }}
-                                  className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm"
-                                >
-                                  Annuler
-                                </button>
-                                <button
-                                  onClick={() => saveCounter(docType.doc_type, currentYearMonth, newValue)}
-                                  disabled={saving}
-                                  className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50"
-                                >
-                                  {saving ? '...' : 'OK'}
-                                </button>
+                                <button onClick={() => { setEditingCounter(null); setNewValue(''); }} className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
+                                <button onClick={() => saveCounter(docType.doc_type, currentYearMonth, newValue)} disabled={counterSaving} className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50">{counterSaving ? '...' : 'OK'}</button>
                               </div>
                             </div>
                           ) : (
                             <>
                               <div className="text-center mb-2">
-                                <p className="text-2xl font-bold text-[#2D5A7B] font-mono">
-                                  {String(currentNum).padStart(3, '0')}
-                                </p>
-                                <p className="text-xs text-gray-400">{lang === 'en' ? 'last used' : 'dernier utilisé'}</p>
+                                <p className="text-2xl font-bold text-[#2D5A7B] font-mono">{String(currentNum).padStart(3, '0')}</p>
+                                <p className="text-xs text-gray-400">{lang === 'en' ? 'last used' : 'dernier utilis\u00e9'}</p>
                               </div>
                               <div className="flex items-center justify-between text-xs">
-                                <span className="text-gray-500">
-                                  Prochain: <span className="font-mono font-medium text-green-600">{docType.prefix}-{currentYearMonth}-{String(nextNum).padStart(3, '0')}</span>
-                                </span>
-                                <button
-                                  onClick={() => { setEditingCounter(`${docType.doc_type}-${currentYearMonth}`); setNewValue(String(currentNum)); }}
-                                  className="text-blue-600 hover:text-blue-800"
-                                >
-                                  ✏️
-                                </button>
+                                <span className="text-gray-500">Prochain: <span className="font-mono font-medium text-green-600">{docType.prefix}-{currentYearMonth}-{String(nextNum).padStart(3, '0')}</span></span>
+                                <button onClick={() => { setEditingCounter(docType.doc_type + '-' + currentYearMonth); setNewValue(String(currentNum)); }} className="text-blue-600 hover:text-blue-800">\u270F\uFE0F</button>
                               </div>
                             </>
                           )}
@@ -25129,31 +25247,26 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                 {counters.filter(c => c.year_month !== 'RMA').length > 0 && (
                   <div>
                     <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                      <span className="text-lg">📜</span>
-                      Historique des compteurs
+                      <span className="text-lg">\uD83D\uDCDC</span>
+                      {lang === 'en' ? 'Counter History' : 'Historique des compteurs'}
                     </h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b">
-                            <th className="text-left py-2 px-3">{lang === 'en' ? 'Period' : 'Période'}</th>
+                            <th className="text-left py-2 px-3">{lang === 'en' ? 'Period' : 'P\u00e9riode'}</th>
                             {documentTypes.filter(dt => dt.doc_type !== 'RMA').map(dt => (
                               <th key={dt.doc_type} className="text-center py-2 px-3">{dt.prefix}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {/* Group counters by year_month - exclude GLOBAL (RMA) */}
                           {[...new Set(counters.filter(c => c.year_month !== 'RMA').map(c => c.year_month))].slice(0, 6).map(ym => (
                             <tr key={ym} className="border-b hover:bg-gray-50">
                               <td className="py-2 px-3 font-medium">{formatYearMonth(ym)}</td>
                               {documentTypes.filter(dt => dt.doc_type !== 'RMA').map(dt => {
                                 const c = getCounter(dt.doc_type, ym);
-                                return (
-                                  <td key={dt.doc_type} className="text-center py-2 px-3 font-mono text-gray-600">
-                                    {c ? String(c.current_number).padStart(3, '0') : '—'}
-                                  </td>
-                                );
+                                return <td key={dt.doc_type} className="text-center py-2 px-3 font-mono text-gray-600">{c ? String(c.current_number).padStart(3, '0') : '\u2014'}</td>;
                               })}
                             </tr>
                           ))}
@@ -25165,359 +25278,27 @@ function SettingsSheet({ profile, staffMembers, notify, reload, t, lang, setLang
                 
                 {/* Help */}
                 <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-                  <h4 className="font-medium text-blue-800 mb-2">{lang === 'en' ? '💡 How it works' : '💡 Comment ça marche'}</h4>
+                  <h4 className="font-medium text-blue-800 mb-2">{lang === 'en' ? '\uD83D\uDCA1 How it works' : '\uD83D\uDCA1 Comment \u00e7a marche'}</h4>
                   <ul className="text-sm text-blue-700 space-y-1">
-                    <li>• <strong>{lang === 'en' ? 'RMA (FR-XXXXX)' : 'RMA (FR-XXXXX)'}</strong>{lang === 'en' ? ': Sequential number, does not reset' : ': Numéro séquentiel continu, ne se réinitialise pas'}</li>
-                    <li>• <strong>{lang === 'en' ? 'Documents (DEV, PO, DN, INV, CTR, SUP)' : 'Documents (DEV, BC, BL, FAC, CTR, SUP)'}</strong>{lang === 'en' ? ': Format PREFIX-MMYY-NNN, resets monthly' : ': Format PREFIX-MMYY-NNN, réinitialisation mensuelle'}</li>
-                    <li>{lang === 'en' ? '• PO can be the client number (if provided) or auto-generated' : '• Le BC peut être le numéro du client (si fourni) ou auto-généré'}</li>
-                    <li>{lang === 'en' ? '• PO number is referenced on the Delivery Note (DN)' : '• Le numéro BC est référencé sur le Bon de Livraison (BL)'}</li>
-                    <li>{lang === 'en' ? '• Use the ✏️ button to correct a counter if needed' : '• Utilisez le bouton ✏️ pour corriger un compteur si nécessaire'}</li>
+                    <li>{'\u2022'} <strong>RMA (FR-XXXXX)</strong>{lang === 'en' ? ': Sequential, never resets' : ': S\u00e9quentiel continu, ne se r\u00e9initialise pas'}</li>
+                    <li>{'\u2022'} <strong>{lang === 'en' ? 'Documents' : 'Documents'} (DEV, BC, BL, FAC, CTR, SUP)</strong>{lang === 'en' ? ': PREFIX-MMYY-NNN, resets monthly' : ': PREFIX-MMYY-NNN, r\u00e9initialisation mensuelle'}</li>
+                    <li>{'\u2022'} {lang === 'en' ? 'Use \u270F\uFE0F to correct a counter if needed' : 'Utilisez \u270F\uFE0F pour corriger un compteur si n\u00e9cessaire'}</li>
                   </ul>
                 </div>
               </div>
             )}
           </div>
-        )}
-
-        {/* Language Tab */}
-        {activeTab === 'language' && (
-          <div className="p-6">
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-gray-800">{t('languagePreference')}</h2>
-              <p className="text-sm text-gray-500">{t('languageDesc')}</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button
-                onClick={async () => {
-                  setLang('fr');
-                  const { error } = await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id);
-                  if (!error) notify(t('langUpdatedFr'), 'success');
-                  else notify(lang === 'en' ? 'Error' : 'Erreur', 'error');
-                }}
-                className={`p-6 rounded-xl border-2 transition-all text-left ${
-                  lang === 'fr' 
-                    ? 'border-[#00A651] bg-green-50 ring-2 ring-[#00A651]/20' 
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <span className="text-4xl">🇫🇷</span>
-                  <div className="flex-1">
-                    <p className="font-bold text-lg text-gray-800">Français</p>
-                    <p className="text-sm text-gray-500">{t('displayInFrench')}</p>
-                  </div>
-                  {lang === 'fr' && (
-                    <span className="w-6 h-6 rounded-full bg-[#00A651] flex items-center justify-center text-white text-xs font-bold">✓</span>
-                  )}
-                </div>
-              </button>
-              <button
-                onClick={async () => {
-                  setLang('en');
-                  const { error } = await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id);
-                  if (!error) notify(t('langUpdatedEn'), 'success');
-                  else notify('Error', 'error');
-                }}
-                className={`p-6 rounded-xl border-2 transition-all text-left ${
-                  lang === 'en' 
-                    ? 'border-[#00A651] bg-green-50 ring-2 ring-[#00A651]/20' 
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <span className="text-4xl">🇬🇧</span>
-                  <div className="flex-1">
-                    <p className="font-bold text-lg text-gray-800">English</p>
-                    <p className="text-sm text-gray-500">{t('displayInEnglish')}</p>
-                  </div>
-                  {lang === 'en' && (
-                    <span className="w-6 h-6 rounded-full bg-[#00A651] flex items-center justify-center text-white text-xs font-bold">✓</span>
-                  )}
-                </div>
-              </button>
-            </div>
-            <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-sm text-amber-800">
-                {lang === 'en' 
-                  ? '⚠️ Note: This setting only changes the portal interface language. Documents (quotes, invoices, certificates, reports) will remain in French as they are official documents for French clients.'
-                  : '⚠️ Note : Ce paramètre ne change que la langue de l\'interface du portail. Les documents (devis, factures, certificats, rapports) resteront en français car ce sont des documents officiels.'
-                }
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+      
+      {/* ========== QUOTE CONTENT TAB ========== */}
+      {adminTab === 'quotes' && (
+        <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} lang={lang} />
+      )}
     </div>
   );
 }
 
-function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, setBusinessSettings, t = k=>k, lang = 'fr' }) {
-  const [editingSettings, setEditingSettings] = useState(false);
-  const [tempSettings, setTempSettings] = useState(businessSettings);
-  const [saving, setSaving] = useState(false);
-  
-  const saveSettings = async () => {
-    setSaving(true);
-    try {
-      // Try to update first
-      const { error: updateError } = await supabase
-        .from('business_settings')
-        .upsert({ id: 1, ...tempSettings, updated_at: new Date().toISOString() });
-      
-      if (updateError) throw updateError;
-      
-      setBusinessSettings(tempSettings);
-      setEditingSettings(false);
-      notify(lang === 'en' ? '✅ Settings saved!' : '✅ Paramètres enregistrés!');
-    } catch (err) {
-      console.error('Settings save error:', err);
-      notify((lang === 'en' ? 'Error: ' : 'Erreur: ') + (err.message || 'Error'), 'error');
-    }
-    setSaving(false);
-  };
-  
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? '🔐 Administration' : '🔐 Administration'}</h1>
-      
-      {/* Business Settings Card */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 flex justify-between items-center">
-          <div>
-            <h2 className="text-lg font-bold text-white">{lang === 'en' ? "🏢 Company information" : "🏢 Informations de l'entreprise"}</h2>
-            <p className="text-blue-100 text-sm">{lang === 'en' ? 'Used on DN, quotes and invoices' : 'Utilisées sur les BL, devis et factures'}</p>
-          </div>
-          {!editingSettings && (
-            <button onClick={() => { setTempSettings(businessSettings); setEditingSettings(true); }} className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium">
-              ✏️ Modifier
-            </button>
-          )}
-        </div>
-        
-        <div className="p-6">
-          {editingSettings ? (
-            <div className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Company name' : 'Nom de la société'}</label>
-                  <input type="text" value={tempSettings.company_name} onChange={e => setTempSettings({...tempSettings, company_name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Capital' : 'Capital'}</label>
-                  <div className="flex">
-                    <input type="text" value={tempSettings.capital} onChange={e => setTempSettings({...tempSettings, capital: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-l-lg" />
-                    <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg">€</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('address')}</label>
-                <input type="text" value={tempSettings.address} onChange={e => setTempSettings({...tempSettings, address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Postal code' : 'Code postal'}</label>
-                  <input type="text" value={tempSettings.postal_code} onChange={e => setTempSettings({...tempSettings, postal_code: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('city')}</label>
-                  <input type="text" value={tempSettings.city} onChange={e => setTempSettings({...tempSettings, city: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('phone')}</label>
-                  <input type="text" value={tempSettings.phone} onChange={e => setTempSettings({...tempSettings, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')}</label>
-                  <input type="email" value={tempSettings.email} onChange={e => setTempSettings({...tempSettings, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Website' : 'Site web'}</label>
-                <input type="text" value={tempSettings.website} onChange={e => setTempSettings({...tempSettings, website: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'SIRET' : 'SIRET'}</label>
-                  <input type="text" value={tempSettings.siret} onChange={e => setTempSettings({...tempSettings, siret: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Intra-community VAT' : 'TVA Intracommunautaire'}</label>
-                  <input type="text" value={tempSettings.tva} onChange={e => setTempSettings({...tempSettings, tva: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </div>
-              </div>
-              
-              {/* Bank / Invoice Info Section */}
-              <div className="pt-4 mt-4 border-t border-dashed border-gray-300">
-                <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">{lang === 'en' ? '✍️ Quote signatory' : '✍️ Signataire des devis'}</h4>
-                <div className="grid md:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Signatory name' : 'Nom du signataire'}</label>
-                    <input type="text" value={tempSettings.quote_signatory || ''} onChange={e => setTempSettings({...tempSettings, quote_signatory: e.target.value})} placeholder="M. Meleney" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank / Invoice Info Section */}
-              <div className="pt-4 mt-4 border-t border-dashed border-gray-300">
-                <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">{lang === 'en' ? '🏦 Bank Details (invoices)' : '🏦 Coordonnées bancaires (factures)'}</h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Bank' : 'Banque'}</label>
-                    <input type="text" value={tempSettings.bank_name || ''} onChange={e => setTempSettings({...tempSettings, bank_name: e.target.value})} placeholder="SOCIETE GENERALE" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Branch / City' : 'Agence / Ville'}</label>
-                    <input type="text" value={tempSettings.bank_branch || ''} onChange={e => setTempSettings({...tempSettings, bank_branch: e.target.value})} placeholder="LAGNY sur Marne" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'IBAN' : 'IBAN'}</label>
-                  <input type="text" value={tempSettings.iban || ''} onChange={e => setTempSettings({...tempSettings, iban: e.target.value})} placeholder="FR76 3000 3008 8800 0200 1313 327" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'RIB (Bank Code / Branch / Account / Key)' : 'RIB (Code Banque / Guichet / Compte / Clé)'}</label>
-                  <input type="text" value={tempSettings.rib || ''} onChange={e => setTempSettings({...tempSettings, rib: e.target.value})} placeholder="30003 00888 00020013133 27" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
-                </div>
-                <div className="grid md:grid-cols-2 gap-4 mt-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'BIC / SWIFT' : 'BIC / SWIFT'}</label>
-                    <input type="text" value={tempSettings.bic || ''} onChange={e => setTempSettings({...tempSettings, bic: e.target.value})} placeholder="SOGEFRPP" className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Payment terms (days)' : 'Conditions de paiement (jours)'}</label>
-                    <input type="number" value={tempSettings.payment_terms_days || 30} onChange={e => setTempSettings({...tempSettings, payment_terms_days: parseInt(e.target.value) || 30})} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Invoice legal notices' : 'Mentions légales factures'}</label>
-                  <textarea value={tempSettings.invoice_legal_text || ''} onChange={e => setTempSettings({...tempSettings, invoice_legal_text: e.target.value})} placeholder="En application des articles L441-6 et L441-3 du Code de commerce, en cas de retard de règlement :&#10;Indemnité forfaitaire pour frais de recouvrement de 40€ • Pénalité de retard à compter du 31ème jour au taux de 12% l'an&#10;Aucun escompte ne sera accordé en cas de paiement anticipé. Tous nos prix sont exprimés en euro." rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs" />
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <button onClick={() => setEditingSettings(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">{t('cancel')}</button>
-                <button onClick={saveSettings} disabled={saving} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50">
-                  {saving ? (lang === 'en' ? '⏳ Saving...' : '⏳ Enregistrement...') : (lang === 'en' ? '✅ Save' : '✅ Enregistrer')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="font-bold text-lg text-gray-800 mb-3">{businessSettings.company_name}</h3>
-                  <div className="space-y-1 text-gray-600">
-                    <p>{businessSettings.address}</p>
-                    <p>{businessSettings.postal_code} {businessSettings.city}</p>
-                    <p>📞 {businessSettings.phone}</p>
-                    <p>✉️ {businessSettings.email}</p>
-                    <p>🌐 {businessSettings.website}</p>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-700 mb-3">{lang === 'en' ? 'Legal Information' : 'Informations légales'}</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-500">{lang === 'en' ? 'Capital' : 'Capital'}</span>
-                      <span className="font-medium">{businessSettings.capital} €</span>
-                    </div>
-                    <div className="flex justify-between py-2 border-b border-gray-100">
-                      <span className="text-gray-500">{lang === 'en' ? 'SIRET' : 'SIRET'}</span>
-                      <span className="font-mono">{businessSettings.siret}</span>
-                    </div>
-                    <div className="flex justify-between py-2">
-                      <span className="text-gray-500">{t('tva')}</span>
-                      <span className="font-mono">{businessSettings.tva}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Bank Info Display */}
-              {(businessSettings.iban || businessSettings.bank_name) && (
-                <div className="pt-4 mt-2 border-t border-dashed border-gray-200">
-                  <h4 className="font-medium text-gray-700 mb-3">{lang === 'en' ? '🏦 Bank Details' : '🏦 Coordonnées bancaires'}</h4>
-                  <div className="space-y-2 text-sm">
-                    {businessSettings.bank_name && (
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500">{lang === 'en' ? 'Bank' : 'Banque'}</span>
-                        <span>{businessSettings.bank_name}{businessSettings.bank_branch ? ` — ${businessSettings.bank_branch}` : ''}</span>
-                      </div>
-                    )}
-                    {businessSettings.iban && (
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500">{lang === 'en' ? 'IBAN' : 'IBAN'}</span>
-                        <span className="font-mono text-xs">{businessSettings.iban}</span>
-                      </div>
-                    )}
-                    {businessSettings.rib && (
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500">{lang === 'en' ? 'RIB' : 'RIB'}</span>
-                        <span className="font-mono text-xs">{businessSettings.rib}</span>
-                      </div>
-                    )}
-                    {businessSettings.bic && (
-                      <div className="flex justify-between py-1">
-                        <span className="text-gray-500">{lang === 'en' ? 'BIC' : 'BIC'}</span>
-                        <span className="font-mono">{businessSettings.bic}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between py-1">
-                      <span className="text-gray-500">{lang === 'en' ? 'Payment terms' : 'Conditions paiement'}</span>
-                      <span>{businessSettings.payment_terms_days || 30} jours</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {/* Preview how it looks on documents */}
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                <p className="text-xs text-gray-500 mb-2">{lang === 'en' ? 'Preview on documents:' : 'Aperçu sur les documents:'}</p>
-                <p className="text-xs text-gray-600 text-center">
-                  <strong>{businessSettings.company_name}</strong> au capital de {businessSettings.capital} €<br/>
-                  {businessSettings.address}, {businessSettings.postal_code} {businessSettings.city} | Tél. {businessSettings.phone}<br/>
-                  SIRET {businessSettings.siret} | TVA {businessSettings.tva}<br/>
-                  {businessSettings.email} | {businessSettings.website}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* Other admin cards */}
-      
-      {/* ===== QUOTE CONTENT SETTINGS ===== */}
-      <QuoteContentSettings businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} notify={notify} lang={lang} />
-
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
-          <div className="text-3xl mb-3">💰</div>
-          <h3 className="font-bold text-gray-800">{lang === 'en' ? 'Pricing' : 'Tarification'}</h3>
-          <p className="text-sm text-gray-500">{lang === 'en' ? 'Manage service pricing' : 'Gérer les prix des services'}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
-          <div className="text-3xl mb-3">🔑</div>
-          <h3 className="font-bold text-gray-800">{lang === 'en' ? 'Permissions' : 'Permissions'}</h3>
-          <p className="text-sm text-gray-500">{lang === 'en' ? 'Manage employee access' : 'Gérer les accès des employés'}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md cursor-pointer">
-          <div className="text-3xl mb-3">⚙️</div>
-          <h3 className="font-bold text-gray-800">{lang === 'en' ? 'System' : 'Système'}</h3>
-          <p className="text-sm text-gray-500">{lang === 'en' ? 'Advanced Configuration' : 'Configuration avancée'}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ============================================
 // QUOTE CONTENT SETTINGS COMPONENT
