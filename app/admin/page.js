@@ -6344,9 +6344,9 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 if (device.shipped_at) return 'shipped';
                 if (device.qc_complete) return 'ready_to_ship';
                 if (device.report_complete && !device.qc_complete) return 'final_qc';
-                
+                // If device is physically received, use device status even if RMA is in early/BC phase
+                if (device.received_at || device.status === 'received') return device.status || 'received';
                 // If RMA is in early stages, all devices show RMA status
-                // Once RMA moves past early stages, each device tracks independently
                 return rmaIsEarly ? rma.status : (device.status || rma.status);
               })();
               const currentIndex = getStepIndex(effectiveStatus);
@@ -8072,7 +8072,8 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     // Smart status: use device.status only if it's a "real" device status (received onwards)
     const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
       'repair', 'repair_in_progress', 'final_qc', 'qc_complete', 'qc_rejected', 'ready_to_ship', 'shipped', 'completed'];
-    const effectiveStatus = deviceSpecificStatuses.includes(device.status) ? device.status : rma.status;
+    const effectiveStatus = deviceSpecificStatuses.includes(device.status) ? device.status 
+      : (device.received_at ? 'received' : rma.status);
     const currentIndex = getStepIndex(effectiveStatus, isRepair);
     
     return (
