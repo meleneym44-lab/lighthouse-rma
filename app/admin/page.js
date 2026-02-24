@@ -7403,7 +7403,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
               ⏳ {lang === 'en' ? 'Supplement sent — AWAITING CLIENT APPROVAL' : 'Supplément envoyé — EN ATTENTE APPROBATION CLIENT'}
             </span>
           )}
-          {rma.avenant_approved_at && (
+          {rma.avenant_approved_at && !devices.filter(d => d.additional_work_needed).every(d => d.report_complete || d.qc_complete || ['ready_to_ship', 'shipped'].includes(d.status)) && (
             <span className="px-4 py-2 bg-green-100 border-2 border-green-300 text-green-800 rounded-lg text-sm font-bold flex items-center gap-2">
               ✅ {lang === 'en' ? 'Supplement APPROVED — Work authorized' : 'Supplément APPROUVÉ — Travaux autorisés'}
             </span>
@@ -9229,6 +9229,10 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const supplementApproved = !!rma.avenant_approved_at;
           
           if (totalWithWork === 0 && !supplementSent && !supplementApproved && !supplementPendingReview) return null;
+          
+          // Hide banner once all devices with additional work have completed their reports (work is done)
+          const allWorkDevicesDone = withWork.length > 0 && withWork.every(d => d.report_complete || d.qc_complete || ['ready_to_ship', 'shipped'].includes(d.status));
+          if (supplementApproved && allWorkDevicesDone) return null;
           
           return (
             <>
