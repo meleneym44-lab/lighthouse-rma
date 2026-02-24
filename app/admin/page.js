@@ -6362,7 +6362,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     const isCompleted = index < currentIndex;
                     const isCurrent = index === currentIndex;
                     const isLast = index === steps.length - 1;
-                    const isQuoteStepRed = deviceReceivedEarly && index === 1;
+                    const isQuoteStepRed = deviceReceivedEarly && index === 2;
                     
                     return (
                       <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
@@ -6381,7 +6381,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                                 : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                           }}
                         >
-                          <span className="break-words hyphens-auto">{isQuoteStepRed ? (lang === 'en' ? '⚠️ Quote!' : '⚠️ Devis!') : isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
+                          <span className="break-words hyphens-auto">{isQuoteStepRed ? (lang === 'en' ? '⚠️ No PO!' : '⚠️ Pas de BC!') : isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
                         </div>
                       </div>
                     );
@@ -8083,7 +8083,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           const isLast = index === steps.length - 1;
           
           // Red highlight on quote step (index 1) when device received but quote not approved
-          const isQuoteStepRed = deviceReceivedEarly && index === 1;
+          const isQuoteStepRed = deviceReceivedEarly && index === 2;
           
           return (
             <div key={step.id} className="flex-1" style={{ minWidth: '50px' }}>
@@ -8102,7 +8102,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                       : 'polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%)'
                 }}
               >
-                <span className="break-words hyphens-auto">{isQuoteStepRed ? (lang === 'en' ? '⚠️ Quote!' : '⚠️ Devis!') : isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
+                <span className="break-words hyphens-auto">{isQuoteStepRed ? (lang === 'en' ? '⚠️ No PO!' : '⚠️ Pas de BC!') : isShipped && isLast ? (lang === 'en' ? '✓ Shipped' : '✓ Expédié') : step.label}</span>
               </div>
             </div>
           );
