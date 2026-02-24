@@ -14523,17 +14523,16 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
   
   const printLabel = (pkgIndex) => {
     const labelData = upsLabels[pkgIndex];
+    console.log('🏷️ printLabel called, pkgIndex:', pkgIndex, 'has labelData:', !!labelData, 'upsLabels keys:', Object.keys(upsLabels));
     
     if (labelData) {
       try {
-        console.log('UPS label data starts with:', labelData.substring(0, 20));
-        console.log('UPS label data length:', labelData.length);
-        
-        // Detect format
+        const first20 = labelData.substring(0, 20);
         const isPDF = labelData.startsWith('JVBERi0');
+        console.log('🏷️ Label format:', isPDF ? 'PDF' : 'GIF', '| starts with:', first20, '| length:', labelData.length);
         
         if (isPDF) {
-          // PDF label — decode to blob, open in iframe inside HTML page
+          console.log('🏷️ Opening PDF in iframe...');
           const byteCharacters = atob(labelData);
           const byteNumbers = new Array(byteCharacters.length);
           for (let i = 0; i < byteCharacters.length; i++) {
@@ -14553,7 +14552,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           </body></html>`);
           w.document.close();
         } else {
-          // GIF label — render rotated for 4x6 portrait thermal printing
+          console.log('🏷️ Opening GIF label...');
           const w = window.open('', '_blank');
           if (!w) {
             const a = document.createElement('a');
@@ -14567,7 +14566,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
             @page { size: 4in 6in; margin: 0; }
             * { margin: 0; padding: 0; }
             body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-            img { width: 6in; height: 4in; transform: rotate(90deg); flex-shrink: 0; }
+            img { width: 4in; height: 6in; object-fit: contain; }
             @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
           </style></head><body>
             <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
@@ -14582,7 +14581,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         notify(lang === 'en' ? 'Error opening label' : 'Erreur ouverture étiquette', 'error');
       }
     } else {
-      // Fallback label — formatted for 4x6 thermal (102mm × 152mm)
+      // Fallback label — no UPS data, generate basic label
+      console.log('🏷️ No labelData found, using fallback HTML label');
       const s = shipment;
       const w = window.open('', '_blank');
       if (!w) { notify(lang === 'en' ? 'Popup blocked' : 'Popup bloqué', 'error'); return; }
@@ -16416,7 +16416,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             @page { size: 4in 6in; margin: 0; }
             * { margin: 0; padding: 0; }
             body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-            img { width: 6in; height: 4in; transform: rotate(90deg); flex-shrink: 0; }
+            img { width: 4in; height: 6in; object-fit: contain; }
             @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
           </style></head><body>
             <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
@@ -32395,7 +32395,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
           @page { size: 4in 6in; margin: 0; }
           * { margin: 0; padding: 0; }
           body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-          img { width: 6in; height: 4in; transform: rotate(90deg); flex-shrink: 0; }
+          img { width: 4in; height: 6in; object-fit: contain; }
           @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         </style></head><body>
           <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
