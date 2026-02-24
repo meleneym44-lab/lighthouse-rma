@@ -3747,6 +3747,7 @@ export default function AdminPortal() {
   const [equipment, setEquipment] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [pendingArrivalsCount, setPendingArrivalsCount] = useState(0);
+  const [showReceptions, setShowReceptions] = useState(false);
   const [pendingQuoteReviewCount, setPendingQuoteReviewCount] = useState(0);
   const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
   const [lang, setLang] = useState('fr');
@@ -3923,7 +3924,6 @@ export default function AdminPortal() {
     { id: 'parts', label: t('parts'), icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
     { id: 'rentals', label: t('rentals'), icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'contracts', label: t('contracts'), icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
-    { id: 'pending_arrivals', label: t('pendingArrivals'), icon: '⚠️', badge: pendingArrivalsCount > 0 ? pendingArrivalsCount : null },
     { id: 'invoices', label: t('invoices'), icon: '📋' },
     { id: 'usa_orders', label: t('usaOrders'), icon: '🇺🇸' },
     { id: 'clients', label: t('clients'), icon: '👥' },
@@ -3937,6 +3937,22 @@ export default function AdminPortal() {
   return (
     <div className="min-h-screen bg-gray-100">
       {toast && <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white ${toast.type === 'error' ? 'bg-red-500' : 'bg-green-500'}`}>{toast.msg}</div>}
+      
+      {/* Receptions slide-out panel */}
+      {showReceptions && (
+        <div className="fixed inset-0 z-[55] flex justify-end" onClick={() => setShowReceptions(false)}>
+          <div className="absolute inset-0 bg-black/30" />
+          <div className="relative w-full max-w-5xl bg-gray-100 shadow-2xl overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 bg-white border-b px-6 py-3 flex justify-between items-center shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800">⚠️ {lang === 'en' ? 'Pending Arrivals' : 'Réceptions en attente'}</h2>
+              <button onClick={() => setShowReceptions(false)} className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">✕ {lang === 'en' ? 'Close' : 'Fermer'}</button>
+            </div>
+            <div className="p-6">
+              <PendingArrivalsSheet clients={clients} requests={requests} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />
+            </div>
+          </div>
+        </div>
+      )}
       <header className="bg-white text-[#1a1a2e] shadow-lg border-b-4 border-[#00A651]">
         <div className="max-w-full mx-auto px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -3955,6 +3971,12 @@ export default function AdminPortal() {
             <div className="text-sm text-gray-500">{lang === 'en' ? 'France • Admin Portal' : 'France • Admin Portal'}</div>
           </div>
           <div className="flex items-center gap-4">
+            <button onClick={() => setShowReceptions(true)} className="relative px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-700 transition-colors" title={lang === 'en' ? 'Pending Arrivals' : 'Réceptions'}>
+              ⚠️ {lang === 'en' ? 'Arrivals' : 'Réceptions'}
+              {pendingArrivalsCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse">{pendingArrivalsCount}</span>
+              )}
+            </button>
             <div className="flex bg-gray-100 rounded-lg p-0.5">
               <button onClick={async () => { setLang('fr'); await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>FR</button>
               <button onClick={async () => { setLang('en'); await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>EN</button>
@@ -4059,7 +4081,6 @@ export default function AdminPortal() {
             />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} t={t} lang={lang} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} t={t} lang={lang} reloadMain={loadData} />}
-            {activeSheet === 'pending_arrivals' && <PendingArrivalsSheet clients={clients} requests={requests} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'invoices' && <InvoicesSheet requests={requests} rentals={rentalRequests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'usa_orders' && <USAOrdersSheet clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'rentals' && <RentalsSheet
