@@ -10007,7 +10007,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           }
         : {
             // Regular BC - set to bc_review for admin verification
-            status: 'bc_review',
+            // But don't regress status if device is already received or beyond
+            ...(!['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped', 'completed'].includes(request.status)
+              ? { status: 'bc_review' }
+              : {}),
             bc_submitted_at: new Date().toISOString(),
             bc_signed_by: signatureName,
             bc_signature_date: signatureDateISO,
@@ -10446,7 +10449,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         )}
 
         {/* BC Submitted - Pending Review */}
-        {(request.status === 'bc_review' || request.bc_submitted_at) && request.status !== 'waiting_device' && !['received', 'in_queue', 'calibration_in_progress', 'repair_in_progress', 'shipped', 'completed'].includes(request.status) && (
+        {request.bc_submitted_at && !request.bc_approved_at && !['shipped', 'completed'].includes(request.status) && (
           <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
