@@ -6352,12 +6352,9 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               const isShipped = effectiveStatus === 'shipped' || effectiveStatus === 'delivered' || effectiveStatus === 'completed';
               
-              // Detect: device received but quote/BC not approved
-              const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
-              const initialQuoteDone = rma.quote_sent_at || rma.avenant_sent_at || rma.bc_submitted_at;
+              // Detect: device received but BC not approved
               const deviceIsReceived = device.received_at || device.status === 'received' || rma.received_at;
-              const bcNotApproved = !rma.bc_approved_at;
-              const deviceReceivedEarly = deviceIsReceived && bcNotApproved && (quotePhaseStatuses.includes(rma.status) || !initialQuoteDone);
+              const deviceReceivedEarly = deviceIsReceived && !rma.bc_approved_at;
               
               return (
                 <div className="flex w-full">
@@ -7243,7 +7240,7 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
       });
       
       // Alert: No BC/PO approved — device received but order not yet approved
-      if (!rma.bc_approved_at && !rma.bc_submitted_at) {
+      if (!rma.bc_approved_at) {
         for (const dev of receivedDevices) {
           sendNotification('no_bc', rma.company_id, {
             rmaNumber: rma.request_number,
@@ -8068,12 +8065,9 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     
     const isShipped = device.status === 'shipped' || !!device.shipped_at;
     
-    // Detect: device physically received but quote/BC not yet approved
-    const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
-    const initialQuoteDone = rma.quote_sent_at || rma.avenant_sent_at || rma.bc_submitted_at;
+    // Detect: device physically received but BC not yet approved — red quote step
     const deviceIsReceived = device.received_at || device.status === 'received' || rma.received_at;
-    const bcNotApproved = !rma.bc_approved_at;
-    const deviceReceivedEarly = deviceIsReceived && bcNotApproved && (quotePhaseStatuses.includes(rma.status) || !initialQuoteDone);
+    const deviceReceivedEarly = deviceIsReceived && !rma.bc_approved_at;
     
     // Smart status: use device.status only if it's a "real" device status (received onwards)
     const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
