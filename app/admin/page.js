@@ -9437,7 +9437,7 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
   const [saving, setSaving] = useState(false);
   const [showReportPreview, setShowReportPreview] = useState(false);
   const [partsLoading, setPartsLoading] = useState({});
-  const [technicianName, setTechnicianName] = useState(device.technician_name || '');
+  const [technicianName, setTechnicianName] = useState(device.technician_name || profile?.full_name || '');
   const [staffMembers, setStaffMembers] = useState([]);
   
   // Lock work items if they were previously saved (have items in DB)
@@ -9557,11 +9557,11 @@ function DeviceServiceModal({ device, rma, onBack, notify, reload, profile, busi
     { value: 'À vérifier', label: lang === 'en' ? 'To Review' : 'À vérifier' }
   ];
   
-  // Load staff members for technician dropdown
+  // Load staff members for technician dropdown (LH admin only)
   useEffect(() => {
     const loadStaff = async () => {
-      const { data } = await supabase.from('profiles').select('id, full_name').order('full_name');
-      if (data) setStaffMembers(data.filter(s => s.full_name)); // Only show profiles with names
+      const { data } = await supabase.from('profiles').select('id, full_name').eq('role', 'lh_admin').order('full_name');
+      if (data) setStaffMembers(data.filter(s => s.full_name));
     };
     loadStaff();
   }, []);
