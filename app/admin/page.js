@@ -7167,8 +7167,8 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
   const queuedDevices = devices.filter(d => ['in_queue', 'calibration_in_progress', 'repair_in_progress', 'final_qc', 'ready_to_ship', 'shipped'].includes(d.status));
   
   // Determine what actions are available based on RMA/device state
-  const isWaitingForDevice = ['approved', 'waiting_bc', 'waiting_device', 'waiting_po', 'bc_review', 'bc_approved'].includes(rma.status) && 
-    unreceiveDevices.length > 0;
+  // Show receive button whenever there are unreceived devices (regardless of BC/quote status)
+  const isWaitingForDevice = unreceiveDevices.length > 0 && !['shipped', 'completed', 'cancelled'].includes(rma.status);
   
   const hasReceivedDevices = receivedDevices.length > 0;
   const hasQueuedDevices = queuedDevices.length > 0;
