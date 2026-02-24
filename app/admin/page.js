@@ -14525,28 +14525,34 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     const labelData = upsLabels[pkgIndex];
     
     if (labelData) {
-      // Real UPS label (base64 PDF) — open sized for 4x6 thermal printer (Zebra ZD421d)
+      // Real UPS label (base64 GIF) — 4x6 thermal label for Zebra ZD421d
       try {
-        const byteCharacters = atob(labelData);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        
-        // Open in new tab for thermal printing
-        const w = window.open(url, '_blank');
+        const w = window.open('', '_blank');
         if (!w) {
+          // Fallback: download the GIF
           const a = document.createElement('a');
-          a.href = url;
-          a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.pdf`;
+          a.href = `data:image/gif;base64,${labelData}`;
+          a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.gif`;
           a.click();
+          setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
+          return;
         }
+        w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
+          @page { size: 4in 6in; margin: 0; }
+          * { margin: 0; padding: 0; }
+          body { width: 4in; height: 6in; display: flex; align-items: center; justify-content: center; }
+          img { width: 4in; height: 6in; object-fit: contain; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        </style></head><body>
+          <img src="data:image/gif;base64,${labelData}" />
+          <script>
+            document.querySelector('img').onload = function() { window.print(); };
+          </script>
+        </body></html>`);
+        w.document.close();
         
         setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
-        notify(lang === 'en' ? '📄 UPS label opened — print on Zebra (4×6)' : '📄 Étiquette UPS ouverte — imprimer sur Zebra (4×6)');
+        notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
       } catch (err) {
         console.error('Error opening label:', err);
         notify(lang === 'en' ? 'Error opening label' : 'Erreur ouverture étiquette', 'error');
@@ -14787,7 +14793,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       let upsLabelUrl = null;
       let blUrl = null;
       
-      // Save UPS label PDF if we have it
+      // Save UPS label GIF if we have it
       const labelData = upsLabels[0];
       if (labelData) {
         try {
@@ -14797,11 +14803,11 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
             byteNumbers[i] = byteCharacters.charCodeAt(i);
           }
           const byteArray = new Uint8Array(byteNumbers);
-          const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+          const upsGifBlob = new Blob([byteArray], { type: 'image/gif' });
           
           const safeTracking = (shipment.trackingNumber || 'label').replace(/[^a-zA-Z0-9-_]/g, '');
-          const upsFileName = `${order.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-          upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${order.request_number}`, upsFileName);
+          const upsFileName = `${order.request_number}_UPS_${safeTracking}_${Date.now()}.gif`;
+          upsLabelUrl = await uploadPDFToStorage(upsGifBlob, `shipping/${order.request_number}`, upsFileName);
           console.log('UPS label uploaded:', upsLabelUrl);
         } catch (err) {
           console.error('Error saving UPS label:', err);
@@ -14876,7 +14882,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       if (upsLabelUrl) {
         const { error: attErr1 } = await supabase.from('request_attachments').insert({
           request_id: order.id,
-          file_name: `UPS-Label-${shipment.trackingNumber}.pdf`,
+          file_name: `UPS-Label-${shipment.trackingNumber}.gif`,
           file_url: upsLabelUrl,
           file_type: 'ups_label',
           uploaded_by: profile?.id || null
@@ -32196,7 +32202,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
         notify('⚠️ Erreur génération BL PDF: ' + pdfErr.message, 'warning');
       }
 
-      // Save UPS Label PDF
+      // Save UPS Label GIF
       let upsLabelUrl = null;
       if (shippingMode === 'ups' && Object.keys(upsLabels).length > 0) {
         try {
@@ -32209,15 +32215,15 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
               byteNumbers[j] = byteCharacters.charCodeAt(j);
             }
             const byteArray = new Uint8Array(byteNumbers);
-            const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
-            console.log('📄 UPS PDF blob size:', upsPdfBlob?.size);
+            const upsGifBlob = new Blob([byteArray], { type: 'image/gif' });
+            console.log('📄 UPS GIF blob size:', upsGifBlob?.size);
             const safeTracking = (trackingNumber || 'label').replace(/[^a-zA-Z0-9-_]/g, '');
-            const upsFileName = `${rental.rental_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-            upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rental.rental_number}`, upsFileName);
+            const upsFileName = `${rental.rental_number}_UPS_${safeTracking}_${Date.now()}.gif`;
+            upsLabelUrl = await uploadPDFToStorage(upsGifBlob, `shipping/${rental.rental_number}`, upsFileName);
             console.log('📄 UPS label uploaded, URL:', upsLabelUrl);
           }
         } catch (pdfErr) {
-          console.error('❌ UPS Label PDF save error:', pdfErr);
+          console.error('❌ UPS Label save error:', pdfErr);
           notify('⚠️ Erreur sauvegarde étiquette UPS: ' + pdfErr.message, 'warning');
         }
       }
@@ -32235,8 +32241,8 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
       // Save UPS label as attachment
       if (upsLabelUrl) {
         const { error: upsAttErr } = await supabase.from('request_attachments').insert({
-          rental_request_id: rental.id, file_name: `UPS_${trackingNumber}.pdf`, file_url: upsLabelUrl,
-          file_type: 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
+          rental_request_id: rental.id, file_name: `UPS_${trackingNumber}.gif`, file_url: upsLabelUrl,
+          file_type: 'image/gif', uploaded_by: profile?.id, category: 'ups_label'
         });
         if (upsAttErr) console.error('❌ UPS attachment save error:', upsAttErr);
         else console.log('✅ UPS attachment saved');
