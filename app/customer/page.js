@@ -11602,6 +11602,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             if (device.shipped_at) return 'shipped';
             if (device.qc_complete) return 'ready_to_ship';
             if (device.report_complete && !device.qc_complete) return 'final_qc';
+            // If device is physically received, use device status even if RMA is in early/BC phase
+            if (device.received_at || device.status === 'received') return device.status || 'received';
             return rmaIsEarly ? request.status : (device.status || request.status);
           })();
           
@@ -12051,6 +12053,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                             if (device.shipped_at) return 'shipped';
                             if (device.qc_complete) return 'ready_to_ship';
                             if (device.report_complete && !device.qc_complete) return 'final_qc';
+                            if (device.received_at || device.status === 'received') return device.status || 'received';
                             return rmaIsEarly ? request.status : (device.status || request.status);
                           })();
                           
