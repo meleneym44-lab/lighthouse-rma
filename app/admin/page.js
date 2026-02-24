@@ -6352,10 +6352,12 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
               const currentIndex = getStepIndex(effectiveStatus);
               const isShipped = effectiveStatus === 'shipped' || effectiveStatus === 'delivered' || effectiveStatus === 'completed';
               
-              // Detect: device received but quote not approved
+              // Detect: device received but quote/BC not approved
               const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
               const initialQuoteDone = rma.quote_sent_at || rma.avenant_sent_at || rma.bc_submitted_at;
-              const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status) && !initialQuoteDone;
+              const deviceIsReceived = device.received_at || device.status === 'received' || rma.received_at;
+              const bcNotApproved = !rma.bc_approved_at;
+              const deviceReceivedEarly = deviceIsReceived && bcNotApproved && (quotePhaseStatuses.includes(rma.status) || !initialQuoteDone);
               
               return (
                 <div className="flex w-full">
@@ -7188,6 +7190,16 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
     if (selectedToReceive.size === 0) {
       notify(lang === 'en' ? 'Select at least one device' : 'Sélectionnez au moins un appareil', 'error');
       return;
+    }
+    
+    // Warn if BC not yet approved
+    if (!rma.bc_approved_at && !rma.bc_submitted_at) {
+      const proceed = confirm(
+        lang === 'en' 
+          ? '⚠️ This order has not been approved by the client yet.\n\nThe client will be notified that their device has been received and that approval is still pending.\n\nMark as received anyway?'
+          : '⚠️ Cette commande n\'a pas encore été approuvée par le client.\n\nLe client sera notifié que son appareil a été reçu et que l\'approbation est en attente.\n\nMarquer comme reçu quand même ?'
+      );
+      if (!proceed) return;
     }
     
     setSaving(true);
@@ -8056,11 +8068,12 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     
     const isShipped = device.status === 'shipped' || !!device.shipped_at;
     
-    // Detect: device physically received but quote not yet approved
-    // RMA has received_at OR device status is 'received' BUT RMA is still in quote/BC phase
+    // Detect: device physically received but quote/BC not yet approved
     const quotePhaseStatuses = ['quote_sent', 'pending_quote_review', 'waiting_bc', 'bc_review', 'bc_submitted', 'rma_created', 'approved'];
     const initialQuoteDone = rma.quote_sent_at || rma.avenant_sent_at || rma.bc_submitted_at;
-    const deviceReceivedEarly = (rma.received_at || device.status === 'received') && quotePhaseStatuses.includes(rma.status) && !initialQuoteDone;
+    const deviceIsReceived = device.received_at || device.status === 'received' || rma.received_at;
+    const bcNotApproved = !rma.bc_approved_at;
+    const deviceReceivedEarly = deviceIsReceived && bcNotApproved && (quotePhaseStatuses.includes(rma.status) || !initialQuoteDone);
     
     // Smart status: use device.status only if it's a "real" device status (received onwards)
     const deviceSpecificStatuses = ['received', 'in_queue', 'inspection', 'calibration', 'calibration_in_progress', 
