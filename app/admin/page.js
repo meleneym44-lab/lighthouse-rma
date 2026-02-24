@@ -5862,18 +5862,24 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
     ready: activeRMAs.filter(r => getJobType(r) === 'ready')
   };
   
-  // Avenant pending - sent but customer hasn't submitted BC yet (check both old and new field)
-  const avenantPending = activeRMAs.filter(r => r.avenant_sent_at && !r.avenant_approved_at && !r.avenant_bc_submitted_at && !r.bc_submitted_at);
-  
-  // Supplement recently approved — client approved additional work, ready to proceed
-  const supplementApproved = activeRMAs.filter(r => r.avenant_approved_at && !['shipped', 'completed', 'cancelled'].includes(r.status));
+  // Supplement — all RMAs with supplement activity where work is still in progress
+  // Includes: sent awaiting approval, approved but work not yet at QC/ready/shipped
+  // Excludes: all additional work devices already at QC or beyond
+  const supplementActive = activeRMAs.filter(r => {
+    if (!r.avenant_sent_at && !r.supplement_review_status && !(r.request_devices || []).some(d => d.additional_work_needed)) return false;
+    // Has supplement activity — check if work is still in progress
+    const workDevices = (r.request_devices || []).filter(d => d.additional_work_needed);
+    if (workDevices.length === 0) return false;
+    const allWorkDone = workDevices.every(d => d.qc_complete || ['ready_to_ship', 'shipped'].includes(d.status));
+    if (allWorkDone) return false;
+    return true;
+  });
   
   // Stats for the cards
   const stats = [
     { id: 'all', label: lang === 'en' ? 'Active RMAs' : 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'avenant', label: lang === 'en' ? 'Supplement pending' : 'Supplément en attente', value: avenantPending.length, color: 'bg-amber-500', icon: '📄' },
-    { id: 'avenant_ok', label: lang === 'en' ? 'Supplement ✓' : 'Supplément ✓', value: supplementApproved.length, color: 'bg-green-500', icon: '✅' },
+    { id: 'supplement', label: lang === 'en' ? 'Supplement' : 'Supplément', value: supplementActive.length, color: 'bg-amber-500', icon: '📄' },
     { id: 'waiting_bc', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
     { id: 'waiting_device', label: lang === 'en' ? 'Awaiting Device' : 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
   ];
@@ -5914,10 +5920,8 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       rmas = activeRMAs;
     } else if (filter === 'bc') {
       rmas = needsReview;
-    } else if (filter === 'avenant') {
-      rmas = avenantPending;
-    } else if (filter === 'avenant_ok') {
-      rmas = supplementApproved;
+    } else if (filter === 'supplement') {
+      rmas = supplementActive;
     } else if (filter === 'waiting_bc') {
       rmas = waitingBC;
     } else if (filter === 'waiting_device') {
@@ -6006,7 +6010,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
             onClick={() => setFilter(filter === stat.id ? null : stat.id)}
             className={`bg-white rounded-xl p-4 shadow-sm text-left transition-all ${
               filter === stat.id ? 'ring-2 ring-offset-2 ring-blue-500' : 'hover:shadow-md'
-            } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''} ${stat.value > 0 && stat.id === 'avenant' ? 'ring-2 ring-amber-500 animate-pulse' : ''} ${stat.value > 0 && stat.id === 'avenant_ok' ? 'ring-2 ring-green-500' : ''}`}
+            } ${stat.value > 0 && stat.id === 'bc' ? 'ring-2 ring-red-500 animate-pulse' : ''} ${stat.value > 0 && stat.id === 'supplement' ? 'ring-2 ring-amber-500 animate-pulse' : ''}`}
           >
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center text-2xl text-white`}>{stat.icon}</div>
