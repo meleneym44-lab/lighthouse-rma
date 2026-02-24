@@ -493,7 +493,7 @@ export async function POST(request) {
       .from('profiles')
       .select('id, email, full_name, preferred_language, can_invoice')
       .eq('company_id', companyId)
-      .eq('role', 'customer')
+      .eq('role', 'admin')
       .eq('is_active', true);
 
     // For billing-only events, filter to users with invoice permission
