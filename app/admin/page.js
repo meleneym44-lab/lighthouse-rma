@@ -14525,8 +14525,27 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
     const labelData = upsLabels[pkgIndex];
     
     if (labelData) {
-      // Real UPS label (base64 GIF) — 4x6 thermal label for Zebra ZD421d
+      // UPS label (base64 GIF or PDF) — detect format and handle
       try {
+        // Check if data is PDF (starts with JVBERi0 = %PDF-) or GIF
+        const isPDF = labelData.startsWith('JVBERi0');
+        
+        if (isPDF) {
+          // Legacy PDF label — open as PDF
+          const byteCharacters = atob(labelData);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          window.open(URL.createObjectURL(blob), '_blank');
+          setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
+          notify(lang === 'en' ? '📄 UPS PDF label opened' : '📄 Étiquette UPS PDF ouverte');
+          return;
+        }
+        
+        // GIF label — render as 4x6 image for Zebra thermal printing
         const w = window.open('', '_blank');
         if (!w) {
           // Fallback: download the GIF
@@ -14793,21 +14812,24 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       let upsLabelUrl = null;
       let blUrl = null;
       
-      // Save UPS label GIF if we have it
+      // Save UPS label if we have it (auto-detect GIF vs PDF)
       const labelData = upsLabels[0];
       if (labelData) {
         try {
+          const isPDF = labelData.startsWith('JVBERi0');
           const byteCharacters = atob(labelData);
           const byteNumbers = new Array(byteCharacters.length);
           for (let i = 0; i < byteCharacters.length; i++) {
             byteNumbers[i] = byteCharacters.charCodeAt(i);
           }
           const byteArray = new Uint8Array(byteNumbers);
-          const upsGifBlob = new Blob([byteArray], { type: 'image/gif' });
+          const mimeType = isPDF ? 'application/pdf' : 'image/gif';
+          const ext = isPDF ? 'pdf' : 'gif';
+          const upsBlob = new Blob([byteArray], { type: mimeType });
           
           const safeTracking = (shipment.trackingNumber || 'label').replace(/[^a-zA-Z0-9-_]/g, '');
-          const upsFileName = `${order.request_number}_UPS_${safeTracking}_${Date.now()}.gif`;
-          upsLabelUrl = await uploadPDFToStorage(upsGifBlob, `shipping/${order.request_number}`, upsFileName);
+          const upsFileName = `${order.request_number}_UPS_${safeTracking}_${Date.now()}.${ext}`;
+          upsLabelUrl = await uploadPDFToStorage(upsBlob, `shipping/${order.request_number}`, upsFileName);
           console.log('UPS label uploaded:', upsLabelUrl);
         } catch (err) {
           console.error('Error saving UPS label:', err);
@@ -14880,9 +14902,10 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       
       // Also save as attachments for easy access (errors are non-critical)
       if (upsLabelUrl) {
+        const ext = upsLabelUrl.endsWith('.gif') ? 'gif' : 'pdf';
         const { error: attErr1 } = await supabase.from('request_attachments').insert({
           request_id: order.id,
-          file_name: `UPS-Label-${shipment.trackingNumber}.gif`,
+          file_name: `UPS-Label-${shipment.trackingNumber}.${ext}`,
           file_url: upsLabelUrl,
           file_type: 'ups_label',
           uploaded_by: profile?.id || null
@@ -15491,20 +15514,23 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
         console.error('Internal BL PDF error:', e);
       }
 
-      // Save real UPS label PDF
+      // Save real UPS label (auto-detect GIF vs PDF)
       let upsLabelUrl = null;
       if (upsLabel && trackingNumber) {
         try {
+          const isPDF = upsLabel.startsWith('JVBERi0');
           const byteCharacters = atob(upsLabel);
           const byteNumbers = new Array(byteCharacters.length);
           for (let j = 0; j < byteCharacters.length; j++) {
             byteNumbers[j] = byteCharacters.charCodeAt(j);
           }
           const byteArray = new Uint8Array(byteNumbers);
-          const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+          const mimeType = isPDF ? 'application/pdf' : 'image/gif';
+          const ext = isPDF ? 'pdf' : 'gif';
+          const upsBlob = new Blob([byteArray], { type: mimeType });
           const safeTracking = trackingNumber.replace(/[^a-zA-Z0-9-_]/g, '');
-          const upsFileName = `${destLabel}_UPS_${safeTracking}_${Date.now()}.pdf`;
-          upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+          const upsFileName = `${destLabel}_UPS_${safeTracking}_${Date.now()}.${ext}`;
+          upsLabelUrl = await uploadPDFToStorage(upsBlob, `shipping/${rma.request_number}`, upsFileName);
         } catch (e) {
           console.error('Internal UPS label save error:', e);
         }
@@ -16349,38 +16375,89 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     const labelData = upsLabels[index];
     
     if (labelData) {
-      // Download real UPS PDF label
+      // UPS label (base64 GIF or PDF) — detect format and handle
       try {
-        const byteCharacters = atob(labelData);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
+        // Check if data is PDF (starts with JVBERi0 = %PDF-) or GIF
+        const isPDF = labelData.startsWith('JVBERi0');
         
-        // Open in new tab for printing
-        const w = window.open(url, '_blank');
-        if (!w) {
-          // Fallback: download the file
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `UPS-Label-${s.trackingNumber}.pdf`;
-          a.click();
+        if (isPDF) {
+          // Legacy PDF label — open as PDF
+          const byteCharacters = atob(labelData);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+        } else {
+          // GIF label — render as 4x6 image for thermal printing
+          const w = window.open('', '_blank');
+          if (!w) {
+            const a = document.createElement('a');
+            a.href = `data:image/gif;base64,${labelData}`;
+            a.download = `UPS-Label-${s.trackingNumber}.gif`;
+            a.click();
+            setLabelsPrinted(prev => ({ ...prev, [index]: true }));
+            return;
+          }
+          w.document.write(`<html><head><title>UPS Label - ${s.trackingNumber}</title><style>
+            @page { size: 4in 6in; margin: 0; }
+            * { margin: 0; padding: 0; }
+            body { width: 4in; height: 6in; display: flex; align-items: center; justify-content: center; }
+            img { width: 4in; height: 6in; object-fit: contain; }
+            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          </style></head><body>
+            <img src="data:image/gif;base64,${labelData}" />
+            <script>document.querySelector('img').onload = function() { window.print(); };</script>
+          </body></html>`);
+          w.document.close();
         }
         
         setLabelsPrinted(prev => ({ ...prev, [index]: true }));
-        notify(lang === 'en' ? '📄 UPS label opened' : '📄 Étiquette UPS ouverte');
+        notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
       } catch (err) {
         console.error('Error opening label:', err);
         notify(lang === 'en' ? 'Error opening label' : 'Erreur ouverture étiquette', 'error');
       }
     } else {
-      // Fallback to generated label if no real PDF
+      // Fallback label — formatted for 4x6 thermal (102mm × 152mm)
       const w = window.open('', '_blank');
       if (!w) { notify(lang === 'en' ? 'Popup blocked' : 'Popup bloqué', 'error'); return; }
-      w.document.write(`<html><head><title>UPS Label</title><style>body{font-family:Arial;padding:20px}.label{border:3px solid #351C15;padding:20px;max-width:400px;margin:0 auto}.ups{font-size:32px;font-weight:bold;color:#351C15;text-align:center}.tracking{font-size:18px;font-family:monospace;text-align:center;margin:20px 0;padding:10px;background:#f5f5f5}.addr{margin:15px 0;padding:15px;border:1px solid #ddd}</style></head><body><div class="label"><div class="ups">UPS</div><div class="tracking">${s.trackingNumber}</div><div class="addr"><small>${lang === 'en' ? 'RECIPIENT:' : 'DESTINATAIRE:'}</small><br><strong>${s.address.company_name}</strong><br>${s.address.attention ? 'À l att. de: ' + s.address.attention + '<br>' : ''}${s.address.address_line1}<br>${s.address.postal_code} ${s.address.city}<br>${s.address.country}</div><div class="addr"><small>${lang === 'en' ? 'SENDER:' : 'EXPÉDITEUR:'}</small><br><strong>LIGHTHOUSE FRANCE</strong><br>16 rue Paul Sejourne<br>94000 Créteil<br>France</div><p style="text-align:center;font-size:20px;font-weight:bold">${s.parcels} COLIS - ${s.weight} KG</p><p style="text-align:center;color:#666">${rma.request_number}</p></div><script>window.print()</script></body></html>`);
+      w.document.write(`<html><head><title>UPS Label</title><style>
+        @page { size: 4in 6in; margin: 0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { width: 4in; height: 6in; font-family: Arial, sans-serif; padding: 8px; }
+        .header { text-align: center; border-bottom: 3px solid #351C15; padding-bottom: 6px; margin-bottom: 8px; }
+        .ups-logo { font-size: 28px; font-weight: bold; color: #351C15; }
+        .tracking { font-size: 16px; font-family: monospace; text-align: center; margin: 8px 0; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; font-weight: bold; letter-spacing: 1px; }
+        .addr-block { margin: 6px 0; padding: 8px; border: 1px solid #999; font-size: 11px; line-height: 1.4; }
+        .addr-label { font-size: 9px; font-weight: bold; text-transform: uppercase; color: #666; margin-bottom: 3px; }
+        .addr-name { font-size: 13px; font-weight: bold; }
+        .parcel-info { text-align: center; font-size: 18px; font-weight: bold; margin: 10px 0; }
+        .rma-ref { text-align: center; font-size: 11px; color: #666; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      </style></head><body>
+        <div class="header"><div class="ups-logo">UPS</div></div>
+        <div class="tracking">${s.trackingNumber}</div>
+        <div class="addr-block">
+          <div class="addr-label">${lang === 'en' ? 'SHIP TO:' : 'DESTINATAIRE:'}</div>
+          <div class="addr-name">${s.address.company_name}</div>
+          ${s.address.attention ? '<div>Att: ' + s.address.attention + '</div>' : ''}
+          <div>${s.address.address_line1}</div>
+          <div>${s.address.postal_code} ${s.address.city}</div>
+          <div>${s.address.country}</div>
+        </div>
+        <div class="addr-block">
+          <div class="addr-label">${lang === 'en' ? 'SHIP FROM:' : 'EXPÉDITEUR:'}</div>
+          <div class="addr-name">LIGHTHOUSE FRANCE</div>
+          <div>6 Rue Michael Faraday</div>
+          <div>94000 Créteil, France</div>
+        </div>
+        <div class="parcel-info">${s.parcels} COLIS — ${s.weight} KG</div>
+        <div class="rma-ref">${rma.request_number}</div>
+      <script>window.print()</script></body></html>`);
       w.document.close();
       setLabelsPrinted(prev => ({ ...prev, [index]: true }));
     }
@@ -16652,7 +16729,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           console.error('BL PDF generation error:', pdfErr);
         }
         
-        // Generate UPS Label PDF - only in UPS mode
+        // Save UPS Label (auto-detect GIF vs PDF)
         let upsLabelUrl = null;
         if (shippingMode !== 'bl_only') {
           try {
@@ -16660,16 +16737,19 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
             const realLabelData = upsLabels[i];
             
             if (realLabelData) {
+              const isPDF = realLabelData.startsWith('JVBERi0');
               const byteCharacters = atob(realLabelData);
               const byteNumbers = new Array(byteCharacters.length);
               for (let j = 0; j < byteCharacters.length; j++) {
                 byteNumbers[j] = byteCharacters.charCodeAt(j);
               }
               const byteArray = new Uint8Array(byteNumbers);
-              const upsPdfBlob = new Blob([byteArray], { type: 'application/pdf' });
+              const mimeType = isPDF ? 'application/pdf' : 'image/gif';
+              const ext = isPDF ? 'pdf' : 'gif';
+              const upsBlob = new Blob([byteArray], { type: mimeType });
               const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
-              const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.pdf`;
-              upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
+              const upsFileName = `${rma.request_number}_UPS_${safeTracking}_${Date.now()}.${ext}`;
+              upsLabelUrl = await uploadPDFToStorage(upsBlob, `shipping/${rma.request_number}`, upsFileName);
             } else {
               const upsPdfBlob = await generateUPSLabelPDF(rma, s);
               const safeTracking = (s.trackingNumber || String(i)).replace(/[^a-zA-Z0-9-_]/g, '');
@@ -16677,7 +16757,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
               upsLabelUrl = await uploadPDFToStorage(upsPdfBlob, `shipping/${rma.request_number}`, upsFileName);
             }
           } catch (pdfErr) {
-            console.error('UPS Label PDF save error:', pdfErr);
+            console.error('UPS Label save error:', pdfErr);
           }
         }
         
@@ -32202,24 +32282,27 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
         notify('⚠️ Erreur génération BL PDF: ' + pdfErr.message, 'warning');
       }
 
-      // Save UPS Label GIF
+      // Save UPS Label (auto-detect GIF vs PDF)
       let upsLabelUrl = null;
       if (shippingMode === 'ups' && Object.keys(upsLabels).length > 0) {
         try {
           const labelData = upsLabels[0];
           console.log('📄 UPS label data present:', !!labelData, 'size:', labelData?.length);
           if (labelData) {
+            const isPDF = labelData.startsWith('JVBERi0');
             const byteCharacters = atob(labelData);
             const byteNumbers = new Array(byteCharacters.length);
             for (let j = 0; j < byteCharacters.length; j++) {
               byteNumbers[j] = byteCharacters.charCodeAt(j);
             }
             const byteArray = new Uint8Array(byteNumbers);
-            const upsGifBlob = new Blob([byteArray], { type: 'image/gif' });
-            console.log('📄 UPS GIF blob size:', upsGifBlob?.size);
+            const mimeType = isPDF ? 'application/pdf' : 'image/gif';
+            const ext = isPDF ? 'pdf' : 'gif';
+            const upsBlob = new Blob([byteArray], { type: mimeType });
+            console.log('📄 UPS blob size:', upsBlob?.size, 'format:', ext);
             const safeTracking = (trackingNumber || 'label').replace(/[^a-zA-Z0-9-_]/g, '');
-            const upsFileName = `${rental.rental_number}_UPS_${safeTracking}_${Date.now()}.gif`;
-            upsLabelUrl = await uploadPDFToStorage(upsGifBlob, `shipping/${rental.rental_number}`, upsFileName);
+            const upsFileName = `${rental.rental_number}_UPS_${safeTracking}_${Date.now()}.${ext}`;
+            upsLabelUrl = await uploadPDFToStorage(upsBlob, `shipping/${rental.rental_number}`, upsFileName);
             console.log('📄 UPS label uploaded, URL:', upsLabelUrl);
           }
         } catch (pdfErr) {
@@ -32240,9 +32323,10 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
 
       // Save UPS label as attachment
       if (upsLabelUrl) {
+        const ext = upsLabelUrl.endsWith('.gif') ? 'gif' : 'pdf';
         const { error: upsAttErr } = await supabase.from('request_attachments').insert({
-          rental_request_id: rental.id, file_name: `UPS_${trackingNumber}.gif`, file_url: upsLabelUrl,
-          file_type: 'image/gif', uploaded_by: profile?.id, category: 'ups_label'
+          rental_request_id: rental.id, file_name: `UPS_${trackingNumber}.${ext}`, file_url: upsLabelUrl,
+          file_type: ext === 'gif' ? 'image/gif' : 'application/pdf', uploaded_by: profile?.id, category: 'ups_label'
         });
         if (upsAttErr) console.error('❌ UPS attachment save error:', upsAttErr);
         else console.log('✅ UPS attachment saved');
@@ -32279,13 +32363,30 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
   const printLabel = (pkgIdx) => {
     const labelData = upsLabels[pkgIdx];
     if (labelData) {
-      const byteCharacters = atob(labelData);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) { byteNumbers[i] = byteCharacters.charCodeAt(i); }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      // Detect format: PDF starts with JVBERi0, otherwise GIF
+      const isPDF = labelData.startsWith('JVBERi0');
+      if (isPDF) {
+        const byteCharacters = atob(labelData);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) { byteNumbers[i] = byteCharacters.charCodeAt(i); }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        window.open(URL.createObjectURL(blob), '_blank');
+      } else {
+        const w = window.open('', '_blank');
+        if (!w) return;
+        w.document.write(`<html><head><title>UPS Label</title><style>
+          @page { size: 4in 6in; margin: 0; }
+          * { margin: 0; padding: 0; }
+          body { width: 4in; height: 6in; display: flex; align-items: center; justify-content: center; }
+          img { width: 4in; height: 6in; object-fit: contain; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        </style></head><body>
+          <img src="data:image/gif;base64,${labelData}" />
+          <script>document.querySelector('img').onload = function() { window.print(); };</script>
+        </body></html>`);
+        w.document.close();
+      }
       setLabelsPrinted(prev => ({ ...prev, [pkgIdx]: true }));
     }
   };
