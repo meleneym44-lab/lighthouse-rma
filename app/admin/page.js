@@ -175,7 +175,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.text('RMA: ' + rma.request_number, pageWidth - margin, y + 16, { align: 'right' });
   }
   
-  y += 16;
+  y += 20;
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
