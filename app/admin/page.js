@@ -205,6 +205,8 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const billingAddr = options.billingAddress || null;
   const shippingAddr = options.shippingAddress || null;
   const submitterName = options.submitterName || null;
+  const shipToAttention = options.shipToAttention || submitterName || null;
+  const returnShipping = options.returnShipping || 'standard';
   const boxGap = 6;
   const leftBoxW = (contentWidth - boxGap) / 2;
   const rightBoxW = (contentWidth - boxGap) / 2;
@@ -213,33 +215,47 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
 
   // --- Build text arrays first to calculate box heights ---
   const shipLines = [];
-  const shipName = shippingAddr?.company_name || company.name || 'Client';
-  shipLines.push({ text: shipName, bold: true, size: 11 });
-  const shipAttn = shippingAddr?.attention || submitterName || company.contact_name || null;
-  if (shipAttn) shipLines.push({ text: 'Attn: ' + shipAttn, bold: false, size: 8.5 });
-  if (shippingAddr) {
-    if (shippingAddr.address_line1) shipLines.push({ text: shippingAddr.address_line1, bold: false, size: 8.5 });
-    const shipCityParts = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
-    const shipCityCountry = [shipCityParts, shippingAddr.country].filter(Boolean).join(', ');
-    if (shipCityCountry) shipLines.push({ text: shipCityCountry, bold: false, size: 8.5 });
-    if (shippingAddr.phone) shipLines.push({ text: 'Tél: ' + shippingAddr.phone, bold: false, size: 8.5 });
+  
+  if (returnShipping === 'pickup') {
+    // Customer picks up — no return address needed
+    shipLines.push({ text: 'Enlèvement client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client récupérera l\'appareil', bold: false, size: 8.5 });
+    shipLines.push({ text: 'dans nos locaux après intervention.', bold: false, size: 8.5 });
+  } else if (returnShipping === 'own_label') {
+    // Customer provides own shipping
+    shipLines.push({ text: 'Expédition retour client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client fournira sa propre', bold: false, size: 8.5 });
+    shipLines.push({ text: 'étiquette de retour.', bold: false, size: 8.5 });
   } else {
-    if (company.billing_address || company.address) shipLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
-    const fallbackCityParts = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    const fallbackCountry = company.billing_country || company.country || null;
-    const fallbackCityCountry = [fallbackCityParts, fallbackCountry].filter(Boolean).join(', ');
-    if (fallbackCityCountry) shipLines.push({ text: fallbackCityCountry, bold: false, size: 8.5 });
-    if (company.phone) shipLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
-  }
-  if (rma.request_devices?.some(d => d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id)) {
-    shipLines.push({ text: '* Adresses multiples — voir RMA', bold: false, size: 7, italic: true, color: [150, 150, 150] });
+    // Standard return — show ship-to address
+    const shipName = shippingAddr?.company_name || company.name || 'Client';
+    shipLines.push({ text: shipName, bold: true, size: 11 });
+    const shipAttn = shippingAddr?.attention || shipToAttention || company.contact_name || null;
+    if (shipAttn) shipLines.push({ text: 'Attn: ' + shipAttn, bold: false, size: 8.5 });
+    if (shippingAddr) {
+      if (shippingAddr.address_line1) shipLines.push({ text: shippingAddr.address_line1, bold: false, size: 8.5 });
+      const shipCityParts = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
+      const shipCityCountry = [shipCityParts, shippingAddr.country].filter(Boolean).join(', ');
+      if (shipCityCountry) shipLines.push({ text: shipCityCountry, bold: false, size: 8.5 });
+      if (shippingAddr.phone) shipLines.push({ text: 'Tél: ' + shippingAddr.phone, bold: false, size: 8.5 });
+    } else {
+      if (company.billing_address || company.address) shipLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
+      const fallbackCityParts = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+      const fallbackCountry = company.billing_country || company.country || null;
+      const fallbackCityCountry = [fallbackCityParts, fallbackCountry].filter(Boolean).join(', ');
+      if (fallbackCityCountry) shipLines.push({ text: fallbackCityCountry, bold: false, size: 8.5 });
+      if (company.phone) shipLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
+    }
+    if (rma.request_devices?.some(d => d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id)) {
+      shipLines.push({ text: '* Adresses multiples — voir RMA', bold: false, size: 7, italic: true, color: [150, 150, 150] });
+    }
   }
 
   const billLines = [];
   const billName = billingAddr?.company_name || company.name || 'Client';
   billLines.push({ text: billName, bold: true, size: 11 });
   if (billingAddr) {
-    if (billingAddr.attention) billLines.push({ text: 'Attn: ' + billingAddr.attention, bold: false, size: 8.5 });
+    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
     if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
     const billCityParts = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
     const billCityCountry = [billCityParts, billingAddr.country].filter(Boolean).join(', ');
@@ -278,7 +294,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(0, 51, 102);
-  pdf.text('LIVRER À', margin + boxPad, y + 4);
+  pdf.text(returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'RETOUR CLIENT' : 'LIVRER À', margin + boxPad, y + 4);
   pdf.text('FACTURER À', rightBoxX + boxPad, y + 4);
 
   // Render ship-to lines
@@ -4414,7 +4430,9 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
             quoteSettings: qd.businessSettings?.quote_settings || null,
             billingAddress: qd.billingAddress || null,
             shippingAddress: qd.shippingAddress || null,
-            submitterName: qd.submitterName || null
+            submitterName: qd.submitterName || null,
+            shipToAttention: qd.shipToAttention || qd.submitterName || null,
+            returnShipping: qd.returnShipping || 'standard'
           });
           const revSuffix = qd.newRevisionCount > 0 ? `_rev${qd.newRevisionCount}` : '';
           const fileName = `${qd.rmaNumber}_devis${revSuffix}_${Date.now()}.pdf`;
@@ -27456,6 +27474,10 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
   const today = new Date();
+  const returnShipping = request?.return_shipping || 'standard'; // 'standard', 'own_label', 'pickup'
+  
+  // Ship-to attention: editable, defaults to submitter name → contact name
+  const [shipToAttention, setShipToAttention] = useState('');
   
   // Check if client is in France Metropolitan for shipping
   const clientPostalCode = request?.companies?.billing_postal_code || 
@@ -27538,6 +27560,24 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     };
     loadCalibrationParts();
   }, []);
+
+  // Load submitter name for ship-to attention default
+  useEffect(() => {
+    const loadSubmitterName = async () => {
+      if (request?.submitted_by) {
+        try {
+          const { data } = await supabase.from('profiles').select('full_name').eq('id', request.submitted_by).single();
+          if (data?.full_name) setShipToAttention(data.full_name);
+          else if (request?.companies?.contact_name) setShipToAttention(request.companies.contact_name);
+        } catch (e) {
+          if (request?.companies?.contact_name) setShipToAttention(request.companies.contact_name);
+        }
+      } else if (request?.companies?.contact_name) {
+        setShipToAttention(request.companies.contact_name);
+      }
+    };
+    loadSubmitterName();
+  }, [request?.submitted_by, request?.companies?.contact_name]);
 
   // Helper to get price from parts cache
   const getPartPrice = (partNumber, fallback = 0) => {
@@ -28296,6 +28336,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       createdBy: signatory,
       createdAt: new Date().toISOString(),
       submitterName: submitterName || request.companies?.contact_name || null,
+      shipToAttention: shipToAttention || submitterName || request.companies?.contact_name || null,
+      returnShipping: returnShipping,
       billingAddress: billingAddrData ? {
         company_name: billingAddrData.company_name,
         attention: billingAddrData.attention,
@@ -28435,7 +28477,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
             postal_code: shippingAddrData.postal_code, country: shippingAddrData.country,
             phone: shippingAddrData.phone
           } : null,
-          submitterName: submitterName || request.companies?.contact_name || null
+          submitterName: submitterName || request.companies?.contact_name || null,
+          shipToAttention: shipToAttention || submitterName || request.companies?.contact_name || null,
+          returnShipping: returnShipping
         });
         const revSuffix = newRevisionCount > 0 ? `_rev${newRevisionCount}` : '';
         const fileName = `${rmaNumber}_devis${revSuffix}_${Date.now()}.pdf`;
@@ -28795,6 +28839,27 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                     <p className="text-sm text-gray-600">{request.companies?.billing_address}</p>
                   )}
                   <p className="text-sm text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
+                  
+                  {/* Editable ship-to attention */}
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{lang === 'en' ? 'Ship-to Attention (appears on quote)' : 'Attn livraison (apparaît sur le devis)'}</label>
+                    <input
+                      type="text"
+                      value={shipToAttention}
+                      onChange={e => setShipToAttention(e.target.value)}
+                      placeholder={lang === 'en' ? 'Name of person receiving equipment' : 'Nom de la personne recevant l\'équipement'}
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-300 focus:border-blue-400"
+                    />
+                  </div>
+                  
+                  {/* Return shipping method indicator */}
+                  {returnShipping !== 'standard' && (
+                    <div className={`mt-3 p-2 rounded-lg text-sm font-medium ${returnShipping === 'pickup' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                      {returnShipping === 'pickup' 
+                        ? (lang === 'en' ? '🏭 Customer will pick up device' : '🏭 Le client récupérera l\'appareil')
+                        : (lang === 'en' ? '📦 Customer provides own return shipping' : '📦 Le client fournit sa propre expédition de retour')}
+                    </div>
+                  )}
                 </div>
 
                 {/* Detected Service Sections */}
