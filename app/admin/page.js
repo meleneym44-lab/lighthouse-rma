@@ -138,7 +138,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     return false;
   };
 
-  // ===== HEADER =====
+  // ===== HEADER (tighter) =====
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
@@ -175,122 +175,122 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.text('RMA: ' + rma.request_number, pageWidth - margin, y + 16, { align: 'right' });
   }
   
-  y += 20;
+  y += 18;
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
-  y += 7;
+  y += 4;
 
-  // ===== INFO BAR =====
+  // ===== INFO BAR (tighter) =====
   pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth, 16, 'F');
-  pdf.setFontSize(8);
+  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('VALIDITE', margin + 60, y + 5);
-  pdf.text('CONDITIONS', margin + 115, y + 5);
-  pdf.setFontSize(11);
+  pdf.text('DATE', margin + 5, y + 4);
+  pdf.text('VALIDITE', margin + 60, y + 4);
+  pdf.text('CONDITIONS', margin + 115, y + 4);
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   const qDate = rma.quoted_at ? new Date(rma.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-  pdf.text(qDate, margin + 5, y + 12);
-  pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text('A reception de facture', margin + 115, y + 12);
-  y += 20;
+  pdf.text(qDate, margin + 5, y + 10);
+  pdf.text('30 jours', margin + 60, y + 10);
+  pdf.text('A reception de facture', margin + 115, y + 10);
+  y += 17;
 
-  // ===== ADDRESSES: LIVRER À (left) | FACTURER À (right) =====
+  // ===== ADDRESS BOXES: LIVRER À (left) | FACTURER À (right) =====
   const billingAddr = options.billingAddress || null;
   const shippingAddr = options.shippingAddress || null;
-  const leftColWidth = 95; // mm - generous for ship-to
-  const rightColX = margin + 110; // push bill-to well to the right
-  const rightColWidth = pageWidth - margin - rightColX;
+  const submitterName = options.submitterName || null;
+  const boxGap = 6;
+  const leftBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxX = margin + leftBoxW + boxGap;
+  const boxPad = 4;
 
-  // --- LIVRER À (Ship-to, left) ---
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('LIVRER À', margin, y);
-  // --- FACTURER À (Bill-to, right) ---
-  pdf.text('FACTURER À', rightColX, y);
-  y += 5;
-
-  // Ship-to name
-  pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
+  // --- Build text arrays first to calculate box heights ---
+  const shipLines = [];
   const shipName = shippingAddr?.company_name || company.name || 'Client';
-  pdf.text(shipName, margin, y, { maxWidth: leftColWidth });
-  // Bill-to name
-  const billName = billingAddr?.company_name || company.name || 'Client';
-  pdf.text(billName, rightColX, y, { maxWidth: rightColWidth });
-  y += 6;
-
-  // Ship-to details
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  let shipY = y;
-  // Attention: from shipping address, or fallback to company contact, or RMA submitter
-  const shipAttention = shippingAddr?.attention || company.contact_name || null;
+  shipLines.push({ text: shipName, bold: true, size: 11 });
+  const shipAttn = shippingAddr?.attention || submitterName || company.contact_name || null;
+  if (shipAttn) shipLines.push({ text: 'Attn: ' + shipAttn, bold: false, size: 8.5 });
   if (shippingAddr) {
-    if (shipAttention) { pdf.text('Attn: ' + shipAttention, margin, shipY); shipY += 4; }
-    if (shippingAddr.address_line1) { pdf.text(shippingAddr.address_line1, margin, shipY); shipY += 4; }
+    if (shippingAddr.address_line1) shipLines.push({ text: shippingAddr.address_line1, bold: false, size: 8.5 });
     const shipCity = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
-    if (shipCity) { pdf.text(shipCity, margin, shipY); shipY += 4; }
-    if (shippingAddr.phone) { pdf.text('Tél: ' + shippingAddr.phone, margin, shipY); shipY += 4; }
+    if (shipCity) shipLines.push({ text: shipCity, bold: false, size: 8.5 });
+    if (shippingAddr.phone) shipLines.push({ text: 'Tél: ' + shippingAddr.phone, bold: false, size: 8.5 });
   } else {
-    if (shipAttention) { pdf.text('Attn: ' + shipAttention, margin, shipY); shipY += 4; }
-    if (company.billing_address || company.address) { pdf.text(company.billing_address || company.address, margin, shipY); shipY += 4; }
+    if (company.billing_address || company.address) shipLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
     const fallbackCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    if (fallbackCity) { pdf.text(fallbackCity, margin, shipY); shipY += 4; }
+    if (fallbackCity) shipLines.push({ text: fallbackCity, bold: false, size: 8.5 });
   }
-  // Note for multiple return addresses
   if (rma.request_devices?.some(d => d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id)) {
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(150, 150, 150);
-    pdf.text('* Adresses de retour multiples — voir RMA', margin, shipY);
-    shipY += 4;
+    shipLines.push({ text: '* Adresses multiples — voir RMA', bold: false, size: 7, italic: true, color: [150, 150, 150] });
   }
 
-  // Bill-to details
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  let billY = y;
+  const billLines = [];
+  const billName = billingAddr?.company_name || company.name || 'Client';
+  billLines.push({ text: billName, bold: true, size: 11 });
   if (billingAddr) {
-    if (billingAddr.attention) { pdf.text('Attn: ' + billingAddr.attention, rightColX, billY); billY += 4; }
-    if (billingAddr.address_line1) { pdf.text(billingAddr.address_line1, rightColX, billY, { maxWidth: rightColWidth }); billY += 4; }
+    if (billingAddr.attention) billLines.push({ text: 'Attn: ' + billingAddr.attention, bold: false, size: 8.5 });
+    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
     const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
-    if (billCity) { pdf.text(billCity, rightColX, billY); billY += 4; }
-    // SIRET / TVA - slightly separated
-    billY += 1;
-    pdf.setFontSize(8);
-    if (billingAddr.siret) { pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue); pdf.text('SIRET: ' + billingAddr.siret, rightColX, billY); billY += 4; }
-    if (billingAddr.tva_number) { pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue); pdf.text('TVA: ' + billingAddr.tva_number, rightColX, billY); billY += 4; }
-    if (billingAddr.chorus_invoicing) {
-      pdf.setFontSize(7);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(0, 100, 200);
-      pdf.text('Chorus Pro' + (billingAddr.chorus_service_code ? ` — Service: ${billingAddr.chorus_service_code}` : ''), rightColX, billY);
-      billY += 4;
-    }
+    if (billCity) billLines.push({ text: billCity, bold: false, size: 8.5 });
+    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
   } else {
-    // Fallback: company-level billing
-    if (company.billing_address || company.address) { pdf.text(company.billing_address || company.address, rightColX, billY, { maxWidth: rightColWidth }); billY += 4; }
+    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
     const fallbackBillCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    if (fallbackBillCity) { pdf.text(fallbackBillCity, rightColX, billY); billY += 4; }
-    if (company.tva_number) {
-      billY += 1;
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...darkBlue);
-      pdf.text('TVA: ' + company.tva_number, rightColX, billY);
-      billY += 4;
-    }
+    if (fallbackBillCity) billLines.push({ text: fallbackBillCity, bold: false, size: 8.5 });
+    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
   }
 
-  y = Math.max(shipY, billY) + 6;
+  // Calculate box heights: label(4) + pad + lines + pad
+  const lineH = 4;
+  const bigLineH = 5.5; // for company name (bigger font)
+  const labelH = 4;
+  const getLineH = (line) => line.bold && line.size > 9 ? bigLineH : lineH;
+  const shipContentH = shipLines.reduce((h, l) => h + getLineH(l), 0);
+  const billContentH = billLines.reduce((h, l) => h + getLineH(l), 0);
+  const shipBoxH = labelH + boxPad + shipContentH + boxPad;
+  const billBoxH = labelH + boxPad + billContentH + boxPad;
+  const boxH = Math.max(shipBoxH, billBoxH);
+
+  // Draw boxes
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.5);
+  pdf.rect(margin, y, leftBoxW, boxH);
+  pdf.rect(rightBoxX, y, rightBoxW, boxH);
+
+  // Box labels (inside, top-left)
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(160, 160, 160);
+  pdf.text('LIVRER À', margin + boxPad, y + 4);
+  pdf.text('FACTURER À', rightBoxX + boxPad, y + 4);
+
+  // Render ship-to lines
+  let lineY = y + labelH + boxPad + 2;
+  for (const line of shipLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, margin + boxPad, lineY, { maxWidth: leftBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  // Render bill-to lines
+  lineY = y + labelH + boxPad + 2;
+  for (const line of billLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, rightBoxX + boxPad, lineY, { maxWidth: rightBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  y += boxH + 5;
 
   // ===== SERVICE DESCRIPTION BLOCKS =====
   // Determine what service types are needed based on devices
@@ -4402,7 +4402,8 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
             businessSettings: qd.businessSettings || {},
             quoteSettings: qd.businessSettings?.quote_settings || null,
             billingAddress: qd.billingAddress || null,
-            shippingAddress: qd.shippingAddress || null
+            shippingAddress: qd.shippingAddress || null,
+            submitterName: qd.submitterName || null
           });
           const revSuffix = qd.newRevisionCount > 0 ? `_rev${qd.newRevisionCount}` : '';
           const fileName = `${qd.rmaNumber}_devis${revSuffix}_${Date.now()}.pdf`;
@@ -28216,6 +28217,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     // Fetch billing and shipping addresses if available
     let billingAddrData = null;
     let shippingAddrData = null;
+    let submitterName = null;
     if (request.billing_address_id) {
       try {
         const { data } = await supabase.from('shipping_addresses').select('*').eq('id', request.billing_address_id).single();
@@ -28226,6 +28228,13 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       try {
         const { data } = await supabase.from('shipping_addresses').select('*').eq('id', request.shipping_address_id).single();
         if (data) shippingAddrData = data;
+      } catch (e) {}
+    }
+    // Fetch submitter profile name for Attn line
+    if (request.submitted_by) {
+      try {
+        const { data } = await supabase.from('profiles').select('full_name').eq('id', request.submitted_by).single();
+        if (data?.full_name) submitterName = data.full_name;
       } catch (e) {}
     }
 
@@ -28275,6 +28284,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       isContractRMA: hasContractCoveredDevices,
       createdBy: signatory,
       createdAt: new Date().toISOString(),
+      submitterName: submitterName || request.companies?.contact_name || null,
       billingAddress: billingAddrData ? {
         company_name: billingAddrData.company_name,
         attention: billingAddrData.attention,
@@ -28399,7 +28409,22 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
           quoteNumber: quoteNumber,
           revisionNumber: newRevisionCount,
           businessSettings: businessSettings || {},
-          quoteSettings: businessSettings?.quote_settings || null
+          quoteSettings: businessSettings?.quote_settings || null,
+          billingAddress: billingAddrData ? {
+            company_name: billingAddrData.company_name, attention: billingAddrData.attention,
+            address_line1: billingAddrData.address_line1, city: billingAddrData.city,
+            postal_code: billingAddrData.postal_code, country: billingAddrData.country,
+            phone: billingAddrData.phone, siret: billingAddrData.siret,
+            tva_number: billingAddrData.tva_number, chorus_invoicing: billingAddrData.chorus_invoicing,
+            chorus_service_code: billingAddrData.chorus_service_code
+          } : null,
+          shippingAddress: shippingAddrData ? {
+            company_name: shippingAddrData.company_name, attention: shippingAddrData.attention,
+            address_line1: shippingAddrData.address_line1, city: shippingAddrData.city,
+            postal_code: shippingAddrData.postal_code, country: shippingAddrData.country,
+            phone: shippingAddrData.phone
+          } : null,
+          submitterName: submitterName || request.companies?.contact_name || null
         });
         const revSuffix = newRevisionCount > 0 ? `_rev${newRevisionCount}` : '';
         const fileName = `${rmaNumber}_devis${revSuffix}_${Date.now()}.pdf`;
