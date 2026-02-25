@@ -27464,6 +27464,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   
   // Shipping state - based on parcels count from RMA request
   // No shipping charge when client handles own return (own_label or pickup)
+  const returnShipping = request?.return_shipping || 'standard'; // 'standard', 'own_label', 'pickup'
   const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
   const parcelsCount = request?.parcels_count || 1;
   const [shippingData, setShippingData] = useState({
@@ -27484,8 +27485,6 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   const devices = request?.request_devices || [];
   const signatory = profile?.full_name || 'Lighthouse France';
   const today = new Date();
-  const returnShipping = request?.return_shipping || 'standard'; // 'standard', 'own_label', 'pickup'
-  
   // Ship-to attention: editable, defaults to submitter name → contact name
   const [shipToAttention, setShipToAttention] = useState('');
   
