@@ -201,8 +201,9 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   // ===== ADDRESSES: LIVRER À (left) | FACTURER À (right) =====
   const billingAddr = options.billingAddress || null;
   const shippingAddr = options.shippingAddress || null;
-  const halfWidth = contentWidth / 2 - 4;
-  const rightColX = margin + halfWidth + 8;
+  const leftColWidth = 95; // mm - generous for ship-to
+  const rightColX = margin + 110; // push bill-to well to the right
+  const rightColWidth = pageWidth - margin - rightColX;
 
   // --- LIVRER À (Ship-to, left) ---
   pdf.setFontSize(8);
@@ -218,10 +219,10 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   const shipName = shippingAddr?.company_name || company.name || 'Client';
-  pdf.text(shipName, margin, y, { maxWidth: halfWidth });
+  pdf.text(shipName, margin, y, { maxWidth: leftColWidth });
   // Bill-to name
   const billName = billingAddr?.company_name || company.name || 'Client';
-  pdf.text(billName, rightColX, y, { maxWidth: halfWidth });
+  pdf.text(billName, rightColX, y, { maxWidth: rightColWidth });
   y += 6;
 
   // Ship-to details
@@ -229,13 +230,16 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
   let shipY = y;
+  // Attention: from shipping address, or fallback to company contact, or RMA submitter
+  const shipAttention = shippingAddr?.attention || company.contact_name || null;
   if (shippingAddr) {
-    if (shippingAddr.attention) { pdf.text('Attn: ' + shippingAddr.attention, margin, shipY); shipY += 4; }
+    if (shipAttention) { pdf.text('Attn: ' + shipAttention, margin, shipY); shipY += 4; }
     if (shippingAddr.address_line1) { pdf.text(shippingAddr.address_line1, margin, shipY); shipY += 4; }
     const shipCity = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
     if (shipCity) { pdf.text(shipCity, margin, shipY); shipY += 4; }
     if (shippingAddr.phone) { pdf.text('Tél: ' + shippingAddr.phone, margin, shipY); shipY += 4; }
   } else {
+    if (shipAttention) { pdf.text('Attn: ' + shipAttention, margin, shipY); shipY += 4; }
     if (company.billing_address || company.address) { pdf.text(company.billing_address || company.address, margin, shipY); shipY += 4; }
     const fallbackCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
     if (fallbackCity) { pdf.text(fallbackCity, margin, shipY); shipY += 4; }
@@ -250,20 +254,20 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   }
 
   // Bill-to details
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(...gray);
   let billY = y;
   if (billingAddr) {
     if (billingAddr.attention) { pdf.text('Attn: ' + billingAddr.attention, rightColX, billY); billY += 4; }
-    if (billingAddr.address_line1) { pdf.text(billingAddr.address_line1, rightColX, billY); billY += 4; }
+    if (billingAddr.address_line1) { pdf.text(billingAddr.address_line1, rightColX, billY, { maxWidth: rightColWidth }); billY += 4; }
     const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
     if (billCity) { pdf.text(billCity, rightColX, billY); billY += 4; }
-    if (billingAddr.phone) { pdf.text('Tél: ' + billingAddr.phone, rightColX, billY); billY += 4; }
-    // SIRET / TVA
-    billY += 2;
+    // SIRET / TVA - slightly separated
+    billY += 1;
     pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    if (billingAddr.siret) { pdf.text('SIRET: ' + billingAddr.siret, rightColX, billY); billY += 4; }
-    if (billingAddr.tva_number) { pdf.text('TVA: ' + billingAddr.tva_number, rightColX, billY); billY += 4; }
+    if (billingAddr.siret) { pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue); pdf.text('SIRET: ' + billingAddr.siret, rightColX, billY); billY += 4; }
+    if (billingAddr.tva_number) { pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue); pdf.text('TVA: ' + billingAddr.tva_number, rightColX, billY); billY += 4; }
     if (billingAddr.chorus_invoicing) {
       pdf.setFontSize(7);
       pdf.setFont('helvetica', 'normal');
@@ -273,11 +277,11 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     }
   } else {
     // Fallback: company-level billing
-    if (company.billing_address || company.address) { pdf.text(company.billing_address || company.address, rightColX, billY); billY += 4; }
+    if (company.billing_address || company.address) { pdf.text(company.billing_address || company.address, rightColX, billY, { maxWidth: rightColWidth }); billY += 4; }
     const fallbackBillCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
     if (fallbackBillCity) { pdf.text(fallbackBillCity, rightColX, billY); billY += 4; }
     if (company.tva_number) {
-      billY += 2;
+      billY += 1;
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(...darkBlue);
