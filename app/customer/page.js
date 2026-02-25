@@ -3393,12 +3393,8 @@ export default function CustomerPortal() {
         billing_city: formData.city,
         billing_postal_code: formData.postalCode,
         country: formData.country || 'France',
-        siret: formData.siret || null,
-        tva_number: formData.vatNumber || null,
         phone: formData.phone,
-        email: formData.email,
-        chorus_invoicing: formData.chorusInvoicing || false,
-        chorus_service_code: formData.chorusInvoicing ? (formData.chorusServiceCode || null) : null
+        email: formData.email
       }).select().single();
       
       if (companyError) {
@@ -3439,15 +3435,37 @@ export default function CustomerPortal() {
         can_invoice: true
       });
       
-      // Create default shipping address
+      // Create default shipping address from registration info
       await supabase.from('shipping_addresses').insert({
         company_id: company.id,
         label: 'Principal',
+        company_name: formData.companyName,
+        attention: formData.contactName,
+        phone: formData.phone,
         address_line1: formData.address,
         city: formData.city,
         postal_code: formData.postalCode,
         country: formData.country || 'France',
         is_default: true
+      });
+
+      // Create primary billing/invoicing address with SIRET/TVA/Chorus
+      await supabase.from('shipping_addresses').insert({
+        company_id: company.id,
+        label: 'Facturation principale',
+        company_name: formData.companyName,
+        attention: formData.contactName,
+        phone: formData.phone,
+        address_line1: formData.address,
+        city: formData.city,
+        postal_code: formData.postalCode,
+        country: formData.country || 'France',
+        is_billing: true,
+        is_default: false,
+        siret: formData.siret || null,
+        tva_number: formData.vatNumber || null,
+        chorus_invoicing: formData.chorusInvoicing || false,
+        chorus_service_code: formData.chorusInvoicing ? (formData.chorusServiceCode || null) : null
       });
     } catch (err) {
       console.error('Registration error:', err);
@@ -5070,22 +5088,24 @@ function NewRequestForm({ profile, addresses, t, notify, refresh, setPage }) {
 function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
   const [devices, setDevices] = useState([createNewDevice(1)]);
   const [savedEquipment, setSavedEquipment] = useState([]);
+  const billingAddresses = addresses.filter(a => a.is_billing);
+  const shippingAddresses = addresses.filter(a => !a.is_billing);
+  const [billingAddressId, setBillingAddressId] = useState(billingAddresses[0]?.id || '');
+  const [showNewBillingForm, setShowNewBillingForm] = useState(false);
+  const [newBillingAddress, setNewBillingAddress] = useState({ label: '', company_name: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '', phone: '', siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: '' });
+  const [shippingSameAsBilling, setShippingSameAsBilling] = useState(true);
   const [shipping, setShipping] = useState({ 
-    address_id: addresses.find(a => a.is_default && !a.is_billing)?.id || '',
+    address_id: shippingAddresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' },
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '', country: 'France', phone: '' },
     parcels: 0,
     return_shipping: 'standard' // 'standard', 'own_label', 'pickup'
   });
   const [saving, setSaving] = useState(false);
-  const [billingChoice, setBillingChoice] = useState('');
-  const [billingAddressId, setBillingAddressId] = useState('');
-  const [showNewBillingForm, setShowNewBillingForm] = useState(false);
-  const [newBillingAddress, setNewBillingAddress] = useState({ label: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '' });
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [chorusInvoicing, setChorusInvoicing] = useState(profile?.companies?.chorus_invoicing || false);
-  const [chorusServiceCode, setChorusServiceCode] = useState(profile?.companies?.chorus_service_code || '');
+  // Get selected billing address for SIRET/TVA/Chorus display
+  const selectedBillingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === billingAddressId);
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -5173,7 +5193,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   // Save new address
   const saveNewAddress = async () => {
     const addr = shipping.newAddress;
-    if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.city || !addr.postal_code) {
+    if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.phone || !addr.city || !addr.postal_code) {
       notify('Veuillez remplir tous les champs obligatoires de l\'adresse', 'error');
       return null;
     }
@@ -5183,10 +5203,11 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       label: addr.label || addr.company_name,
       company_name: addr.company_name,
       attention: addr.attention,
+      phone: addr.phone,
       address_line1: addr.address_line1,
       city: addr.city,
       postal_code: addr.postal_code,
-      country: 'France',
+      country: addr.country || 'France',
       is_default: false
     }).select().single();
     
@@ -5236,22 +5257,28 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       return;
     }
 
-    // Validate billing
-    if (!billingChoice && !showNewBillingForm) {
+    // Validate billing address
+    if (!billingAddressId && !showNewBillingForm) {
       notify('Veuillez sélectionner une adresse de facturation', 'error');
       return;
     }
 
-    // Validate Chorus fields
-    if (chorusInvoicing) {
-      if (!profile?.companies?.siret) {
-        notify('Le numéro SIRET est requis pour la facturation Chorus Pro. Complétez-le dans Paramètres > Entreprise.', 'error');
+    // Validate Chorus fields on selected billing address
+    if (selectedBillingAddr?.chorus_invoicing) {
+      if (!selectedBillingAddr.siret) {
+        notify('Le numéro SIRET est requis sur l\'adresse de facturation pour Chorus Pro.', 'error');
         return;
       }
-      if (!chorusServiceCode.trim()) {
-        notify('Le numéro de service Chorus Pro est requis', 'error');
+      if (!selectedBillingAddr.chorus_service_code?.trim()) {
+        notify('Le numéro de service Chorus Pro est requis sur l\'adresse de facturation.', 'error');
         return;
       }
+    }
+
+    // Validate shipping address (if not same as billing)
+    if (!shippingSameAsBilling && !shipping.address_id && !shipping.showNewForm) {
+      notify('Veuillez sélectionner une adresse de livraison/retour', 'error');
+      return;
     }
 
     setShowReviewModal(true);
@@ -5263,18 +5290,11 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     setSaving(true);
     
     try {
-      // Handle shipping address
-      let addressId = shipping.address_id;
-      if (shipping.showNewForm) {
-        addressId = await saveNewAddress();
-        if (!addressId) { setSaving(false); return; }
-      }
-
-      // Handle billing address
-      let finalBillingAddressId = billingChoice === 'same' ? addressId : billingChoice === 'other' ? (billingAddressId || null) : null;
+      // Handle billing address first
+      let finalBillingAddressId = billingAddressId || null;
       if (showNewBillingForm) {
         const ba = newBillingAddress;
-        if (!ba.label || !ba.address_line1 || !ba.postal_code || !ba.city) {
+        if (!ba.label || !ba.company_name || !ba.attention || !ba.address_line1 || !ba.postal_code || !ba.city) {
           notify('Veuillez remplir les champs obligatoires de la nouvelle adresse de facturation', 'error');
           setSaving(false);
           return;
@@ -5289,6 +5309,20 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         }
         finalBillingAddressId = baData.id;
       }
+
+      // Handle shipping address
+      let addressId;
+      if (shippingSameAsBilling) {
+        addressId = finalBillingAddressId;
+      } else if (shipping.showNewForm) {
+        addressId = await saveNewAddress();
+        if (!addressId) { setSaving(false); return; }
+      } else {
+        addressId = shipping.address_id;
+      }
+
+      // Get SIRET/TVA/Chorus from billing address
+      const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === finalBillingAddressId);
 
       // No number assigned yet - will get FR-XXXXX after approval
       const { data: request, error: reqErr } = await supabase
@@ -5305,12 +5339,12 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           urgency: 'normal',
           shipping_address_id: addressId,
           billing_address_id: finalBillingAddressId,
-          billing_siret: profile?.companies?.siret || null,
-          billing_tva: profile?.companies?.tva_number || null,
+          billing_siret: billingAddr?.siret || null,
+          billing_tva: billingAddr?.tva_number || null,
           parcels_count: shipping.return_shipping === 'standard' ? (shipping.parcels || 1) : 0,
           return_shipping: shipping.return_shipping || 'standard',
-          chorus_invoicing: chorusInvoicing || false,
-          chorus_service_code: chorusInvoicing ? (chorusServiceCode || null) : null,
+          chorus_invoicing: billingAddr?.chorus_invoicing || false,
+          chorus_service_code: billingAddr?.chorus_invoicing ? (billingAddr?.chorus_service_code || null) : null,
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -5393,42 +5427,54 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           + Ajouter un Appareil
         </button>
 
-        {/* Shipping Section */}
-        <ShippingSection 
-          shipping={shipping}
-          setShipping={setShipping}
-          addresses={addresses}
-          profile={profile}
-          notify={notify}
-          refresh={refresh}
-        />
-
-        {/* Billing Address Section */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
+        {/* ====== 1. BILLING / INVOICING ADDRESS (first) ====== */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
           <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">💳 Adresse de facturation</h2>
           <select
-            value={showNewBillingForm ? '__new__' : billingChoice === 'company' ? 'company' : billingChoice === 'same' ? 'same' : billingChoice === 'other' ? billingAddressId : ''}
+            value={showNewBillingForm ? '__new__' : billingAddressId}
             onChange={e => {
-              if (e.target.value === '__new__') { setShowNewBillingForm(true); setBillingChoice(''); setBillingAddressId(''); }
-              else if (e.target.value === '') { setBillingChoice(''); setBillingAddressId(''); setShowNewBillingForm(false); }
-              else if (e.target.value === 'company') { setBillingChoice('company'); setBillingAddressId(''); setShowNewBillingForm(false); }
-              else if (e.target.value === 'same') { setBillingChoice('same'); setBillingAddressId(''); setShowNewBillingForm(false); }
-              else { setBillingChoice('other'); setBillingAddressId(e.target.value); setShowNewBillingForm(false); }
+              if (e.target.value === '__new__') { setShowNewBillingForm(true); setBillingAddressId(''); }
+              else { setBillingAddressId(e.target.value); setShowNewBillingForm(false); }
             }}
-            className={`w-full px-3 py-2.5 border rounded-lg text-sm ${!billingChoice && !showNewBillingForm ? 'border-gray-300 text-gray-400' : 'border-gray-300'}`}
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm ${!billingAddressId && !showNewBillingForm ? 'border-gray-300 text-gray-400' : 'border-gray-300'}`}
           >
-            <option value="">{"Sélectionner une adresse de facturation..."}</option>
-            <option value="same">{"Identique à l'adresse de retour"}</option>
-            <option value="company">{profile?.companies?.name} — {profile?.companies?.billing_address}, {profile?.companies?.billing_postal_code} {profile?.companies?.billing_city} (Siège)</option>
-            {addresses.filter(a => a.is_billing).map(a => (
-              <option key={a.id} value={a.id}>{a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}</option>
-            ))}
-            {addresses.filter(a => !a.is_billing && a.id !== shipping.address_id).map(a => (
-              <option key={a.id} value={a.id}>{a.label || a.company_name} — {a.address_line1}, {a.postal_code} {a.city}</option>
+            <option value="">Sélectionner une adresse de facturation...</option>
+            {billingAddresses.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.company_name || a.label} — {a.address_line1}, {a.postal_code} {a.city}
+                {a.siret ? ` (SIRET: ${a.siret})` : ''}
+              </option>
             ))}
             <option value="__new__">+ Nouvelle adresse de facturation...</option>
           </select>
 
+          {/* Show selected billing address details */}
+          {selectedBillingAddr && !showNewBillingForm && (
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+              <p className="font-medium text-[#1E3A5F] text-sm">{selectedBillingAddr.company_name || selectedBillingAddr.label}</p>
+              {selectedBillingAddr.attention && <p className="text-xs text-gray-600">Attn: {selectedBillingAddr.attention}</p>}
+              <p className="text-xs text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+              <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-3">
+                <span className={selectedBillingAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                  SIRET: {selectedBillingAddr.siret ? <span className="font-mono">{selectedBillingAddr.siret}</span> : 'Non renseigné'}
+                </span>
+                <span className={selectedBillingAddr.tva_number ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                  TVA: {selectedBillingAddr.tva_number ? <span className="font-mono">{selectedBillingAddr.tva_number}</span> : 'Non renseigné'}
+                </span>
+              </div>
+              {selectedBillingAddr.chorus_invoicing && (
+                <div className="mt-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
+                  {selectedBillingAddr.chorus_service_code && <span className="text-xs text-gray-500 ml-2">Service: <span className="font-mono">{selectedBillingAddr.chorus_service_code}</span></span>}
+                </div>
+              )}
+              {(!selectedBillingAddr.siret || !selectedBillingAddr.tva_number) && (
+                <button type="button" onClick={() => setPage('settings')} className="text-xs text-[#3B7AB4] underline mt-1">Compléter dans les paramètres</button>
+              )}
+            </div>
+          )}
+
+          {/* New billing address form */}
           {showNewBillingForm && (
             <div className="mt-4 p-4 bg-gray-50 rounded-lg border-l-4 border-[#3B7AB4]">
               <h3 className="font-bold text-[#1E3A5F] mb-3 text-sm">Nouvelle adresse de facturation</h3>
@@ -5436,11 +5482,17 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                 <div className="md:col-span-2">
                   <input type="text" value={newBillingAddress.label} onChange={e => setNewBillingAddress({ ...newBillingAddress, label: e.target.value })} placeholder="Nom (ex: Siège social, Comptabilité) *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                 </div>
+                <div>
+                  <input type="text" value={newBillingAddress.company_name || ''} onChange={e => setNewBillingAddress({ ...newBillingAddress, company_name: e.target.value })} placeholder="Nom de la société *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="text" value={newBillingAddress.attention} onChange={e => setNewBillingAddress({ ...newBillingAddress, attention: e.target.value })} placeholder="À l'attention de *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
                 <div className="md:col-span-2">
                   <input type="text" value={newBillingAddress.address_line1} onChange={e => setNewBillingAddress({ ...newBillingAddress, address_line1: e.target.value })} placeholder="Adresse *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                 </div>
                 <div>
-                  <input type="text" value={newBillingAddress.attention} onChange={e => setNewBillingAddress({ ...newBillingAddress, attention: e.target.value })} placeholder="Attn: destinataire" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <input type="tel" value={newBillingAddress.phone || ''} onChange={e => setNewBillingAddress({ ...newBillingAddress, phone: e.target.value })} placeholder="Téléphone *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                 </div>
                 <div>
                   <input type="text" value={newBillingAddress.country} onChange={e => setNewBillingAddress({ ...newBillingAddress, country: e.target.value })} placeholder="Pays" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
@@ -5451,74 +5503,60 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                 <div>
                   <input type="text" value={newBillingAddress.city} onChange={e => setNewBillingAddress({ ...newBillingAddress, city: e.target.value })} placeholder="Ville *" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
                 </div>
+                <div>
+                  <input type="text" value={newBillingAddress.siret || ''} onChange={e => setNewBillingAddress({ ...newBillingAddress, siret: e.target.value })} placeholder="SIRET" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <input type="text" value={newBillingAddress.tva_number || ''} onChange={e => setNewBillingAddress({ ...newBillingAddress, tva_number: e.target.value })} placeholder="N° TVA" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={newBillingAddress.chorus_invoicing} onChange={e => setNewBillingAddress({ ...newBillingAddress, chorus_invoicing: e.target.checked })} className="w-4 h-4 text-[#3B7AB4]" />
+                    Facturation via Chorus Pro
+                  </label>
+                  {newBillingAddress.chorus_invoicing && (
+                    <input type="text" value={newBillingAddress.chorus_service_code || ''} onChange={e => setNewBillingAddress({ ...newBillingAddress, chorus_service_code: e.target.value })} placeholder="N° Service Chorus Pro *" className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  )}
+                </div>
               </div>
             </div>
           )}
-
-          {/* SIRET/TVA status */}
-          <div className="mt-3 flex items-center gap-4 text-xs">
-            <span className={profile?.companies?.siret ? 'text-green-600' : 'text-amber-500'}>
-              SIRET: {profile?.companies?.siret ? <span className="font-mono">{profile.companies.siret}</span> : 'Non renseigné'}
-            </span>
-            <span className={profile?.companies?.tva_number ? 'text-green-600' : 'text-amber-500'}>
-              TVA: {profile?.companies?.tva_number ? <span className="font-mono">{profile.companies.tva_number}</span> : 'Non renseigné'}
-            </span>
-            {(!profile?.companies?.siret || !profile?.companies?.tva_number) && (
-              <button type="button" onClick={() => setPage('settings')} className="text-[#3B7AB4] underline ml-auto">Compléter</button>
-            )}
-          </div>
-
-          {/* Chorus Pro invoicing */}
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-700">Facturation via Chorus Pro</span>
-                <div className="relative group">
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-xs cursor-help font-bold">?</span>
-                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg invisible group-hover:visible z-50">
-                    <p className="font-bold mb-1">Chorus Pro</p>
-                    <p>Plateforme de facturation électronique obligatoire pour le secteur public français. Activez cette option si votre organisation reçoit ses factures via Chorus Pro.</p>
-                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setChorusInvoicing(!chorusInvoicing)}
-                className={`relative w-12 h-6 rounded-full transition-colors ${chorusInvoicing ? 'bg-[#00A651]' : 'bg-gray-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${chorusInvoicing ? 'translate-x-6' : ''}`} />
-              </button>
-            </div>
-            {chorusInvoicing && (
-              <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
-                <p className="text-xs text-blue-600">La facture sera transmise via Chorus Pro. Veuillez vérifier vos identifiants.</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">SIRET *</label>
-                    <input
-                      type="text"
-                      value={profile?.companies?.siret || ''}
-                      readOnly
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500"
-                    />
-                    {!profile?.companies?.siret && <p className="text-xs text-red-500 mt-0.5">Requis — <button type="button" onClick={() => setPage('settings')} className="underline">compléter dans les paramètres</button></p>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">N° Service Chorus *</label>
-                    <input
-                      type="text"
-                      value={chorusServiceCode}
-                      onChange={e => setChorusServiceCode(e.target.value)}
-                      placeholder="Ex: SERVICE-12345"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
+
+        {/* ====== 2. SHIPPING / RETURN ADDRESS ====== */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">📦 Adresse de livraison / retour</h2>
+          
+          {/* Same as billing toggle */}
+          <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border cursor-pointer mb-4">
+            <input
+              type="checkbox"
+              checked={shippingSameAsBilling}
+              onChange={e => setShippingSameAsBilling(e.target.checked)}
+              className="w-4 h-4 text-[#3B7AB4]"
+            />
+            <span className="text-sm font-medium">Identique à l'adresse de facturation</span>
+          </label>
+
+          {shippingSameAsBilling && selectedBillingAddr && (
+            <p className="text-sm text-gray-500 mb-4 italic">
+              ✓ {selectedBillingAddr.company_name || selectedBillingAddr.label}, {selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}
+            </p>
+          )}
+        </div>
+
+        {!shippingSameAsBilling && (
+          <div className="mt-2">
+            <ShippingSection 
+              shipping={shipping}
+              setShipping={setShipping}
+              addresses={addresses}
+              profile={profile}
+              notify={notify}
+              refresh={refresh}
+            />
+          </div>
+        )}
 
         {/* Submit Buttons */}
         <div className="flex gap-4 mt-8">
@@ -5541,15 +5579,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       {/* Review Modal */}
       {showReviewModal && (() => {
-        const retAddr = shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id);
+        const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === billingAddressId);
+        const shippingAddr = shippingSameAsBilling ? billingAddr : (shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id));
         const co = profile?.companies || {};
-        const getBillingAddr = () => {
-          if (showNewBillingForm) return `${newBillingAddress.label}, ${newBillingAddress.address_line1}, ${newBillingAddress.postal_code} ${newBillingAddress.city}`;
-          if (billingChoice === 'same') return retAddr ? `${retAddr.company_name || retAddr.label || co.name}, ${retAddr.address_line1}, ${retAddr.postal_code} ${retAddr.city}` : '—';
-          if (billingChoice === 'company') return `${co.name}, ${co.billing_address}, ${co.billing_postal_code} ${co.billing_city}`;
-          const a = addresses.find(x => x.id === billingAddressId);
-          return a ? `${a.label || a.company_name}, ${a.address_line1}, ${a.postal_code} ${a.city}` : '—';
-        };
         const serviceLabels = { calibration: 'Étalonnage', repair: 'Réparation', calibration_repair: 'Étalonnage + Réparation', other: 'Autre' };
         const returnShippingLabels = {
           standard: '🚚 Retour standard par Lighthouse',
@@ -5603,41 +5635,49 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
                 <hr className="border-gray-200" />
 
-                {/* Return Address */}
-                <div>
-                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
-                    📍 Adresse de retour
-                  </h3>
-                  {retAddr && (
-                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-                      <p className="font-medium text-[#1E3A5F]">{retAddr.company_name || retAddr.label || co.name}</p>
-                      {retAddr.attention && <p className="text-sm text-gray-600">Attn: {retAddr.attention}</p>}
-                      <p className="text-sm text-gray-600">{retAddr.address_line1}</p>
-                      <p className="text-sm text-gray-600">{retAddr.postal_code} {retAddr.city}, {retAddr.country || 'France'}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Billing */}
+                {/* Billing Address */}
                 <div>
                   <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
                     💳 Facturation
                   </h3>
-                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
-                    <p className="text-sm text-gray-700">{getBillingAddr()}</p>
-                    {(co.siret || co.tva_number) && (
-                      <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500 space-y-0.5">
-                        {co.siret && <p>SIRET: <span className="font-mono">{co.siret}</span></p>}
-                        {co.tva_number && <p>TVA: <span className="font-mono">{co.tva_number}</span></p>}
-                      </div>
-                    )}
-                    {chorusInvoicing && (
-                      <div className="mt-2 pt-2 border-t border-gray-200">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
-                        {chorusServiceCode && <span className="text-xs text-gray-500 ml-2">Service: <span className="font-mono">{chorusServiceCode}</span></span>}
-                      </div>
-                    )}
-                  </div>
+                  {billingAddr && (
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                      <p className="font-medium text-[#1E3A5F]">{billingAddr.company_name || billingAddr.label || co.name}</p>
+                      {billingAddr.attention && <p className="text-sm text-gray-600">Attn: {billingAddr.attention}</p>}
+                      <p className="text-sm text-gray-600">{billingAddr.address_line1}</p>
+                      <p className="text-sm text-gray-600">{billingAddr.postal_code} {billingAddr.city}, {billingAddr.country || 'France'}</p>
+                      {(billingAddr.siret || billingAddr.tva_number) && (
+                        <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500 space-y-0.5">
+                          {billingAddr.siret && <p>SIRET: <span className="font-mono">{billingAddr.siret}</span></p>}
+                          {billingAddr.tva_number && <p>TVA: <span className="font-mono">{billingAddr.tva_number}</span></p>}
+                        </div>
+                      )}
+                      {billingAddr.chorus_invoicing && (
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
+                          {billingAddr.chorus_service_code && <span className="text-xs text-gray-500 ml-2">Service: <span className="font-mono">{billingAddr.chorus_service_code}</span></span>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Shipping / Return Address */}
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    📍 Adresse de livraison / retour
+                  </h3>
+                  {shippingSameAsBilling ? (
+                    <p className="text-sm text-gray-500 italic">Identique à l'adresse de facturation</p>
+                  ) : shippingAddr && (
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                      <p className="font-medium text-[#1E3A5F]">{shippingAddr.company_name || shippingAddr.label || co.name}</p>
+                      {shippingAddr.attention && <p className="text-sm text-gray-600">Attn: {shippingAddr.attention}</p>}
+                      <p className="text-sm text-gray-600">{shippingAddr.address_line1}</p>
+                      <p className="text-sm text-gray-600">{shippingAddr.postal_code} {shippingAddr.city}, {shippingAddr.country || 'France'}</p>
+                      {shippingAddr.phone && <p className="text-sm text-gray-500">📞 {shippingAddr.phone}</p>}
+                    </div>
+                  )}
                 </div>
 
                 {/* Return Shipping Method */}
@@ -5735,7 +5775,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
   const [shipping, setShipping] = useState({ 
     address_id: addresses.find(a => a.is_default && !a.is_billing)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '' }
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '', country: 'France', phone: '' }
   });
   const [saving, setSaving] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
@@ -5833,7 +5873,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
     let addressId = shipping.address_id;
     if (shipping.showNewForm) {
       const addr = shipping.newAddress;
-      if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.city || !addr.postal_code) {
+      if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.phone || !addr.city || !addr.postal_code) {
         notify('Veuillez remplir tous les champs obligatoires de l\'adresse', 'error');
         return;
       }
@@ -5843,10 +5883,11 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
         label: addr.label || addr.company_name,
         company_name: addr.company_name,
         attention: addr.attention,
+        phone: addr.phone,
         address_line1: addr.address_line1,
         city: addr.city,
         postal_code: addr.postal_code,
-        country: 'France',
+        country: addr.country || 'France',
         is_default: false
       }).select().single();
       
@@ -6132,6 +6173,16 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Téléphone *</label>
+                <input
+                  type="tel"
+                  value={shipping.newAddress.phone}
+                  onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, phone: e.target.value } })}
+                  placeholder="+33 1 23 45 67 89"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
               </div>
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
@@ -6802,6 +6853,19 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-gray-700 mb-1">Téléphone *</label>
+              <input
+                type="tel"
+                value={shipping.newAddress.phone || ''}
+                onChange={e => setShipping({
+                  ...shipping,
+                  newAddress: { ...shipping.newAddress, phone: e.target.value }
+                })}
+                placeholder="+33 1 23 45 67 89"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
               <input
@@ -7218,7 +7282,7 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
                 <option value="">-- Sélectionner une adresse --</option>
                 {addresses.filter(a => !a.is_billing).map(addr => (
                   <option key={addr.id} value={addr.id}>
-                    {addr.label} - {addr.city} {addr.is_default ? '(Par défaut)' : ''}
+                    {addr.company_name || addr.label} - {addr.address_line1}, {addr.postal_code} {addr.city} {addr.is_default ? '(Par défaut)' : ''}
                   </option>
                 ))}
               </select>
@@ -7250,11 +7314,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     name: profile?.companies?.name || '',
     billing_address: profile?.companies?.billing_address || '',
     billing_city: profile?.companies?.billing_city || '',
-    billing_postal_code: profile?.companies?.billing_postal_code || '',
-    siret: profile?.companies?.siret || '',
-    tva_number: profile?.companies?.tva_number || '',
-    chorus_invoicing: profile?.companies?.chorus_invoicing || false,
-    chorus_service_code: profile?.companies?.chorus_service_code || ''
+    billing_postal_code: profile?.companies?.billing_postal_code || ''
   });
   
   // Password change
@@ -7268,7 +7328,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   const [editingAddress, setEditingAddress] = useState(null);
   const [addingBillingAddress, setAddingBillingAddress] = useState(false);
   const [newAddress, setNewAddress] = useState({
-    label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false
+    label: '', company_name: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false, siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: ''
   });
   
   // Notification preferences
@@ -7286,8 +7346,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
   const [inviteData, setInviteData] = useState({ email: '', access_level: 'viewer' });
   const [lastInviteLink, setLastInviteLink] = useState('');
   const [loadingTeam, setLoadingTeam] = useState(false);
-  const [editingIdentifiers, setEditingIdentifiers] = useState(false);
-  const [identifierConfirmText, setIdentifierConfirmText] = useState('');
   
   const [saving, setSaving] = useState(false);
   
@@ -7593,33 +7651,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     }
   };
 
-  // Save identifiers (SIRET/TVA) - separate locked action
-  const saveIdentifiers = async () => {
-    setSaving(true);
-    const updateData = {
-      siret: companyData.siret || null,
-      tva_number: companyData.tva_number || null
-    };
-    
-    const { data, error } = await supabase
-      .from('companies')
-      .update(updateData)
-      .eq('id', profile.company_id)
-      .select();
-    
-    setSaving(false);
-    
-    if (error) {
-      notify(`Erreur: ${error.message}`, 'error');
-    } else if (!data || data.length === 0) {
-      notify('Erreur: mise à jour refusée. Vérifiez vos permissions dans Supabase (RLS).', 'error');
-    } else {
-      notify('Identifiants mis à jour!');
-      setEditingIdentifiers(false);
-      setIdentifierConfirmText('');
-      refresh();
-    }
-  };
 
   // Change password
   const changePassword = async (e) => {
@@ -7687,7 +7718,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     setShowAddAddress(false);
     setEditingAddress(null);
     setAddingBillingAddress(false);
-    setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false });
+    setNewAddress({ label: '', company_name: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false, siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: '' });
     refresh();
   };
 
@@ -7709,6 +7740,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
     setEditingAddress(addr);
     setNewAddress({
       label: addr.label || '',
+      company_name: addr.company_name || '',
       attention: addr.attention || '',
       address_line1: addr.address_line1 || '',
       address_line2: addr.address_line2 || '',
@@ -7717,7 +7749,11 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
       country: addr.country || 'France',
       phone: addr.phone || '',
       is_default: addr.is_default || false,
-      is_billing: addr.is_billing || false
+      is_billing: addr.is_billing || false,
+      siret: addr.siret || '',
+      tva_number: addr.tva_number || '',
+      chorus_invoicing: addr.chorus_invoicing || false,
+      chorus_service_code: addr.chorus_service_code || ''
     });
     setAddingBillingAddress(!!addr.is_billing);
     setShowAddAddress(true);
@@ -7904,67 +7940,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
-                    <input
-                      type="text"
-                      value={companyData.siret}
-                      onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
-                      placeholder="123 456 789 00012"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
-                    <input
-                      type="text"
-                      value={companyData.tva_number}
-                      onChange={e => setCompanyData({ ...companyData, tva_number: e.target.value })}
-                      placeholder="FR12345678901"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                    />
-                  </div>
-                </div>
-                
-                {/* Chorus Pro */}
-                <div className="pt-4 mt-4 border-t border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-gray-700">Facturation via Chorus Pro</label>
-                      <div className="relative group">
-                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-xs cursor-help font-bold">?</span>
-                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg invisible group-hover:visible z-50">
-                          <p className="font-bold mb-1">Chorus Pro</p>
-                          <p>Chorus Pro est la plateforme de facturation électronique obligatoire pour les entités du secteur public en France (État, collectivités, hôpitaux, universités, etc.). Si votre organisation utilise Chorus Pro, vos factures seront transmises via cette plateforme.</p>
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCompanyData({ ...companyData, chorus_invoicing: !companyData.chorus_invoicing })}
-                      className={`relative w-12 h-6 rounded-full transition-colors ${companyData.chorus_invoicing ? 'bg-[#00A651]' : 'bg-gray-300'}`}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${companyData.chorus_invoicing ? 'translate-x-6' : ''}`} />
-                    </button>
-                  </div>
-                  {companyData.chorus_invoicing && (
-                    <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200 space-y-3">
-                      <p className="text-xs text-blue-600">Veuillez renseigner votre numéro de service Chorus Pro pour la facturation.</p>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">N° Service Chorus Pro *</label>
-                        <input
-                          type="text"
-                          value={companyData.chorus_service_code}
-                          onChange={e => setCompanyData({ ...companyData, chorus_service_code: e.target.value })}
-                          placeholder="Ex: SERVICE-12345"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={() => {
@@ -7973,11 +7948,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                         name: profile?.companies?.name || '',
                         billing_address: profile?.companies?.billing_address || '',
                         billing_city: profile?.companies?.billing_city || '',
-                        billing_postal_code: profile?.companies?.billing_postal_code || '',
-                        siret: profile?.companies?.siret || '',
-                        tva_number: profile?.companies?.tva_number || '',
-                        chorus_invoicing: profile?.companies?.chorus_invoicing || false,
-                        chorus_service_code: profile?.companies?.chorus_service_code || ''
+                        billing_postal_code: profile?.companies?.billing_postal_code || ''
                       });
                     }}
                     className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
@@ -8000,33 +7971,15 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                   <p className="font-medium text-[#1E3A5F]">{profile?.companies?.name || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Adresse de facturation</p>
+                  <p className="text-sm text-gray-500">Adresse du siège</p>
                   <p className="font-medium text-[#1E3A5F]">
                     {profile?.companies?.billing_address || '—'}
                     {profile?.companies?.billing_postal_code && `, ${profile?.companies?.billing_postal_code}`}
                     {profile?.companies?.billing_city && ` ${profile?.companies?.billing_city}`}
                   </p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">SIRET</p>
-                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.siret || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">N° TVA</p>
-                  <p className="font-medium text-[#1E3A5F]">{profile?.companies?.tva_number || '—'}</p>
-                </div>
                 <div className="md:col-span-2">
-                  <p className="text-sm text-gray-500">Facturation Chorus Pro</p>
-                  {profile?.companies?.chorus_invoicing ? (
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">✓ Activé</span>
-                      {profile?.companies?.chorus_service_code && (
-                        <span className="text-sm text-gray-600">N° Service: <span className="font-mono font-medium">{profile.companies.chorus_service_code}</span></span>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="font-medium text-gray-400">Non activé</p>
-                  )}
+                  <p className="text-xs text-gray-400 italic">Les identifiants SIRET, TVA et Chorus Pro sont gérés par adresse de facturation ci-dessous.</p>
                 </div>
               </div>
             )}
@@ -8043,7 +7996,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
               onClick={() => {
                 setEditingAddress(null);
                 setAddingBillingAddress(false);
-                setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false });
+                setNewAddress({ label: '', company_name: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: false, siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: '' });
                 setShowAddAddress(true);
               }}
               className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
@@ -8076,6 +8029,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                             </span>
                           )}
                         </div>
+                        {addr.company_name && <p className="text-sm text-gray-700 font-medium">{addr.company_name}</p>}
                         {addr.attention && <p className="text-sm text-gray-600">À l'attention de: {addr.attention}</p>}
                         <p className="text-sm text-gray-700">{addr.address_line1}</p>
                         {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
@@ -8124,7 +8078,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
               onClick={() => {
                 setEditingAddress(null);
                 setAddingBillingAddress(true);
-                setNewAddress({ label: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: true });
+                setNewAddress({ label: '', company_name: '', attention: '', address_line1: '', address_line2: '', city: '', postal_code: '', country: 'France', phone: '', is_default: false, is_billing: true, siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: '' });
                 setShowAddAddress(true);
               }}
               className="px-4 py-2 bg-[#3B7AB4] text-white rounded-lg font-medium hover:bg-[#1E3A5F]"
@@ -8145,10 +8099,25 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex-1">
                         <h3 className="font-bold text-[#1E3A5F] mb-1">{addr.label}</h3>
+                        {addr.company_name && <p className="text-sm text-gray-700 font-medium">{addr.company_name}</p>}
                         {addr.attention && <p className="text-sm text-gray-600">Attn: {addr.attention}</p>}
                         <p className="text-sm text-gray-700">{addr.address_line1}</p>
                         {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
                         <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
+                        {addr.phone && <p className="text-sm text-gray-500 mt-1">📞 {addr.phone}</p>}
+                        {/* SIRET / TVA / Chorus */}
+                        {(addr.siret || addr.tva_number) && (
+                          <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-3">
+                            {addr.siret && <span className="text-xs text-gray-500">SIRET: <span className="font-mono font-medium text-gray-700">{addr.siret}</span></span>}
+                            {addr.tva_number && <span className="text-xs text-gray-500">TVA: <span className="font-mono font-medium text-gray-700">{addr.tva_number}</span></span>}
+                          </div>
+                        )}
+                        {addr.chorus_invoicing && (
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
+                            {addr.chorus_service_code && <span className="text-xs text-gray-500">Service: <span className="font-mono">{addr.chorus_service_code}</span></span>}
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col gap-2">
                         <button onClick={() => openEditAddress(addr)} className="px-3 py-1.5 text-sm text-[#3B7AB4] border border-[#3B7AB4] rounded-lg hover:bg-[#E8F2F8]">✏️</button>
@@ -8157,106 +8126,6 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                     </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-        </div>
-        )}
-
-        {/* Company Identifiers - admin/canInvoice only */}
-        {(perms?.isAdmin || perms?.canInvoice) && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-            <div>
-              <h2 className="text-lg font-bold text-[#1E3A5F]">🔒 Identifiants légaux</h2>
-              <p className="text-xs text-gray-400 mt-0.5">SIRET, TVA — modification protégée</p>
-            </div>
-            {!editingIdentifiers && isAdmin && (
-              <button
-                onClick={() => setEditingIdentifiers(true)}
-                className="px-4 py-2 text-gray-400 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm"
-              >
-                🔒 Modifier
-              </button>
-            )}
-          </div>
-          <div className="p-6">
-            {editingIdentifiers ? (
-              <div className="space-y-4 max-w-lg">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                  <p className="text-sm text-red-700">
-                    <strong>⚠️ Attention :</strong> La modification des identifiants légaux peut affecter votre facturation. 
-                    Veuillez vous assurer que les informations sont correctes.
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
-                    <input
-                      type="text"
-                      value={companyData.siret}
-                      onChange={e => setCompanyData({ ...companyData, siret: e.target.value })}
-                      placeholder="123 456 789 00012"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
-                    <input
-                      type="text"
-                      value={companyData.tva_number}
-                      onChange={e => setCompanyData({ ...companyData, tva_number: e.target.value })}
-                      placeholder="FR12345678901"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-300"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tapez <span className="font-bold text-red-600">CONFIRMER</span> pour valider la modification
-                  </label>
-                  <input
-                    type="text"
-                    value={identifierConfirmText}
-                    onChange={e => setIdentifierConfirmText(e.target.value)}
-                    placeholder="CONFIRMER"
-                    className="w-full px-3 py-2 border border-red-300 rounded-lg bg-red-50 focus:ring-2 focus:ring-red-300 font-mono"
-                  />
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setEditingIdentifiers(false);
-                      setIdentifierConfirmText('');
-                      setCompanyData(prev => ({
-                        ...prev,
-                        siret: profile?.companies?.siret || '',
-                        tva_number: profile?.companies?.tva_number || ''
-                      }));
-                    }}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    onClick={saveIdentifiers}
-                    disabled={saving || identifierConfirmText !== 'CONFIRMER'}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    {saving ? 'Enregistrement...' : '🔒 Mettre à jour les identifiants'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <p className="text-sm text-gray-500">SIRET</p>
-                  <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.siret || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">N° TVA</p>
-                  <p className="font-medium text-[#1E3A5F] font-mono">{profile?.companies?.tva_number || '—'}</p>
-                </div>
               </div>
             )}
           </div>
@@ -8570,13 +8439,12 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                       },
                       company: profile?.companies ? {
                         name: profile.companies.name,
-                        country: profile.companies.country,
-                        siret: profile.companies.siret,
-                        tva: profile.companies.tva_number
+                        country: profile.companies.country
                       } : null,
                       addresses: addresses?.map(a => ({
-                        label: a.label, address: a.address_line1, city: a.city,
-                        postal_code: a.postal_code, country: a.country, type: a.is_billing ? 'billing' : 'shipping'
+                        label: a.label, company_name: a.company_name, address: a.address_line1, city: a.city,
+                        postal_code: a.postal_code, country: a.country, type: a.is_billing ? 'billing' : 'shipping',
+                        ...(a.is_billing ? { siret: a.siret, tva: a.tva_number, chorus_invoicing: a.chorus_invoicing, chorus_service_code: a.chorus_service_code } : {})
                       })) || [],
                       service_requests: requests?.map(r => ({
                         id: r.id, number: r.request_number, status: r.status,
@@ -8720,13 +8588,25 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nom de la société *</label>
+                <input
+                  type="text"
+                  value={newAddress.company_name}
+                  onChange={e => setNewAddress({ ...newAddress, company_name: e.target.value })}
+                  placeholder="ex: Lighthouse France"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">À l'attention de *</label>
                 <input
                   type="text"
                   value={newAddress.attention}
                   onChange={e => setNewAddress({ ...newAddress, attention: e.target.value })}
                   placeholder="Nom du contact"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
                 />
               </div>
               <div>
@@ -8791,15 +8671,76 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone *</label>
                 <input
                   type="tel"
                   value={newAddress.phone}
                   onChange={e => setNewAddress({ ...newAddress, phone: e.target.value })}
                   placeholder="+33 1 23 45 67 89"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                  required
                 />
               </div>
+              {/* SIRET / TVA / Chorus - only for billing addresses */}
+              {(addingBillingAddress || newAddress.is_billing) && (
+                <div className="pt-4 mt-2 border-t border-gray-200 space-y-4">
+                  <p className="text-sm font-bold text-[#1E3A5F]">Identifiants de facturation</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">SIRET</label>
+                      <input
+                        type="text"
+                        value={newAddress.siret}
+                        onChange={e => setNewAddress({ ...newAddress, siret: e.target.value })}
+                        placeholder="123 456 789 00012"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">N° TVA</label>
+                      <input
+                        type="text"
+                        value={newAddress.tva_number}
+                        onChange={e => setNewAddress({ ...newAddress, tva_number: e.target.value })}
+                        placeholder="FR12345678901"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">Facturation via Chorus Pro</label>
+                      <div className="relative group">
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-xs cursor-help font-bold">?</span>
+                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg invisible group-hover:visible z-50">
+                          <p className="font-bold mb-1">Chorus Pro</p>
+                          <p>Plateforme de facturation électronique obligatoire pour les entités du secteur public en France.</p>
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNewAddress({ ...newAddress, chorus_invoicing: !newAddress.chorus_invoicing })}
+                      className={`relative w-12 h-6 rounded-full transition-colors ${newAddress.chorus_invoicing ? 'bg-[#00A651]' : 'bg-gray-300'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${newAddress.chorus_invoicing ? 'translate-x-6' : ''}`} />
+                    </button>
+                  </div>
+                  {newAddress.chorus_invoicing && (
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">N° Service Chorus Pro *</label>
+                      <input
+                        type="text"
+                        value={newAddress.chorus_service_code}
+                        onChange={e => setNewAddress({ ...newAddress, chorus_service_code: e.target.value })}
+                        placeholder="Ex: SERVICE-12345"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B7AB4]"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               {!addingBillingAddress && (
               <label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
                 <input
@@ -11779,6 +11720,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           <p className="text-gray-600">{devAddr.address_line1}</p>
                           <p className="text-gray-600">{devAddr.postal_code} {devAddr.city}</p>
                           {devAddr.country && devAddr.country !== 'France' && <p className="text-gray-600">{devAddr.country}</p>}
+                          {devAddr.phone && <p className="text-gray-500 text-sm">📞 {devAddr.phone}</p>}
                         </div>
                       </div>
                     )}
@@ -15185,8 +15127,10 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer ${shippingAddressId === addr.id ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-gray-200'}`}>
                       <input type="radio" checked={shippingAddressId === addr.id} onChange={() => setShippingAddressId(addr.id)} />
                       <div>
-                        <p className="font-medium">{addr.label || addr.company_name}</p>
+                        <p className="font-medium">{addr.company_name || addr.label}</p>
+                        {addr.attention && <p className="text-sm text-gray-500">Attn: {addr.attention}</p>}
                         <p className="text-sm text-gray-600">{addr.address_line1}, {addr.postal_code} {addr.city}</p>
+                        {addr.phone && <p className="text-sm text-gray-400">📞 {addr.phone}</p>}
                       </div>
                     </label>
                   ))}
@@ -17603,8 +17547,8 @@ function RegisterPage({ t, register, setPage, notify }) {
                       <input type="text" value={formData.contactName} onChange={(e) => updateField('contactName', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" required />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-white/80 mb-1">Téléphone</label>
-                      <input type="tel" value={formData.phone} onChange={(e) => updateField('phone', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="+33 1 23 45 67 89" />
+                      <label className="block text-sm font-medium text-white/80 mb-1">Téléphone *</label>
+                      <input type="tel" value={formData.phone} onChange={(e) => updateField('phone', e.target.value)} className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/40 focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="+33 1 23 45 67 89" required />
                     </div>
                   </div>
                 </div>
