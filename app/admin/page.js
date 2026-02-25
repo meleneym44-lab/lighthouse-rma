@@ -650,7 +650,10 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   console.log('PDF Gen - isContractRMA:', options.isContractRMA, 'isFullyContractCovered:', isFullyContractCovered);
   console.log('PDF Gen - devicePricing coverage:', devicePricing.map(d => ({ model: d.model, isContractCovered: d.isContractCovered })));
   
-  // Shipping row - keep with total (check for shipping + discount? + total row together)
+  // Shipping row - skip entirely if client handles own return (own_label/pickup)
+  const isClientReturnPDF = returnShipping === 'own_label' || returnShipping === 'pickup';
+  
+  if (!isClientReturnPDF) {
   const extraRows = (discountInfo && discountInfo.amount > 0) ? rowH : 0;
   checkTablePageBreak(rowH + extraRows + 11 + 4); // shipping row + optional discount + total row + padding
   pdf.setFillColor(245, 245, 245);
@@ -669,6 +672,11 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const shippingTotalDisplay = isFullyContractCovered ? 'Contrat' : shippingTotal.toFixed(2) + ' EUR';
   pdf.text(shippingTotalDisplay, colTotal, y + 5, { align: 'right' });
   y += rowH;
+  } else {
+    // No shipping row — recalculate total without shipping
+    checkTablePageBreak(11 + 4);
+  }
+  const shippingTotal = isClientReturnPDF ? 0 : (isFullyContractCovered ? 0 : (options.shippingTotal || shippingInfo.total || 0));
 
   // Discount row (if applicable)
   if (discountInfo && discountInfo.amount > 0) {
@@ -27455,12 +27463,14 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   const [declineNotes, setDeclineNotes] = useState('');
   
   // Shipping state - based on parcels count from RMA request
+  // No shipping charge when client handles own return (own_label or pickup)
+  const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
   const parcelsCount = request?.parcels_count || 1;
   const [shippingData, setShippingData] = useState({
     partNumber: 'Shipping1',
-    unitPrice: 45, // Default, will be updated from parts cache
-    parcels: parcelsCount,
-    total: 45 * parcelsCount
+    unitPrice: isClientReturn ? 0 : 45,
+    parcels: isClientReturn ? 0 : parcelsCount,
+    total: isClientReturn ? 0 : 45 * parcelsCount
   });
 
   // Discount state
@@ -28208,9 +28218,9 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
   // Check if any device is contract covered
   const hasContractCoveredDevices = devicePricing.some(d => d.isContractCovered);
 
-  // Calculate totals - shipping is 0 when fully contract covered
+  // Calculate totals - shipping is 0 when fully contract covered or client handles return
   const servicesSubtotal = devicePricing.reduce((sum, d) => sum + getDeviceServiceTotal(d), 0);
-  const shippingTotal = isFullyContractCovered ? 0 : shippingData.total;
+  const shippingTotal = (isFullyContractCovered || isClientReturn) ? 0 : shippingData.total;
   const subtotalBeforeDiscount = servicesSubtotal + shippingTotal;
   const discountAmount = discountData.enabled 
     ? (discountData.type === 'percentage' 
@@ -29297,10 +29307,23 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 <div className="mt-6 p-4 bg-gray-100 rounded-lg border-2 border-gray-300">
                   <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
                     {lang === 'en' ? '📦 Shipping fees' : '📦 Frais de port'}
-                    <span className="text-sm font-normal text-gray-500">
-                      ({shippingData.parcels} colis × {shippingData.unitPrice.toFixed(2)}€)
-                    </span>
+                    {!isClientReturn && (
+                      <span className="text-sm font-normal text-gray-500">
+                        ({shippingData.parcels} colis × {shippingData.unitPrice.toFixed(2)}€)
+                      </span>
+                    )}
                   </h4>
+                  
+                  {isClientReturn ? (
+                    <div className={`p-3 rounded-lg text-sm font-medium ${returnShipping === 'pickup' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                      {returnShipping === 'pickup' 
+                        ? (lang === 'en' ? '🏭 Client pickup — no shipping charges' : '🏭 Retrait client — pas de frais de port')
+                        : (lang === 'en' ? '📦 Client provides own return label — no shipping charges' : '📦 Retour client avec son propre transporteur — pas de frais de port')}
+                      <p className="text-xs mt-1 opacity-75">
+                        {lang === 'en' ? 'Shipping line will not appear on quote' : 'La ligne frais de port n\'apparaîtra pas sur le devis'}
+                      </p>
+                    </div>
+                  ) : (
                   <div className="flex items-center gap-3">
                     {/* Part Number */}
                     <div className="w-32">
@@ -29369,7 +29392,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                       <p className="text-lg font-bold text-[#00A651]">{shippingData.total.toFixed(2)} €</p>
                     </div>
                   </div>
-                  {partsCache[shippingData.partNumber] && (
+                  )}
+                  {!isClientReturn && partsCache[shippingData.partNumber] && (
                     <p className="text-xs text-green-600 mt-2">{lang === 'en' ? '✓ Price loaded from database' : '✓ Prix chargé depuis la base de données'}</p>
                   )}
                 </div>
