@@ -17351,21 +17351,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
                         </span>
                         <button 
                           onClick={() => {
-                            const labelData = upsLabels[`${idx}-${pkgIdx}`] || upsLabels[idx];
-                            if (labelData) {
-                              const byteCharacters = atob(labelData);
-                              const byteNumbers = new Array(byteCharacters.length);
-                              for (let i = 0; i < byteCharacters.length; i++) {
-                                byteNumbers[i] = byteCharacters.charCodeAt(i);
-                              }
-                              const byteArray = new Uint8Array(byteNumbers);
-                              const blob = new Blob([byteArray], { type: 'application/pdf' });
-                              const url = URL.createObjectURL(blob);
-                              window.open(url, '_blank');
-                              setLabelsPrinted(prev => ({ ...prev, [`${idx}-${pkgIdx}`]: true }));
-                            } else {
-                              printLabel(idx);
-                            }
+                            printLabel(idx);
+                            setLabelsPrinted(prev => ({ ...prev, [`${idx}-${pkgIdx}`]: true }));
                           }} 
                           className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-sm"
                         >
