@@ -47,7 +47,7 @@ function baseLayout(content) {
     <div style="background:#f9fafb;padding:20px 24px;border-radius:0 0 12px 12px;border:1px solid #e5e7eb;border-top:none;">
       <p style="color:#9ca3af;font-size:11px;margin:0;line-height:1.5;text-align:center;">
         Cet email est envoyé automatiquement. Merci de ne pas y répondre.<br>
-        Lighthouse France — 6 Rue Michael Faraday, 94000 Créteil<br>
+        Lighthouse France — 16 Rue Paul Séjourné, 94000 Créteil<br>
         <a href="mailto:france@golighthouse.com" style="color:#3B7AB4;text-decoration:none;">france@golighthouse.com</a>
       </p>
     </div>
