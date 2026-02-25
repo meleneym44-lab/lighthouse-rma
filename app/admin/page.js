@@ -107,7 +107,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const footerHeight = 16;
   const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
-  let y = margin;
+  let y = margin - 8;
   
   // Load logos - use color logo for quotes
   let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
@@ -196,7 +196,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.text(qDate, margin + 5, y + 10);
   pdf.text('30 jours', margin + 60, y + 10);
   pdf.text('A reception de facture', margin + 115, y + 10);
-  y += 14;
+  y += 18;
 
   // ===== ADDRESS BOXES: LIVRER À (left) | FACTURER À (right) =====
   const billingAddr = options.billingAddress || null;
