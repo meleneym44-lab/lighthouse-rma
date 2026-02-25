@@ -198,30 +198,95 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.text('A reception de facture', margin + 115, y + 12);
   y += 20;
 
-  // ===== CLIENT =====
+  // ===== ADDRESSES: LIVRER À (left) | FACTURER À (right) =====
+  const billingAddr = options.billingAddress || null;
+  const shippingAddr = options.shippingAddress || null;
+  const halfWidth = contentWidth / 2 - 4;
+  const rightColX = margin + halfWidth + 8;
+
+  // --- LIVRER À (Ship-to, left) ---
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...lightGray);
-  pdf.text('CLIENT', margin, y);
+  pdf.text('LIVRER À', margin, y);
+  // --- FACTURER À (Bill-to, right) ---
+  pdf.text('FACTURER À', rightColX, y);
   y += 5;
-  pdf.setFontSize(14);
+
+  // Ship-to name
+  pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(company.name || 'Client', margin, y);
+  const shipName = shippingAddr?.company_name || company.name || 'Client';
+  pdf.text(shipName, margin, y, { maxWidth: halfWidth });
+  // Bill-to name
+  const billName = billingAddr?.company_name || company.name || 'Client';
+  pdf.text(billName, rightColX, y, { maxWidth: halfWidth });
   y += 6;
-  pdf.setFontSize(10);
+
+  // Ship-to details
+  pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  if (company.billing_address || company.address) {
-    pdf.text(company.billing_address || company.address, margin, y);
-    y += 5;
+  let shipY = y;
+  if (shippingAddr) {
+    if (shippingAddr.attention) { pdf.text('Attn: ' + shippingAddr.attention, margin, shipY); shipY += 4; }
+    if (shippingAddr.address_line1) { pdf.text(shippingAddr.address_line1, margin, shipY); shipY += 4; }
+    const shipCity = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
+    if (shipCity) { pdf.text(shipCity, margin, shipY); shipY += 4; }
+    if (shippingAddr.phone) { pdf.text('Tél: ' + shippingAddr.phone, margin, shipY); shipY += 4; }
+  } else {
+    if (company.billing_address || company.address) { pdf.text(company.billing_address || company.address, margin, shipY); shipY += 4; }
+    const fallbackCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+    if (fallbackCity) { pdf.text(fallbackCity, margin, shipY); shipY += 4; }
   }
-  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-  if (city) {
-    pdf.text(city, margin, y);
-    y += 5;
+  // Note for multiple return addresses
+  if (rma.request_devices?.some(d => d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id)) {
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(150, 150, 150);
+    pdf.text('* Adresses de retour multiples — voir RMA', margin, shipY);
+    shipY += 4;
   }
-  y += 8;
+
+  // Bill-to details
+  let billY = y;
+  if (billingAddr) {
+    if (billingAddr.attention) { pdf.text('Attn: ' + billingAddr.attention, rightColX, billY); billY += 4; }
+    if (billingAddr.address_line1) { pdf.text(billingAddr.address_line1, rightColX, billY); billY += 4; }
+    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
+    if (billCity) { pdf.text(billCity, rightColX, billY); billY += 4; }
+    if (billingAddr.phone) { pdf.text('Tél: ' + billingAddr.phone, rightColX, billY); billY += 4; }
+    // SIRET / TVA
+    billY += 2;
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...darkBlue);
+    if (billingAddr.siret) { pdf.text('SIRET: ' + billingAddr.siret, rightColX, billY); billY += 4; }
+    if (billingAddr.tva_number) { pdf.text('TVA: ' + billingAddr.tva_number, rightColX, billY); billY += 4; }
+    if (billingAddr.chorus_invoicing) {
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(0, 100, 200);
+      pdf.text('Chorus Pro' + (billingAddr.chorus_service_code ? ` — Service: ${billingAddr.chorus_service_code}` : ''), rightColX, billY);
+      billY += 4;
+    }
+  } else {
+    // Fallback: company-level billing
+    if (company.billing_address || company.address) { pdf.text(company.billing_address || company.address, rightColX, billY); billY += 4; }
+    const fallbackBillCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+    if (fallbackBillCity) { pdf.text(fallbackBillCity, rightColX, billY); billY += 4; }
+    if (company.tva_number) {
+      billY += 2;
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...darkBlue);
+      pdf.text('TVA: ' + company.tva_number, rightColX, billY);
+      billY += 4;
+    }
+  }
+
+  y = Math.max(shipY, billY) + 6;
 
   // ===== SERVICE DESCRIPTION BLOCKS =====
   // Determine what service types are needed based on devices
@@ -4331,7 +4396,9 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
             quoteNumber: qd.quoteNumber,
             revisionNumber: qd.newRevisionCount || 0,
             businessSettings: qd.businessSettings || {},
-            quoteSettings: qd.businessSettings?.quote_settings || null
+            quoteSettings: qd.businessSettings?.quote_settings || null,
+            billingAddress: qd.billingAddress || null,
+            shippingAddress: qd.shippingAddress || null
           });
           const revSuffix = qd.newRevisionCount > 0 ? `_rev${qd.newRevisionCount}` : '';
           const fileName = `${qd.rmaNumber}_devis${revSuffix}_${Date.now()}.pdf`;
@@ -7762,6 +7829,7 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   // Shipping address state - resolved per device
   const [deviceAddresses, setDeviceAddresses] = useState({}); // { deviceId: addressObj }
   const [rmaAddress, setRmaAddress] = useState(null); // RMA-level fallback address
+  const [rmaBillingAddress, setRmaBillingAddress] = useState(null); // Billing address with SIRET/TVA
   
   // Modal state
   const [showAvenantPreview, setShowAvenantPreview] = useState(false);
@@ -7820,6 +7888,16 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
         } catch (e) {}
       }
       setRmaAddress(rmaAddr);
+      
+      // 1b. Fetch billing address (has SIRET/TVA/Chorus)
+      if (rma.billing_address_id) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').eq('id', rma.billing_address_id).single();
+          if (data) setRmaBillingAddress(data);
+        } catch (e) {}
+      } else {
+        setRmaBillingAddress(null);
+      }
       
       // 2. Collect unique device-level shipping_address_ids
       const deviceAddrIds = [...new Set(devices.filter(d => d.shipping_address_id).map(d => d.shipping_address_id))];
@@ -9168,6 +9246,26 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
             {company.country && `, ${company.country}`}
           </p>
         </div>
+        {/* Billing Address (from service request) */}
+        {rmaBillingAddress && (
+          <div className="mt-3 pt-3 border-t border-dashed">
+            <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">💳 {lang === 'en' ? 'Billing Address' : 'Adresse de facturation'}</p>
+            <div className="text-sm text-gray-700">
+              <p className="font-medium">{rmaBillingAddress.company_name || rmaBillingAddress.label}</p>
+              {rmaBillingAddress.attention && <p className="text-gray-500">Attn: {rmaBillingAddress.attention}</p>}
+              <p>{rmaBillingAddress.address_line1}, {rmaBillingAddress.postal_code} {rmaBillingAddress.city}</p>
+              {(rmaBillingAddress.siret || rmaBillingAddress.tva_number) && (
+                <p className="mt-1 text-xs text-gray-500">
+                  {rmaBillingAddress.siret && <span className="mr-3">SIRET: <span className="font-mono">{rmaBillingAddress.siret}</span></span>}
+                  {rmaBillingAddress.tva_number && <span>TVA: <span className="font-mono">{rmaBillingAddress.tva_number}</span></span>}
+                </p>
+              )}
+              {rmaBillingAddress.chorus_invoicing && (
+                <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">📋 Chorus Pro{rmaBillingAddress.chorus_service_code ? ` — ${rmaBillingAddress.chorus_service_code}` : ''}</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* RMA-Level Actions */}
@@ -18884,12 +18982,24 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                   {/* Additional billing addresses from shipping_addresses where is_billing = true */}
                   {clientLocations.filter(loc => loc.is_billing).map(loc => (
                     <div key={loc.id} className="bg-amber-50/50 rounded-lg p-4 border border-amber-100">
-                      <p className="font-medium">{loc.label || loc.attention || (lang === 'en' ? 'Billing address' : 'Adresse de facturation')}</p>
-                      {loc.attention && loc.label && <p className="text-sm text-gray-500">{loc.attention}</p>}
+                      <p className="font-medium">{loc.company_name || loc.label || loc.attention || (lang === 'en' ? 'Billing address' : 'Adresse de facturation')}</p>
+                      {loc.attention && <p className="text-sm text-gray-500">Attn: {loc.attention}</p>}
                       <p className="text-sm text-gray-600">{loc.address_line1}</p>
                       {loc.address_line2 && <p className="text-sm text-gray-600">{loc.address_line2}</p>}
                       <p className="text-sm text-gray-600">{loc.postal_code} {loc.city}</p>
                       {loc.country && loc.country !== 'France' && <p className="text-sm text-gray-500">{loc.country}</p>}
+                      {loc.phone && <p className="text-sm text-gray-400 mt-1">📞 {loc.phone}</p>}
+                      {(loc.siret || loc.tva_number) && (
+                        <div className="mt-2 pt-2 border-t border-amber-200 flex flex-wrap gap-3">
+                          {loc.siret && <span className="text-xs text-gray-500">SIRET: <span className="font-mono font-medium text-gray-700">{loc.siret}</span></span>}
+                          {loc.tva_number && <span className="text-xs text-gray-500">TVA: <span className="font-mono font-medium text-gray-700">{loc.tva_number}</span></span>}
+                        </div>
+                      )}
+                      {loc.chorus_invoicing && (
+                        <div className="mt-1">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">📋 Chorus Pro{loc.chorus_service_code ? ` — ${loc.chorus_service_code}` : ''}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {!client.billing_address && !client.billing_city && clientLocations.filter(l => l.is_billing).length === 0 && (
@@ -28099,6 +28209,22 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
     }
 
     // Save complete quote data
+    // Fetch billing and shipping addresses if available
+    let billingAddrData = null;
+    let shippingAddrData = null;
+    if (request.billing_address_id) {
+      try {
+        const { data } = await supabase.from('shipping_addresses').select('*').eq('id', request.billing_address_id).single();
+        if (data) billingAddrData = data;
+      } catch (e) {}
+    }
+    if (request.shipping_address_id) {
+      try {
+        const { data } = await supabase.from('shipping_addresses').select('*').eq('id', request.shipping_address_id).single();
+        if (data) shippingAddrData = data;
+      } catch (e) {}
+    }
+
     const quoteData = {
       devices: devicePricing.map(d => ({
         model: d.model,
@@ -28144,7 +28270,29 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       isMetro,
       isContractRMA: hasContractCoveredDevices,
       createdBy: signatory,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      billingAddress: billingAddrData ? {
+        company_name: billingAddrData.company_name,
+        attention: billingAddrData.attention,
+        address_line1: billingAddrData.address_line1,
+        city: billingAddrData.city,
+        postal_code: billingAddrData.postal_code,
+        country: billingAddrData.country,
+        phone: billingAddrData.phone,
+        siret: billingAddrData.siret,
+        tva_number: billingAddrData.tva_number,
+        chorus_invoicing: billingAddrData.chorus_invoicing,
+        chorus_service_code: billingAddrData.chorus_service_code
+      } : null,
+      shippingAddress: shippingAddrData ? {
+        company_name: shippingAddrData.company_name,
+        attention: shippingAddrData.attention,
+        address_line1: shippingAddrData.address_line1,
+        city: shippingAddrData.city,
+        postal_code: shippingAddrData.postal_code,
+        country: shippingAddrData.country,
+        phone: shippingAddrData.phone
+      } : null
     };
 
     // === QUOTE REVIEW: Submit for review instead of sending directly ===
