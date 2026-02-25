@@ -14344,7 +14344,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
   
   // State for UPS API
   const [upsLoading, setUpsLoading] = useState(false);
-  const [upsLabels, setUpsLabels] = useState({}); // Store PDF labels by package index
+  const [upsLabels, setUpsLabels] = useState({}); // Store GIF label data by package index (for saving/archiving)
+  const [upsHtmlLabels, setUpsHtmlLabels] = useState({}); // Store UPS HTMLImage by package index (for browser printing)
   
   const quoteData = order.quote_data || {};
   const parts = quoteData.parts || [];
@@ -14463,17 +14464,22 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
       if (error) throw error;
       if (!data.success) throw new Error(data.error || 'UPS API error');
       
-      // Store label PDF data for each package
+      // Store label data for each package
       const newLabels = {};
+      const newHtmlLabels = {};
       if (data.packages) {
         data.packages.forEach((pkg, pkgIndex) => {
           if (pkg.labelData) {
             newLabels[pkgIndex] = pkg.labelData;
           }
+          if (pkg.htmlLabel) {
+            newHtmlLabels[pkgIndex] = pkg.htmlLabel;
+          }
         });
       }
       
       setUpsLabels(newLabels);
+      setUpsHtmlLabels(newHtmlLabels);
       setShipment(prev => ({
         ...prev,
         trackingNumber: data.trackingNumber,
@@ -14523,49 +14529,86 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
   
   const printLabel = (pkgIndex) => {
     const labelData = upsLabels[pkgIndex];
+    const htmlLabel = upsHtmlLabels[pkgIndex];
+    console.log('🏷️ printLabel called, pkgIndex:', pkgIndex, 'has labelData:', !!labelData, 'has htmlLabel:', !!htmlLabel);
     
-    if (labelData) {
+    // PREFERRED: Use UPS HTMLImage — pre-formatted HTML page designed for browser printing
+    if (htmlLabel) {
       try {
-        console.log('UPS label data starts with:', labelData.substring(0, 20));
-        console.log('UPS label data length:', labelData.length);
-        
-        // Always open in HTML page — works for both GIF and PDF
+        console.log('🏷️ Using UPS HTMLImage for printing (recommended)');
+        const htmlContent = atob(htmlLabel);
         const w = window.open('', '_blank');
         if (!w) {
-          // Fallback: download as file
-          const isPDF = labelData.startsWith('JVBERi0');
+          // Fallback: download as HTML file
+          const blob = new Blob([htmlContent], { type: 'text/html' });
           const a = document.createElement('a');
-          a.href = `data:${isPDF ? 'application/pdf' : 'image/gif'};base64,${labelData}`;
-          a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.${isPDF ? 'pdf' : 'gif'}`;
+          a.href = URL.createObjectURL(blob);
+          a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.html`;
           a.click();
           setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
           return;
         }
-        
-        // Write HTML that auto-detects: try image, fall back to PDF embed
-        w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
-          @page { size: 4in 6in; margin: 0; }
-          * { margin: 0; padding: 0; }
-          body { width: 4in; height: 6in; }
-          img, embed, iframe { width: 4in; height: 6in; border: none; }
-          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-        </style></head><body>
-          <img id="label" src="data:image/gif;base64,${labelData}" 
-            onerror="
-              console.log('Not a GIF, trying PDF embed...');
-              this.style.display='none';
-              var e = document.createElement('embed');
-              e.src = 'data:application/pdf;base64,${labelData}';
-              e.type = 'application/pdf';
-              e.style.width = '4in';
-              e.style.height = '6in';
-              document.body.appendChild(e);
-              setTimeout(function(){ window.print(); }, 1000);
-            "
-            onload="console.log('GIF loaded OK'); window.print();"
-          />
-        </body></html>`);
+        w.document.write(htmlContent);
         w.document.close();
+        // Auto-print after brief load delay
+        w.onload = () => w.print();
+        setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
+        notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
+        return;
+      } catch (err) {
+        console.error('Error using HTMLImage, falling back to GraphicImage:', err);
+      }
+    }
+    
+    // FALLBACK: Use GraphicImage (raw GIF/PDF base64)
+    if (labelData) {
+      try {
+        const first20 = labelData.substring(0, 20);
+        const isPDF = labelData.startsWith('JVBERi0');
+        console.log('🏷️ Label format:', isPDF ? 'PDF' : 'GIF', '| starts with:', first20, '| length:', labelData.length);
+        
+        if (isPDF) {
+          console.log('🏷️ Opening PDF in iframe...');
+          const byteCharacters = atob(labelData);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const blobUrl = URL.createObjectURL(blob);
+          
+          const w = window.open('', '_blank');
+          if (!w) { window.open(blobUrl, '_blank'); return; }
+          w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
+            * { margin: 0; padding: 0; } body, html { width: 100%; height: 100%; }
+            iframe { width: 100%; height: 100%; border: none; }
+          </style></head><body>
+            <iframe src="${blobUrl}"></iframe>
+          </body></html>`);
+          w.document.close();
+        } else {
+          console.log('🏷️ Opening GIF label...');
+          const w = window.open('', '_blank');
+          if (!w) {
+            const a = document.createElement('a');
+            a.href = `data:image/gif;base64,${labelData}`;
+            a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.gif`;
+            a.click();
+            setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
+            return;
+          }
+          w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
+            @page { size: 4in 6in; margin: 0; }
+            * { margin: 0; padding: 0; }
+            body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+            img { width: 4in; height: 6in; object-fit: contain; }
+            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          </style></head><body>
+            <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
+          </body></html>`);
+          w.document.close();
+        }
         
         setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
         notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
@@ -14574,7 +14617,8 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         notify(lang === 'en' ? 'Error opening label' : 'Erreur ouverture étiquette', 'error');
       }
     } else {
-      // Fallback label — formatted for 4x6 thermal (102mm × 152mm)
+      // Fallback label — no UPS data, generate basic label
+      console.log('🏷️ No labelData found, using fallback HTML label');
       const s = shipment;
       const w = window.open('', '_blank');
       if (!w) { notify(lang === 'en' ? 'Popup blocked' : 'Popup bloqué', 'error'); return; }
@@ -15344,7 +15388,8 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
   
   // UPS API state
   const [upsLoading, setUpsLoading] = useState(false);
-  const [upsLabel, setUpsLabel] = useState(null); // base64 PDF label data
+  const [upsLabel, setUpsLabel] = useState(null); // base64 GIF label data (for saving)
+  const [upsHtmlLabel, setUpsHtmlLabel] = useState(null); // base64 HTML label (for printing)
   const [trackingNumber, setTrackingNumber] = useState('');
 
   const biz = businessSettings || {};
@@ -15430,7 +15475,9 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
       
       // Store label data
       const labelData = data.packages?.[0]?.labelData || null;
+      const htmlLabel = data.packages?.[0]?.htmlLabel || null;
       setUpsLabel(labelData);
+      setUpsHtmlLabel(htmlLabel);
       setTrackingNumber(data.trackingNumber || '');
       
       notify(`✅ UPS label created: ${data.trackingNumber}`);
@@ -15444,17 +15491,48 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 
   // Print/view real UPS label
   const printUPSLabel = () => {
+    // PREFERRED: Use UPS HTMLImage
+    if (upsHtmlLabel) {
+      try {
+        const htmlContent = atob(upsHtmlLabel);
+        const w = window.open('', '_blank');
+        if (!w) return;
+        w.document.write(htmlContent);
+        w.document.close();
+        w.onload = () => w.print();
+        return;
+      } catch (err) {
+        console.error('Error using HTMLImage, falling back:', err);
+      }
+    }
+    // FALLBACK: Use GraphicImage (GIF/PDF)
     if (upsLabel) {
       try {
-        const byteCharacters = atob(upsLabel);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        const isPDF = upsLabel.startsWith('JVBERi0');
+        if (isPDF) {
+          const byteCharacters = atob(upsLabel);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+        } else {
+          const w = window.open('', '_blank');
+          if (!w) return;
+          w.document.write(`<html><head><title>UPS Label</title><style>
+            @page { size: 4in 6in; margin: 0; }
+            * { margin: 0; padding: 0; }
+            body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+            img { width: 4in; height: 6in; object-fit: contain; }
+            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          </style></head><body>
+            <img src="data:image/gif;base64,${upsLabel}" onload="window.print();" />
+          </body></html>`);
+          w.document.close();
         }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
       } catch (e) {
         console.error('Error opening label:', e);
       }
@@ -16200,7 +16278,8 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   
   // State for UPS API
   const [upsLoading, setUpsLoading] = useState(false);
-  const [upsLabels, setUpsLabels] = useState({}); // Store PDF labels by "shipmentIndex-packageIndex"
+  const [upsLabels, setUpsLabels] = useState({}); // Store GIF label data by "shipmentIndex-packageIndex" (for saving)
+  const [upsHtmlLabels, setUpsHtmlLabels] = useState({}); // Store UPS HTMLImage for browser printing
   
   // Non-metro shipping mode
   const [shippingMode, setShippingMode] = useState('ups'); // 'ups' or 'bl_only'
@@ -16266,6 +16345,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
     try {
       const updatedShipments = [...updatedShipmentsWithDevices];
       const newLabels = {};
+      const newHtmlLabels = {};
       
       for (let i = 0; i < updatedShipments.length; i++) {
         const s = updatedShipments[i];
@@ -16315,16 +16395,22 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           packageLabels: data.packages || [] // Store all package labels
         };
         
-        // Store label PDF data for each package
+        // Store label data for each package
         if (data.packages) {
           data.packages.forEach((pkg, pkgIndex) => {
             if (pkg.labelData) {
               newLabels[`${i}-${pkgIndex}`] = pkg.labelData;
             }
+            if (pkg.htmlLabel) {
+              newHtmlLabels[`${i}-${pkgIndex}`] = pkg.htmlLabel;
+            }
           });
           // Also store first label as main label for backward compatibility
           if (data.packages[0]?.labelData) {
             newLabels[i] = data.packages[0].labelData;
+          }
+          if (data.packages[0]?.htmlLabel) {
+            newHtmlLabels[i] = data.packages[0].htmlLabel;
           }
         }
         
@@ -16332,6 +16418,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
       }
       
       setUpsLabels(prev => ({ ...prev, ...newLabels }));
+      setUpsHtmlLabels(prev => ({ ...prev, ...newHtmlLabels }));
       setShipments(updatedShipments);
       setStep(2);
     } catch (err) {
@@ -16370,44 +16457,78 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   const printLabel = (index) => {
     const s = shipments[index];
     const labelData = upsLabels[index];
+    const htmlLabel = upsHtmlLabels[index];
     
-    if (labelData) {
+    // PREFERRED: Use UPS HTMLImage — pre-formatted for browser printing
+    if (htmlLabel) {
       try {
-        console.log('UPS label data starts with:', labelData.substring(0, 20));
-        
+        const htmlContent = atob(htmlLabel);
         const w = window.open('', '_blank');
         if (!w) {
-          const isPDF = labelData.startsWith('JVBERi0');
+          const blob = new Blob([htmlContent], { type: 'text/html' });
           const a = document.createElement('a');
-          a.href = `data:${isPDF ? 'application/pdf' : 'image/gif'};base64,${labelData}`;
-          a.download = `UPS-Label-${s.trackingNumber}.${isPDF ? 'pdf' : 'gif'}`;
+          a.href = URL.createObjectURL(blob);
+          a.download = `UPS-Label-${s.trackingNumber}.html`;
           a.click();
           setLabelsPrinted(prev => ({ ...prev, [index]: true }));
           return;
         }
-        
-        w.document.write(`<html><head><title>UPS Label - ${s.trackingNumber}</title><style>
-          @page { size: 4in 6in; margin: 0; }
-          * { margin: 0; padding: 0; }
-          body { width: 4in; height: 6in; }
-          img, embed, iframe { width: 4in; height: 6in; border: none; }
-          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-        </style></head><body>
-          <img id="label" src="data:image/gif;base64,${labelData}" 
-            onerror="
-              this.style.display='none';
-              var e = document.createElement('embed');
-              e.src = 'data:application/pdf;base64,${labelData}';
-              e.type = 'application/pdf';
-              e.style.width = '4in';
-              e.style.height = '6in';
-              document.body.appendChild(e);
-              setTimeout(function(){ window.print(); }, 1000);
-            "
-            onload="window.print();"
-          />
-        </body></html>`);
+        w.document.write(htmlContent);
         w.document.close();
+        w.onload = () => w.print();
+        setLabelsPrinted(prev => ({ ...prev, [index]: true }));
+        notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
+        return;
+      } catch (err) {
+        console.error('Error using HTMLImage, falling back:', err);
+      }
+    }
+    
+    // FALLBACK: Use GraphicImage (raw GIF/PDF)
+    if (labelData) {
+      try {
+        console.log('UPS label data starts with:', labelData.substring(0, 20));
+        const isPDF = labelData.startsWith('JVBERi0');
+        
+        if (isPDF) {
+          const byteCharacters = atob(labelData);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const blobUrl = URL.createObjectURL(blob);
+          const w = window.open('', '_blank');
+          if (!w) { window.open(blobUrl, '_blank'); return; }
+          w.document.write(`<html><head><title>UPS Label - ${s.trackingNumber}</title><style>
+            * { margin: 0; padding: 0; } body, html { width: 100%; height: 100%; }
+            iframe { width: 100%; height: 100%; border: none; }
+          </style></head><body>
+            <iframe src="${blobUrl}"></iframe>
+          </body></html>`);
+          w.document.close();
+        } else {
+          const w = window.open('', '_blank');
+          if (!w) {
+            const a = document.createElement('a');
+            a.href = `data:image/gif;base64,${labelData}`;
+            a.download = `UPS-Label-${s.trackingNumber}.gif`;
+            a.click();
+            setLabelsPrinted(prev => ({ ...prev, [index]: true }));
+            return;
+          }
+          w.document.write(`<html><head><title>UPS Label - ${s.trackingNumber}</title><style>
+            @page { size: 4in 6in; margin: 0; }
+            * { margin: 0; padding: 0; }
+            body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+            img { width: 4in; height: 6in; object-fit: contain; }
+            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          </style></head><body>
+            <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
+          </body></html>`);
+          w.document.close();
+        }
         
         setLabelsPrinted(prev => ({ ...prev, [index]: true }));
         notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
@@ -32135,7 +32256,8 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
 
   // Generated data
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [upsLabels, setUpsLabels] = useState({}); // { pkgIndex: base64 }
+  const [upsLabels, setUpsLabels] = useState({}); // { pkgIndex: base64 GIF } for saving
+  const [upsHtmlLabels, setUpsHtmlLabels] = useState({}); // { pkgIndex: base64 HTML } for printing
   const [packageLabels, setPackageLabels] = useState([]);
   const [blNumber, setBlNumber] = useState('');
   const [generatedBL, setGeneratedBL] = useState(null);
@@ -32194,12 +32316,15 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
       setPackageLabels(data.packages || []);
 
       const newLabels = {};
+      const newHtmlLabels = {};
       if (data.packages) {
         data.packages.forEach((pkg, pkgIndex) => {
           if (pkg.labelData) newLabels[pkgIndex] = pkg.labelData;
+          if (pkg.htmlLabel) newHtmlLabels[pkgIndex] = pkg.htmlLabel;
         });
       }
       setUpsLabels(newLabels);
+      setUpsHtmlLabels(newHtmlLabels);
       notify(`✅ ${data.packages?.length || 1} étiquette(s) UPS créée(s): ${data.trackingNumber}`);
       setStep(2);
     } catch (err) {
@@ -32356,31 +32481,56 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
   // Print helpers
   const printLabel = (pkgIdx) => {
     const labelData = upsLabels[pkgIdx];
+    const htmlLabel = upsHtmlLabels[pkgIdx];
+    
+    // PREFERRED: Use UPS HTMLImage — pre-formatted for browser printing
+    if (htmlLabel) {
+      try {
+        const htmlContent = atob(htmlLabel);
+        const w = window.open('', '_blank');
+        if (!w) return;
+        w.document.write(htmlContent);
+        w.document.close();
+        w.onload = () => w.print();
+        setLabelsPrinted(prev => ({ ...prev, [pkgIdx]: true }));
+        return;
+      } catch (err) {
+        console.error('Error using HTMLImage, falling back:', err);
+      }
+    }
+    
+    // FALLBACK: Use GraphicImage (raw GIF/PDF)
     if (labelData) {
-      const w = window.open('', '_blank');
-      if (!w) return;
-      w.document.write(`<html><head><title>UPS Label</title><style>
-        @page { size: 4in 6in; margin: 0; }
-        * { margin: 0; padding: 0; }
-        body { width: 4in; height: 6in; }
-        img, embed, iframe { width: 4in; height: 6in; border: none; }
-        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-      </style></head><body>
-        <img id="label" src="data:image/gif;base64,${labelData}" 
-          onerror="
-            this.style.display='none';
-            var e = document.createElement('embed');
-            e.src = 'data:application/pdf;base64,${labelData}';
-            e.type = 'application/pdf';
-            e.style.width = '4in';
-            e.style.height = '6in';
-            document.body.appendChild(e);
-            setTimeout(function(){ window.print(); }, 1000);
-          "
-          onload="window.print();"
-        />
-      </body></html>`);
-      w.document.close();
+      const isPDF = labelData.startsWith('JVBERi0');
+      
+      if (isPDF) {
+        const byteCharacters = atob(labelData);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) { byteNumbers[i] = byteCharacters.charCodeAt(i); }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const blobUrl = URL.createObjectURL(blob);
+        const w = window.open('', '_blank');
+        if (!w) { window.open(blobUrl, '_blank'); return; }
+        w.document.write(`<html><head><title>UPS Label</title><style>
+          * { margin: 0; padding: 0; } body, html { width: 100%; height: 100%; }
+          iframe { width: 100%; height: 100%; border: none; }
+        </style></head><body><iframe src="${blobUrl}"></iframe></body></html>`);
+        w.document.close();
+      } else {
+        const w = window.open('', '_blank');
+        if (!w) return;
+        w.document.write(`<html><head><title>UPS Label</title><style>
+          @page { size: 4in 6in; margin: 0; }
+          * { margin: 0; padding: 0; }
+          body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+          img { width: 4in; height: 6in; object-fit: contain; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        </style></head><body>
+          <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
+        </body></html>`);
+        w.document.close();
+      }
       setLabelsPrinted(prev => ({ ...prev, [pkgIdx]: true }));
     }
   };
