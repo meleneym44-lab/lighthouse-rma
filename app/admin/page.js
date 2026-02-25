@@ -14529,46 +14529,14 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
   
   const printLabel = (pkgIndex) => {
     const labelData = upsLabels[pkgIndex];
-    const htmlLabel = upsHtmlLabels[pkgIndex];
-    console.log('🏷️ printLabel called, pkgIndex:', pkgIndex, 'has labelData:', !!labelData, 'has htmlLabel:', !!htmlLabel);
+    console.log('🏷️ printLabel called, pkgIndex:', pkgIndex, 'has labelData:', !!labelData);
     
-    // PREFERRED: Use UPS HTMLImage — pre-formatted HTML page designed for browser printing
-    if (htmlLabel) {
-      try {
-        console.log('🏷️ Using UPS HTMLImage for printing (recommended)');
-        const htmlContent = atob(htmlLabel);
-        const w = window.open('', '_blank');
-        if (!w) {
-          // Fallback: download as HTML file
-          const blob = new Blob([htmlContent], { type: 'text/html' });
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.html`;
-          a.click();
-          setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
-          return;
-        }
-        w.document.write(htmlContent);
-        w.document.close();
-        // Auto-print after brief load delay
-        w.onload = () => w.print();
-        setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
-        notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
-        return;
-      } catch (err) {
-        console.error('Error using HTMLImage, falling back to GraphicImage:', err);
-      }
-    }
-    
-    // FALLBACK: Use GraphicImage (raw GIF/PDF base64)
     if (labelData) {
       try {
-        const first20 = labelData.substring(0, 20);
         const isPDF = labelData.startsWith('JVBERi0');
-        console.log('🏷️ Label format:', isPDF ? 'PDF' : 'GIF', '| starts with:', first20, '| length:', labelData.length);
+        console.log('🏷️ Label format:', isPDF ? 'PDF' : 'GIF', '| length:', labelData.length);
         
         if (isPDF) {
-          console.log('🏷️ Opening PDF in iframe...');
           const byteCharacters = atob(labelData);
           const byteNumbers = new Array(byteCharacters.length);
           for (let i = 0; i < byteCharacters.length; i++) {
@@ -14577,7 +14545,6 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           const byteArray = new Uint8Array(byteNumbers);
           const blob = new Blob([byteArray], { type: 'application/pdf' });
           const blobUrl = URL.createObjectURL(blob);
-          
           const w = window.open('', '_blank');
           if (!w) { window.open(blobUrl, '_blank'); return; }
           w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
@@ -14588,7 +14555,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           </body></html>`);
           w.document.close();
         } else {
-          console.log('🏷️ Opening GIF label...');
+          // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
           const w = window.open('', '_blank');
           if (!w) {
             const a = document.createElement('a');
@@ -14601,11 +14568,11 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
             @page { size: 4in 6in; margin: 0; }
             * { margin: 0; padding: 0; }
-            body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-            img { width: 4in; height: 6in; object-fit: contain; }
+            body { width: 4in; height: 6in; overflow: hidden; }
+            img { width: 4in; height: 6in; object-fit: contain; display: block; }
             @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
           </style></head><body>
-            <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
+            <img src="data:image/gif;base64,${labelData}" onload="setTimeout(()=>window.print(), 300);" />
           </body></html>`);
           w.document.close();
         }
@@ -15491,21 +15458,6 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
 
   // Print/view real UPS label
   const printUPSLabel = () => {
-    // PREFERRED: Use UPS HTMLImage
-    if (upsHtmlLabel) {
-      try {
-        const htmlContent = atob(upsHtmlLabel);
-        const w = window.open('', '_blank');
-        if (!w) return;
-        w.document.write(htmlContent);
-        w.document.close();
-        w.onload = () => w.print();
-        return;
-      } catch (err) {
-        console.error('Error using HTMLImage, falling back:', err);
-      }
-    }
-    // FALLBACK: Use GraphicImage (GIF/PDF)
     if (upsLabel) {
       try {
         const isPDF = upsLabel.startsWith('JVBERi0');
@@ -15520,16 +15472,17 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
           const url = URL.createObjectURL(blob);
           window.open(url, '_blank');
         } else {
+          // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
           const w = window.open('', '_blank');
           if (!w) return;
           w.document.write(`<html><head><title>UPS Label</title><style>
             @page { size: 4in 6in; margin: 0; }
             * { margin: 0; padding: 0; }
-            body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-            img { width: 4in; height: 6in; object-fit: contain; }
+            body { width: 4in; height: 6in; overflow: hidden; }
+            img { width: 4in; height: 6in; object-fit: contain; display: block; }
             @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
           </style></head><body>
-            <img src="data:image/gif;base64,${upsLabel}" onload="window.print();" />
+            <img src="data:image/gif;base64,${upsLabel}" onload="setTimeout(()=>window.print(), 300);" />
           </body></html>`);
           w.document.close();
         }
@@ -16457,37 +16410,9 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
   const printLabel = (index) => {
     const s = shipments[index];
     const labelData = upsLabels[index];
-    const htmlLabel = upsHtmlLabels[index];
     
-    // PREFERRED: Use UPS HTMLImage — pre-formatted for browser printing
-    if (htmlLabel) {
-      try {
-        const htmlContent = atob(htmlLabel);
-        const w = window.open('', '_blank');
-        if (!w) {
-          const blob = new Blob([htmlContent], { type: 'text/html' });
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = `UPS-Label-${s.trackingNumber}.html`;
-          a.click();
-          setLabelsPrinted(prev => ({ ...prev, [index]: true }));
-          return;
-        }
-        w.document.write(htmlContent);
-        w.document.close();
-        w.onload = () => w.print();
-        setLabelsPrinted(prev => ({ ...prev, [index]: true }));
-        notify(lang === 'en' ? '📄 UPS label — select Zebra ZD421d printer' : '📄 Étiquette UPS — sélectionnez imprimante Zebra ZD421d');
-        return;
-      } catch (err) {
-        console.error('Error using HTMLImage, falling back:', err);
-      }
-    }
-    
-    // FALLBACK: Use GraphicImage (raw GIF/PDF)
     if (labelData) {
       try {
-        console.log('UPS label data starts with:', labelData.substring(0, 20));
         const isPDF = labelData.startsWith('JVBERi0');
         
         if (isPDF) {
@@ -16509,6 +16434,7 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           </body></html>`);
           w.document.close();
         } else {
+          // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
           const w = window.open('', '_blank');
           if (!w) {
             const a = document.createElement('a');
@@ -16521,11 +16447,11 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           w.document.write(`<html><head><title>UPS Label - ${s.trackingNumber}</title><style>
             @page { size: 4in 6in; margin: 0; }
             * { margin: 0; padding: 0; }
-            body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-            img { width: 4in; height: 6in; object-fit: contain; }
+            body { width: 4in; height: 6in; overflow: hidden; }
+            img { width: 4in; height: 6in; object-fit: contain; display: block; }
             @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
           </style></head><body>
-            <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
+            <img src="data:image/gif;base64,${labelData}" onload="setTimeout(()=>window.print(), 300);" />
           </body></html>`);
           w.document.close();
         }
@@ -32481,25 +32407,7 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
   // Print helpers
   const printLabel = (pkgIdx) => {
     const labelData = upsLabels[pkgIdx];
-    const htmlLabel = upsHtmlLabels[pkgIdx];
     
-    // PREFERRED: Use UPS HTMLImage — pre-formatted for browser printing
-    if (htmlLabel) {
-      try {
-        const htmlContent = atob(htmlLabel);
-        const w = window.open('', '_blank');
-        if (!w) return;
-        w.document.write(htmlContent);
-        w.document.close();
-        w.onload = () => w.print();
-        setLabelsPrinted(prev => ({ ...prev, [pkgIdx]: true }));
-        return;
-      } catch (err) {
-        console.error('Error using HTMLImage, falling back:', err);
-      }
-    }
-    
-    // FALLBACK: Use GraphicImage (raw GIF/PDF)
     if (labelData) {
       const isPDF = labelData.startsWith('JVBERi0');
       
@@ -32518,16 +32426,17 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
         </style></head><body><iframe src="${blobUrl}"></iframe></body></html>`);
         w.document.close();
       } else {
+        // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
         const w = window.open('', '_blank');
         if (!w) return;
         w.document.write(`<html><head><title>UPS Label</title><style>
           @page { size: 4in 6in; margin: 0; }
           * { margin: 0; padding: 0; }
-          body { width: 4in; height: 6in; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-          img { width: 4in; height: 6in; object-fit: contain; }
+          body { width: 4in; height: 6in; overflow: hidden; }
+          img { width: 4in; height: 6in; object-fit: contain; display: block; }
           @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         </style></head><body>
-          <img src="data:image/gif;base64,${labelData}" onload="window.print();" />
+          <img src="data:image/gif;base64,${labelData}" onload="setTimeout(()=>window.print(), 300);" />
         </body></html>`);
         w.document.close();
       }
