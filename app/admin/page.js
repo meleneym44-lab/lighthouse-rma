@@ -123,7 +123,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
   };
   
   const getUsableHeight = () => pageHeight - footerHeight - margin;
@@ -187,15 +187,18 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
   pdf.text('DATE', margin + 5, y + 4);
-  pdf.text('VALIDITE', margin + 60, y + 4);
+  pdf.text('VALIDITÉ', margin + 60, y + 4);
   pdf.text('CONDITIONS', margin + 115, y + 4);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  const qDate = rma.quoted_at ? new Date(rma.quoted_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
+  const qDate = (() => {
+    const d = rma.quoted_at ? new Date(rma.quoted_at) : new Date();
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  })();
   pdf.text(qDate, margin + 5, y + 10);
   pdf.text('30 jours', margin + 60, y + 10);
-  pdf.text('A reception de facture', margin + 115, y + 10);
+  pdf.text('À réception de facture', margin + 115, y + 10);
   y += 18;
 
   // ===== ADDRESS BOXES: LIVRER À (left) | FACTURER À (right) =====
@@ -321,52 +324,52 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
 
   const DEFAULT_CAL_DATA = {
     particle_counter: {
-      title: "Etalonnage Compteur de Particules Aeroportees",
+      title: "Étalonnage Compteur de Particules Aéroportées",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure",
-        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
-        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure",
+        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+        "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     bio_collector: {
-      title: "Etalonnage Bio Collecteur",
+      title: "Étalonnage Bio Collecteur",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Verification et reglage du debit",
-        "Verification de la cellule d'impaction",
-        "Controle des parametres de collecte",
+        "Vérification des fonctionnalités de l'appareil",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule d'impaction",
+        "Contrôle des paramètres de collecte",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     liquid_counter: {
-      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      title: "Étalonnage Compteur de Particules en Milieu Liquide",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure optique",
-        "Controle et reglage des seuils de mesures granulometrique",
-        "Verification en nombre par comparaison a un etalon",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure optique",
+        "Contrôle et réglage des seuils de mesures granulométrique",
+        "Vérification en nombre par comparaison à un étalon",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     temp_humidity: {
-      title: "Etalonnage Capteur Temperature/Humidite",
+      title: "Étalonnage Capteur Température/Humidité",
       prestations: [
-        "Verification des fonctionnalites du capteur",
-        "Etalonnage temperature sur points de reference certifies",
-        "Etalonnage humidite relative",
-        "Verification de la stabilite des mesures",
-        "Fourniture d'un certificat d'etalonnage"
+        "Vérification des fonctionnalités du capteur",
+        "Étalonnage température sur points de référence certifiés",
+        "Étalonnage humidité relative",
+        "Vérification de la stabilité des mesures",
+        "Fourniture d'un certificat d'étalonnage"
       ]
     },
     other: {
-      title: "Etalonnage Equipement",
+      title: "Étalonnage Équipement",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Etalonnage selon les specifications du fabricant",
+        "Vérification des fonctionnalités de l'appareil",
+        "Étalonnage selon les spécifications du fabricant",
         "Tests de fonctionnement",
         "Fourniture d'un rapport de test"
       ]
@@ -374,21 +377,21 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   };
 
   const DEFAULT_REPAIR_DATA = {
-    title: "Reparation",
+    title: "Réparation",
     prestations: [
       "Diagnostic complet de l'appareil",
-      "Identification des composants defectueux",
-      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Identification des composants défectueux",
+      "Remplacement des pièces défectueuses (pièces facturées en sus)",
       "Tests de fonctionnement complets",
-      "Verification d'etalonnage post-reparation si applicable"
+      "Vérification d'étalonnage post-réparation si applicable"
     ]
   };
 
   const DEFAULT_DISCLAIMERS = [
-    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
-    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
-    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
-    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+    "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
+    "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+    "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
   ];
 
   // Merge settings with defaults - settings override defaults when present
@@ -425,8 +428,8 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     // Check if we need at least title + first 2 lines of space, else new page
     checkPageBreak(titleH + lineH * 2);
 
-    // Track the vertical line start on the current page
-    let vLineStartY = y;
+    // Track the vertical line start on the current page (offset down to align with title)
+    let vLineStartY = y + 2;
     
     // Draw title
     pdf.setDrawColor(...color);
@@ -434,7 +437,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(data.title, margin + 5, y + 6);
+    pdf.text(data.title, margin + 5, y + 4);
     y += titleH;
 
     // Draw lines one by one with page break checks
@@ -450,7 +453,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
         addFooter();
         pdf.addPage();
         y = margin;
-        vLineStartY = y;
+        vLineStartY = y + 2;
         // Reset font after page break
         pdf.setFontSize(9);
         pdf.setFont('helvetica', 'normal');
@@ -509,8 +512,8 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...white);
-    pdf.text('Qte', colQty + 3, y + 6);
-    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Qté', colQty + 3, y + 6);
+    pdf.text('Désignation', colDesc, y + 6);
     pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
     pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
     y += 9;
@@ -570,7 +573,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Recapitulatif des Prix', margin, y);
+  pdf.text('Récapitulatif des Prix', margin, y);
   y += 7;
 
   // Header row
@@ -599,7 +602,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
       const qty = device.nettoyageQty || 1;
       const unitPrice = parseFloat(device.nettoyagePrice) || 0;
       const lineTotal = qty * unitPrice;
-      drawTableRow(qty, 'Nettoyage cellule - si requis selon etat du capteur', unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
+      drawTableRow(qty, 'Nettoyage cellule - si requis selon état du capteur', unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
     
@@ -689,7 +692,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(...lightGray);
-    pdf.text('* Le nettoyage cellule sera facture uniquement si necessaire selon l\'etat du capteur a reception.', margin, y);
+    pdf.text('* Le nettoyage cellule sera facturé uniquement si nécessaire selon l\'état du capteur à réception.', margin, y);
     y += 5;
   }
 
@@ -818,7 +821,7 @@ const generatePartsQuotePDF = async (order, quoteData) => {
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text('16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.text('16, rue Paul Séjourné - 94000 CRÉTEIL - Tél. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
   };
 
   // Header with logo
@@ -873,7 +876,7 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   pdf.setTextColor(...gray);
   const quoteDate = quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
   pdf.text(`Date: ${quoteDate}`, margin + 3, y + 5);
-  pdf.text('Validite: 30 jours', pageWidth - margin - 3, y + 5, { align: 'right' });
+  pdf.text('Validité: 30 jours', pageWidth - margin - 3, y + 5, { align: 'right' });
   y += 12;
   
   // Client info
@@ -918,9 +921,9 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
-  pdf.text('Qte', colQty + 2, y + 5);
-  pdf.text('Reference', colRef, y + 5);
-  pdf.text('Designation', colDesc, y + 5);
+  pdf.text('Qté', colQty + 2, y + 5);
+  pdf.text('Référence', colRef, y + 5);
+  pdf.text('Désignation', colDesc, y + 5);
   pdf.text('P.U. HT', colUnit, y + 5, { align: 'right' });
   pdf.text('Total', colTotal, y + 5, { align: 'right' });
   y += 8;
@@ -1371,7 +1374,7 @@ const generateServiceReportPDF = async (device, rma, technicianName, calType, re
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
   };
 
   // ===== HEADER =====
@@ -2624,7 +2627,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
   };
 
   const getUsableHeight = () => pageHeight - footerHeight - margin;
@@ -2676,7 +2679,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
   pdf.text('DATE', margin + 5, y + 4);
-  pdf.text('VALIDITE', margin + 65, y + 4);
+  pdf.text('VALIDITÉ', margin + 65, y + 4);
   pdf.text('CONDITIONS', margin + 120, y + 4);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
@@ -2684,7 +2687,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.text(formatDateFR(new Date()), margin + 5, y + 11);
   pdf.text('30 jours', margin + 65, y + 11);
   pdf.setFontSize(9);
-  pdf.text(qd.paymentTerms || 'A reception de facture', margin + 120, y + 11);
+  pdf.text(qd.paymentTerms || 'À réception de facture', margin + 120, y + 11);
   y += 20;
 
   // ===== CLIENT =====
@@ -2747,8 +2750,8 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...white);
-    pdf.text('Qte', colQty + 3, y + 6);
-    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Qté', colQty + 3, y + 6);
+    pdf.text('Désignation', colDesc, y + 6);
     pdf.text('Tarif', colRate, y + 6, { align: 'right' });
     pdf.text('Duree', colDuration, y + 6, { align: 'right' });
     pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
@@ -2763,7 +2766,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Recapitulatif des Prix', margin, y);
+  pdf.text('Récapitulatif des Prix', margin, y);
   y += 6;
 
   drawTableHeader();
@@ -10810,7 +10813,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
   };
   
   const getUsableHeight = () => pageHeight - footerHeight - margin;
@@ -10875,7 +10878,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
   pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('VALIDITE', margin + 60, y + 5);
+  pdf.text('VALIDITÉ', margin + 60, y + 5);
   pdf.text('CONDITIONS', margin + 115, y + 5);
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
@@ -10883,7 +10886,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const qDate = new Date().toLocaleDateString('fr-FR');
   pdf.text(qDate, margin + 5, y + 12);
   pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text('A reception de facture', margin + 115, y + 12);
+  pdf.text('À réception de facture', margin + 115, y + 12);
   y += 20;
 
   // ===== CLIENT =====
@@ -10933,7 +10936,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Travaux Supplementaires', margin, y);
+  pdf.text('Travaux Supplémentaires', margin, y);
   y += 7;
 
   // Header row
@@ -10942,8 +10945,8 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
-  pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Qté', colQty + 3, y + 6);
+  pdf.text('Désignation', colDesc, y + 6);
   pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
   pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
   y += 9;
@@ -11034,7 +11037,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.text('CONDITIONS:', margin, y);
   y += 5;
   pdf.setFont('helvetica', 'normal');
-  pdf.text('• Ce devis complementaire est valable 30 jours a compter de sa date d\'emission.', margin + 3, y);
+  pdf.text('• Ce devis complémentaire est valable 30 jours à compter de sa date d\'émission.', margin + 3, y);
   y += 4;
   pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit (signature ou bon de commande).', margin + 3, y);
   y += 4;
@@ -14188,7 +14191,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 w-32">{lang === 'en' ? 'Reference' : 'Référence'}</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 w-32">{lang === 'en' ? 'Référence' : 'Référence'}</th>
                         <th className="px-3 py-2 text-left text-xs font-bold text-gray-600">{t('description')}</th>
                         <th className="px-3 py-2 text-center text-xs font-bold text-gray-600 w-20">{lang === 'en' ? 'Qty' : 'Qté'}</th>
                         <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 w-24">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
@@ -14374,7 +14377,7 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
                         <th className="px-3 py-2 text-left text-sm w-12">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                        <th className="px-3 py-2 text-left text-sm">{lang === 'en' ? 'Reference' : 'Référence'}</th>
+                        <th className="px-3 py-2 text-left text-sm">{lang === 'en' ? 'Référence' : 'Référence'}</th>
                         <th className="px-3 py-2 text-left text-sm">{lang === 'en' ? 'Description' : 'Désignation'}</th>
                         <th className="px-3 py-2 text-right text-sm w-20">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
                         <th className="px-3 py-2 text-right text-sm w-20">{t('totalHT')}</th>
@@ -14922,7 +14925,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
         <thead>
           <tr>
             <th style="width:50px">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-            <th style="width:120px">{lang === 'en' ? 'Reference' : 'Référence'}</th>
+            <th style="width:120px">{lang === 'en' ? 'Référence' : 'Référence'}</th>
             <th>{lang === 'en' ? 'Description' : 'Désignation'}</th>
           </tr>
         </thead>
@@ -15396,7 +15399,7 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
                         <thead>
                           <tr style={{ background: 'rgba(51,51,51,0.35)' }}>
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '50px', fontWeight: 'bold' }}>{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '120px', fontWeight: 'bold' }}>{lang === 'en' ? 'Reference' : 'Référence'}</th>
+                            <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', width: '120px', fontWeight: 'bold' }}>{lang === 'en' ? 'Référence' : 'Référence'}</th>
                             <th style={{ color: '#333', padding: '10px 12px', textAlign: 'left', fontSize: '10pt', fontWeight: 'bold' }}>{lang === 'en' ? 'Description' : 'Désignation'}</th>
                           </tr>
                         </thead>
@@ -22416,7 +22419,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(140, 140, 140);
       pdf.text(biz.company_name || 'Lighthouse France SAS', margin, pageHeight - 15);
-      pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'}`, margin, pageHeight - 11);
+      pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'}`, margin, pageHeight - 11);
       pdf.text(`Tel: ${biz.phone || '01 43 77 28 07'} - ${biz.email || 'service@golighthouse.com'}`, margin, pageHeight - 7);
       // Right - SIRET + page
       if (biz.siret) pdf.text(`SIRET: ${biz.siret}`, pageWidth - margin, pageHeight - 11, { align: 'right' });
@@ -22531,7 +22534,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     pdf.setFontSize(8);
     pdf.setFont('helvetica', 'italic');
     pdf.setTextColor(...gray);
-    pdf.text("Validite de l'offre : 30 jours a compter de la date d'emission.", margin, y);
+    pdf.text("Validité de l'offre : 30 jours à compter de la date d'émission.", margin, y);
     y += 5;
     
     if (isPricing && contractData.shipping_price !== null && contractData.shipping_price !== undefined) {
@@ -25893,72 +25896,72 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
 const QUOTE_DEFAULTS = {
   calibration: {
     particle_counter: {
-      title: "Etalonnage Compteur de Particules Aeroportees",
+      title: "Étalonnage Compteur de Particules Aéroportées",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure",
-        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
-        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure",
+        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+        "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     bio_collector: {
-      title: "Etalonnage Bio Collecteur",
+      title: "Étalonnage Bio Collecteur",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Verification et reglage du debit",
-        "Verification de la cellule d'impaction",
-        "Controle des parametres de collecte",
+        "Vérification des fonctionnalités de l'appareil",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule d'impaction",
+        "Contrôle des paramètres de collecte",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     liquid_counter: {
-      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      title: "Étalonnage Compteur de Particules en Milieu Liquide",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure optique",
-        "Controle et reglage des seuils de mesures granulometrique",
-        "Verification en nombre par comparaison a un etalon",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure optique",
+        "Contrôle et réglage des seuils de mesures granulométrique",
+        "Vérification en nombre par comparaison à un étalon",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     temp_humidity: {
-      title: "Etalonnage Capteur Temperature/Humidite",
+      title: "Étalonnage Capteur Température/Humidité",
       prestations: [
-        "Verification des fonctionnalites du capteur",
-        "Etalonnage temperature sur points de reference certifies",
-        "Etalonnage humidite relative",
-        "Verification de la stabilite des mesures",
-        "Fourniture d'un certificat d'etalonnage"
+        "Vérification des fonctionnalités du capteur",
+        "Étalonnage température sur points de référence certifiés",
+        "Étalonnage humidité relative",
+        "Vérification de la stabilité des mesures",
+        "Fourniture d'un certificat d'étalonnage"
       ]
     },
     other: {
-      title: "Etalonnage Equipement",
+      title: "Étalonnage Équipement",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Etalonnage selon les specifications du fabricant",
+        "Vérification des fonctionnalités de l'appareil",
+        "Étalonnage selon les spécifications du fabricant",
         "Tests de fonctionnement",
         "Fourniture d'un rapport de test"
       ]
     }
   },
   repair: {
-    title: "Reparation",
+    title: "Réparation",
     prestations: [
       "Diagnostic complet de l'appareil",
-      "Identification des composants defectueux",
-      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Identification des composants défectueux",
+      "Remplacement des pièces défectueuses (pièces facturées en sus)",
       "Tests de fonctionnement complets",
-      "Verification d'etalonnage post-reparation si applicable"
+      "Vérification d'étalonnage post-réparation si applicable"
     ]
   },
   disclaimers: [
-    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
-    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
-    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
-    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+    "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
+    "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+    "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
   ],
   signatory_name: "M. Meleney",
   signatory_company: "Lighthouse France"
@@ -29721,7 +29724,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                 {/* Footer */}
                 <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
                   <p className="font-medium">Lighthouse France SAS</p>
-                  <p className="text-gray-400">16, rue Paul Sejourne - 94000 CRETEIL - Tel. 01 43 77 28 07</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné - 94000 CRÉTEIL - Tél. 01 43 77 28 07</p>
                 </div>
               </div>
             </div>
@@ -29998,8 +30001,8 @@ function PricingSheet({ notify, isAdmin, t = k=>k, lang = 'fr' }) {
 
           // Parse each row
           for (const row of jsonData) {
-            const partNumber = findColumn(row, 'Part Number', 'PartNumber', 'part_number', 'Ref', 'Reference', 'SKU', 'PN', 'Part No', 'Numéro', (lang === 'en' ? 'Part #' : 'N° Pièce'));
-            const description = findColumn(row, 'Description', 'Desc', 'Name', 'Nom', (lang === 'en' ? 'Description' : 'Désignation'), 'Designation', 'Libellé', 'Libelle', 'Label');
+            const partNumber = findColumn(row, 'Part Number', 'PartNumber', 'part_number', 'Ref', 'Référence', 'SKU', 'PN', 'Part No', 'Numéro', (lang === 'en' ? 'Part #' : 'N° Pièce'));
+            const description = findColumn(row, 'Description', 'Desc', 'Name', 'Nom', (lang === 'en' ? 'Description' : 'Désignation'), 'Désignation', 'Libellé', 'Libelle', 'Label');
             const descriptionFr = findColumn(row, 'Description FR', 'description_fr', 'Nom FR');
             const category = findColumn(row, 'Category', 'Categorie', (lang === 'en' ? 'Category' : 'Catégorie'), 'Type', 'Cat', 'Famille');
             const rawPrice = findColumn(row, 'Price', 'Prix', 'Unit Price', 'Prix Unitaire', 'Cost', 'Tarif', 'PU', 'Prix HT', 'Montant');
@@ -33409,7 +33412,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
           pdf.setFont('helvetica', 'normal');
           pdf.setTextColor(180, 180, 180);
           pdf.setFontSize(8);
-          pdf.text(`${biz.address || '16, rue Paul Sejourne'} - ${biz.postal_code || '94000'} ${biz.city || 'CRETEIL'} - Tel. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+          pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
         };
         const getUsableHeight = () => pageHeight - footerHeight - margin;
         const checkPageBreak = (needed) => {
@@ -33642,7 +33645,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(9);
           pdf.setTextColor(...darkBlue);
-          pdf.text('TOTAL SUPPLEMENTAIRE:', pageWidth - margin - 80, y);
+          pdf.text('TOTAL SUPPLÉMENTAIRE:', pageWidth - margin - 80, y);
           pdf.setFontSize(10);
           pdf.text(inspectionTotal.toFixed(2) + ' \u20AC HT', pageWidth - margin - 3, y, { align: 'right' });
           y += 8;
