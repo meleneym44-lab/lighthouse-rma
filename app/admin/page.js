@@ -14555,26 +14555,43 @@ function PartsShippingModal({ order, onClose, notify, reload, profile, businessS
           </body></html>`);
           w.document.close();
         } else {
-          // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
-          const w = window.open('', '_blank');
-          if (!w) {
-            const a = document.createElement('a');
-            a.href = `data:image/gif;base64,${labelData}`;
-            a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.gif`;
-            a.click();
-            setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
-            return;
-          }
-          w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
-            @page { size: 4in 6in; margin: 0; }
-            * { margin: 0; padding: 0; }
-            body { width: 4in; height: 6in; overflow: hidden; }
-            img { width: 4in; height: 6in; object-fit: contain; display: block; }
-            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-          </style></head><body>
-            <img src="data:image/gif;base64,${labelData}" onload="setTimeout(()=>window.print(), 300);" />
-          </body></html>`);
-          w.document.close();
+          // GIF label — auto-rotate landscape→portrait for Zebra ZD421d 4×6 thermal
+          const img = new Image();
+          img.onload = () => {
+            let printSrc = img.src;
+            // UPS GIF labels are typically landscape — rotate 90° CW to portrait
+            if (img.naturalWidth > img.naturalHeight) {
+              console.log('🏷️ Landscape GIF detected, rotating 90° CW via canvas');
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalHeight;
+              canvas.height = img.naturalWidth;
+              const ctx = canvas.getContext('2d');
+              ctx.translate(canvas.width, 0);
+              ctx.rotate(Math.PI / 2);
+              ctx.drawImage(img, 0, 0);
+              printSrc = canvas.toDataURL('image/png');
+            }
+            const w = window.open('', '_blank');
+            if (!w) {
+              const a = document.createElement('a');
+              a.href = printSrc;
+              a.download = `UPS-Label-${shipment.trackingNumber}-${pkgIndex + 1}.gif`;
+              a.click();
+              return;
+            }
+            w.document.write(`<html><head><title>UPS Label - ${shipment.trackingNumber}</title><style>
+              @page { size: 4in 6in; margin: 0; }
+              * { margin: 0; padding: 0; }
+              body { width: 4in; height: 6in; overflow: hidden; }
+              img { width: 4in; height: 6in; object-fit: contain; display: block; }
+              @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+            </style></head><body>
+              <img src="${printSrc}" onload="setTimeout(()=>window.print(), 300);" />
+            </body></html>`);
+            w.document.close();
+          };
+          img.onerror = () => console.error('🏷️ Failed to load GIF for rotation');
+          img.src = `data:image/gif;base64,${labelData}`;
         }
         
         setLabelsPrinted(prev => ({ ...prev, [pkgIndex]: true }));
@@ -15472,19 +15489,34 @@ function InternalShippingModal({ rma, devices, onClose, notify, reload, profile,
           const url = URL.createObjectURL(blob);
           window.open(url, '_blank');
         } else {
-          // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
-          const w = window.open('', '_blank');
-          if (!w) return;
-          w.document.write(`<html><head><title>UPS Label</title><style>
-            @page { size: 4in 6in; margin: 0; }
-            * { margin: 0; padding: 0; }
-            body { width: 4in; height: 6in; overflow: hidden; }
-            img { width: 4in; height: 6in; object-fit: contain; display: block; }
-            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-          </style></head><body>
-            <img src="data:image/gif;base64,${upsLabel}" onload="setTimeout(()=>window.print(), 300);" />
-          </body></html>`);
-          w.document.close();
+          // GIF label — auto-rotate landscape→portrait for Zebra ZD421d 4×6 thermal
+          const img = new Image();
+          img.onload = () => {
+            let printSrc = img.src;
+            if (img.naturalWidth > img.naturalHeight) {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalHeight;
+              canvas.height = img.naturalWidth;
+              const ctx = canvas.getContext('2d');
+              ctx.translate(canvas.width, 0);
+              ctx.rotate(Math.PI / 2);
+              ctx.drawImage(img, 0, 0);
+              printSrc = canvas.toDataURL('image/png');
+            }
+            const w = window.open('', '_blank');
+            if (!w) return;
+            w.document.write(`<html><head><title>UPS Label</title><style>
+              @page { size: 4in 6in; margin: 0; }
+              * { margin: 0; padding: 0; }
+              body { width: 4in; height: 6in; overflow: hidden; }
+              img { width: 4in; height: 6in; object-fit: contain; display: block; }
+              @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+            </style></head><body>
+              <img src="${printSrc}" onload="setTimeout(()=>window.print(), 300);" />
+            </body></html>`);
+            w.document.close();
+          };
+          img.src = `data:image/gif;base64,${upsLabel}`;
         }
       } catch (e) {
         console.error('Error opening label:', e);
@@ -16434,26 +16466,40 @@ function ShippingModal({ rma, devices, onClose, notify, reload, profile, busines
           </body></html>`);
           w.document.close();
         } else {
-          // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
-          const w = window.open('', '_blank');
-          if (!w) {
-            const a = document.createElement('a');
-            a.href = `data:image/gif;base64,${labelData}`;
-            a.download = `UPS-Label-${s.trackingNumber}.gif`;
-            a.click();
-            setLabelsPrinted(prev => ({ ...prev, [index]: true }));
-            return;
-          }
-          w.document.write(`<html><head><title>UPS Label - ${s.trackingNumber}</title><style>
-            @page { size: 4in 6in; margin: 0; }
-            * { margin: 0; padding: 0; }
-            body { width: 4in; height: 6in; overflow: hidden; }
-            img { width: 4in; height: 6in; object-fit: contain; display: block; }
-            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-          </style></head><body>
-            <img src="data:image/gif;base64,${labelData}" onload="setTimeout(()=>window.print(), 300);" />
-          </body></html>`);
-          w.document.close();
+          // GIF label — auto-rotate landscape→portrait for Zebra ZD421d 4×6 thermal
+          const img = new Image();
+          img.onload = () => {
+            let printSrc = img.src;
+            if (img.naturalWidth > img.naturalHeight) {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalHeight;
+              canvas.height = img.naturalWidth;
+              const ctx = canvas.getContext('2d');
+              ctx.translate(canvas.width, 0);
+              ctx.rotate(Math.PI / 2);
+              ctx.drawImage(img, 0, 0);
+              printSrc = canvas.toDataURL('image/png');
+            }
+            const w = window.open('', '_blank');
+            if (!w) {
+              const a = document.createElement('a');
+              a.href = printSrc;
+              a.download = `UPS-Label-${s.trackingNumber}.gif`;
+              a.click();
+              return;
+            }
+            w.document.write(`<html><head><title>UPS Label - ${s.trackingNumber}</title><style>
+              @page { size: 4in 6in; margin: 0; }
+              * { margin: 0; padding: 0; }
+              body { width: 4in; height: 6in; overflow: hidden; }
+              img { width: 4in; height: 6in; object-fit: contain; display: block; }
+              @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+            </style></head><body>
+              <img src="${printSrc}" onload="setTimeout(()=>window.print(), 300);" />
+            </body></html>`);
+            w.document.close();
+          };
+          img.src = `data:image/gif;base64,${labelData}`;
         }
         
         setLabelsPrinted(prev => ({ ...prev, [index]: true }));
@@ -32426,19 +32472,34 @@ function RentalShippingModal({ rental, company, address, items, days, profile, b
         </style></head><body><iframe src="${blobUrl}"></iframe></body></html>`);
         w.document.close();
       } else {
-        // GIF label — portrait 4×6 for Zebra ZD421d thermal printer
-        const w = window.open('', '_blank');
-        if (!w) return;
-        w.document.write(`<html><head><title>UPS Label</title><style>
-          @page { size: 4in 6in; margin: 0; }
-          * { margin: 0; padding: 0; }
-          body { width: 4in; height: 6in; overflow: hidden; }
-          img { width: 4in; height: 6in; object-fit: contain; display: block; }
-          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-        </style></head><body>
-          <img src="data:image/gif;base64,${labelData}" onload="setTimeout(()=>window.print(), 300);" />
-        </body></html>`);
-        w.document.close();
+        // GIF label — auto-rotate landscape→portrait for Zebra ZD421d 4×6 thermal
+        const img = new Image();
+        img.onload = () => {
+          let printSrc = img.src;
+          if (img.naturalWidth > img.naturalHeight) {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalHeight;
+            canvas.height = img.naturalWidth;
+            const ctx = canvas.getContext('2d');
+            ctx.translate(canvas.width, 0);
+            ctx.rotate(Math.PI / 2);
+            ctx.drawImage(img, 0, 0);
+            printSrc = canvas.toDataURL('image/png');
+          }
+          const w = window.open('', '_blank');
+          if (!w) return;
+          w.document.write(`<html><head><title>UPS Label</title><style>
+            @page { size: 4in 6in; margin: 0; }
+            * { margin: 0; padding: 0; }
+            body { width: 4in; height: 6in; overflow: hidden; }
+            img { width: 4in; height: 6in; object-fit: contain; display: block; }
+            @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          </style></head><body>
+            <img src="${printSrc}" onload="setTimeout(()=>window.print(), 300);" />
+          </body></html>`);
+          w.document.close();
+        };
+        img.src = `data:image/gif;base64,${labelData}`;
       }
       setLabelsPrinted(prev => ({ ...prev, [pkgIdx]: true }));
     }
