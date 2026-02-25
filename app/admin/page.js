@@ -175,11 +175,11 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     pdf.text('RMA: ' + rma.request_number, pageWidth - margin, y + 16, { align: 'right' });
   }
   
-  y += 18;
+  y += 16;
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
-  y += 4;
+  y += 3;
 
   // ===== INFO BAR (tighter) =====
   pdf.setFillColor(245, 245, 245);
@@ -196,7 +196,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   pdf.text(qDate, margin + 5, y + 10);
   pdf.text('30 jours', margin + 60, y + 10);
   pdf.text('A reception de facture', margin + 115, y + 10);
-  y += 17;
+  y += 14;
 
   // ===== ADDRESS BOXES: LIVRER À (left) | FACTURER À (right) =====
   const billingAddr = options.billingAddress || null;
@@ -216,13 +216,17 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   if (shipAttn) shipLines.push({ text: 'Attn: ' + shipAttn, bold: false, size: 8.5 });
   if (shippingAddr) {
     if (shippingAddr.address_line1) shipLines.push({ text: shippingAddr.address_line1, bold: false, size: 8.5 });
-    const shipCity = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
-    if (shipCity) shipLines.push({ text: shipCity, bold: false, size: 8.5 });
+    const shipCityParts = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
+    const shipCityCountry = [shipCityParts, shippingAddr.country].filter(Boolean).join(', ');
+    if (shipCityCountry) shipLines.push({ text: shipCityCountry, bold: false, size: 8.5 });
     if (shippingAddr.phone) shipLines.push({ text: 'Tél: ' + shippingAddr.phone, bold: false, size: 8.5 });
   } else {
     if (company.billing_address || company.address) shipLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
-    const fallbackCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    if (fallbackCity) shipLines.push({ text: fallbackCity, bold: false, size: 8.5 });
+    const fallbackCityParts = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+    const fallbackCountry = company.billing_country || company.country || null;
+    const fallbackCityCountry = [fallbackCityParts, fallbackCountry].filter(Boolean).join(', ');
+    if (fallbackCityCountry) shipLines.push({ text: fallbackCityCountry, bold: false, size: 8.5 });
+    if (company.phone) shipLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
   }
   if (rma.request_devices?.some(d => d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id)) {
     shipLines.push({ text: '* Adresses multiples — voir RMA', bold: false, size: 7, italic: true, color: [150, 150, 150] });
@@ -234,15 +238,19 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   if (billingAddr) {
     if (billingAddr.attention) billLines.push({ text: 'Attn: ' + billingAddr.attention, bold: false, size: 8.5 });
     if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
-    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
-    if (billCity) billLines.push({ text: billCity, bold: false, size: 8.5 });
+    const billCityParts = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
+    const billCityCountry = [billCityParts, billingAddr.country].filter(Boolean).join(', ');
+    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
     if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
     if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
     if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
   } else {
     if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
-    const fallbackBillCity = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    if (fallbackBillCity) billLines.push({ text: fallbackBillCity, bold: false, size: 8.5 });
+    const fallbackBillCityParts = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+    const fallbackBillCountry = company.billing_country || company.country || null;
+    const fallbackBillCityCountry = [fallbackBillCityParts, fallbackBillCountry].filter(Boolean).join(', ');
+    if (fallbackBillCityCountry) billLines.push({ text: fallbackBillCityCountry, bold: false, size: 8.5 });
     if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
   }
 
@@ -257,16 +265,16 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const billBoxH = labelH + boxPad + billContentH + boxPad;
   const boxH = Math.max(shipBoxH, billBoxH);
 
-  // Draw boxes
-  pdf.setDrawColor(200, 200, 200);
-  pdf.setLineWidth(0.5);
+  // Draw boxes with subtle navy borders
+  pdf.setDrawColor(0, 51, 102); // navy tint
+  pdf.setLineWidth(0.4);
   pdf.rect(margin, y, leftBoxW, boxH);
   pdf.rect(rightBoxX, y, rightBoxW, boxH);
 
   // Box labels (inside, top-left)
   pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(160, 160, 160);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(0, 51, 102);
   pdf.text('LIVRER À', margin + boxPad, y + 4);
   pdf.text('FACTURER À', rightBoxX + boxPad, y + 4);
 
@@ -290,7 +298,7 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
     lineY += getLineH(line);
   }
 
-  y += boxH + 5;
+  y += boxH + 3;
 
   // ===== SERVICE DESCRIPTION BLOCKS =====
   // Determine what service types are needed based on devices
