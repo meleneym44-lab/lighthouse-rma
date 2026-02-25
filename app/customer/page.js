@@ -5245,14 +5245,15 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       }
     }
 
-    // Validate address
-    if (!shipping.showNewForm && !shipping.address_id) {
-      notify('Veuillez sélectionner ou ajouter une adresse', 'error');
+    // Validate address (only needed for standard return)
+    const isStandardReturn = shipping.return_shipping === 'standard' || !shipping.return_shipping;
+    if (isStandardReturn && !shippingSameAsBilling && !shipping.showNewForm && !shipping.address_id) {
+      notify('Veuillez sélectionner ou ajouter une adresse de retour', 'error');
       return;
     }
     
     // Validate parcels (only for standard shipping)
-    if (shipping.return_shipping === 'standard' && (!shipping.parcels || shipping.parcels < 1)) {
+    if (isStandardReturn && (!shipping.parcels || shipping.parcels < 1)) {
       notify('Veuillez indiquer le nombre de colis', 'error');
       return;
     }
@@ -5273,12 +5274,6 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         notify('Le numéro de service Chorus Pro est requis sur l\'adresse de facturation.', 'error');
         return;
       }
-    }
-
-    // Validate shipping address (if not same as billing)
-    if (!shippingSameAsBilling && !shipping.address_id && !shipping.showNewForm) {
-      notify('Veuillez sélectionner une adresse de livraison/retour', 'error');
-      return;
     }
 
     setShowReviewModal(true);
@@ -5310,15 +5305,22 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         finalBillingAddressId = baData.id;
       }
 
-      // Handle shipping address
-      let addressId;
-      if (shippingSameAsBilling) {
-        addressId = finalBillingAddressId;
-      } else if (shipping.showNewForm) {
-        addressId = await saveNewAddress();
-        if (!addressId) { setSaving(false); return; }
+      // Handle shipping/return address
+      const isStandardReturn = shipping.return_shipping === 'standard' || !shipping.return_shipping;
+      let addressId = null;
+      if (isStandardReturn) {
+        // Standard return needs a return address
+        if (shippingSameAsBilling) {
+          addressId = finalBillingAddressId;
+        } else if (shipping.showNewForm) {
+          addressId = await saveNewAddress();
+          if (!addressId) { setSaving(false); return; }
+        } else {
+          addressId = shipping.address_id;
+        }
       } else {
-        addressId = shipping.address_id;
+        // Non-standard (own_label/pickup) — no return address needed, use billing as fallback
+        addressId = finalBillingAddressId;
       }
 
       // Get SIRET/TVA/Chorus from billing address
@@ -5523,40 +5525,88 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           )}
         </div>
 
-        {/* ====== 2. SHIPPING / RETURN ADDRESS ====== */}
+        {/* ====== 2. OPTIONS DE RETOUR ====== */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
-          <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">📦 Adresse de livraison / retour</h2>
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">🚚 Options de retour</h2>
           
-          {/* Same as billing toggle */}
-          <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border cursor-pointer mb-4">
-            <input
-              type="checkbox"
-              checked={shippingSameAsBilling}
-              onChange={e => setShippingSameAsBilling(e.target.checked)}
-              className="w-4 h-4 text-[#3B7AB4]"
-            />
-            <span className="text-sm font-medium">Identique à l'adresse de facturation</span>
-          </label>
+          <div className="space-y-3">
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+              shipping.return_shipping === 'standard' || !shipping.return_shipping
+                ? 'border-[#3B7AB4] bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+            }`}>
+              <input type="radio" name="return_shipping_main" checked={shipping.return_shipping === 'standard' || !shipping.return_shipping} onChange={() => setShipping({ ...shipping, return_shipping: 'standard' })} className="mt-1 w-4 h-4 text-[#3B7AB4]" />
+              <div>
+                <span className="font-medium text-[#1E3A5F]">🚚 Retour standard par Lighthouse</span>
+                <p className="text-xs text-gray-500 mt-0.5">Nous organisons le retour de vos appareils après service (frais de port inclus dans le devis)</p>
+              </div>
+            </label>
 
-          {shippingSameAsBilling && selectedBillingAddr && (
-            <p className="text-sm text-gray-500 mb-4 italic">
-              ✓ {selectedBillingAddr.company_name || selectedBillingAddr.label}, {selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}
-            </p>
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+              shipping.return_shipping === 'own_label' ? 'border-amber-400 bg-amber-50' : 'border-gray-200 hover:border-gray-300'
+            }`}>
+              <input type="radio" name="return_shipping_main" checked={shipping.return_shipping === 'own_label'} onChange={() => setShipping({ ...shipping, return_shipping: 'own_label' })} className="mt-1 w-4 h-4 text-amber-500" />
+              <div>
+                <span className="font-medium text-[#1E3A5F]">🏷️ Je fournis ma propre étiquette de retour</span>
+                <p className="text-xs text-gray-500 mt-0.5">Vous nous enverrez votre étiquette de transport pour le retour</p>
+              </div>
+            </label>
+
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+              shipping.return_shipping === 'pickup' ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-gray-300'
+            }`}>
+              <input type="radio" name="return_shipping_main" checked={shipping.return_shipping === 'pickup'} onChange={() => setShipping({ ...shipping, return_shipping: 'pickup' })} className="mt-1 w-4 h-4 text-green-500" />
+              <div>
+                <span className="font-medium text-[#1E3A5F]">🏢 Je récupère les appareils moi-même</span>
+                <p className="text-xs text-gray-500 mt-0.5">Vous viendrez récupérer vos appareils à notre atelier à Créteil</p>
+              </div>
+            </label>
+          </div>
+
+          {/* === STANDARD RETURN: show parcels + return address === */}
+          {(shipping.return_shipping === 'standard' || !shipping.return_shipping) && (
+            <div className="mt-6 pt-4 border-t border-gray-100 space-y-4">
+              {/* Parcels */}
+              <div className="p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
+                <label className="block text-sm font-bold text-[#1E3A5F] mb-2">📦 Nombre de colis *</label>
+                <p className="text-sm text-gray-600 mb-3">Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.</p>
+                <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })} className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50">−</button>
+                  <input type="number" min="0" value={shipping.parcels || 0} onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })} className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${(shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+                  <button type="button" onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })} className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50">+</button>
+                  <span className="text-gray-600 ml-2">colis</span>
+                </div>
+                {(shipping.parcels || 0) === 0 && <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>}
+              </div>
+
+              {/* Return address */}
+              <div>
+                <label className="block text-sm font-bold text-[#1E3A5F] mb-3">📍 Adresse de retour</label>
+                
+                <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border cursor-pointer mb-4">
+                  <input type="checkbox" checked={shippingSameAsBilling} onChange={e => setShippingSameAsBilling(e.target.checked)} className="w-4 h-4 text-[#3B7AB4]" />
+                  <span className="text-sm font-medium">Identique à l'adresse de facturation</span>
+                </label>
+
+                {shippingSameAsBilling && selectedBillingAddr && (
+                  <p className="text-sm text-gray-500 italic">
+                    ✓ {selectedBillingAddr.company_name || selectedBillingAddr.label}, {selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}
+                  </p>
+                )}
+
+                {!shippingSameAsBilling && (
+                  <ReturnAddressPicker
+                    shipping={shipping}
+                    setShipping={setShipping}
+                    addresses={addresses}
+                    profile={profile}
+                    notify={notify}
+                    refresh={refresh}
+                  />
+                )}
+              </div>
+            </div>
           )}
         </div>
-
-        {!shippingSameAsBilling && (
-          <div className="mt-2">
-            <ShippingSection 
-              shipping={shipping}
-              setShipping={setShipping}
-              addresses={addresses}
-              profile={profile}
-              notify={notify}
-              refresh={refresh}
-            />
-          </div>
-        )}
 
         {/* Submit Buttons */}
         <div className="flex gap-4 mt-8">
@@ -5662,10 +5712,28 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                   )}
                 </div>
 
-                {/* Shipping / Return Address */}
+                {/* Return Method */}
                 <div>
                   <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
-                    📍 Adresse de livraison / retour
+                    🚚 Retour des appareils
+                  </h3>
+                  <div className={`rounded-lg p-4 border ${
+                    shipping.return_shipping === 'own_label' ? 'bg-amber-50 border-amber-200' 
+                    : shipping.return_shipping === 'pickup' ? 'bg-green-50 border-green-200' 
+                    : 'bg-blue-50 border-blue-200'
+                  }`}>
+                    <p className="font-medium text-sm">{returnShippingLabels[shipping.return_shipping] || returnShippingLabels.standard}</p>
+                    {(shipping.return_shipping === 'standard' || !shipping.return_shipping) && (
+                      <p className="text-xs text-gray-500 mt-1">📦 {shipping.parcels} colis</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Return Address - only for standard return */}
+                {(shipping.return_shipping === 'standard' || !shipping.return_shipping) && (
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
+                    📍 Adresse de retour
                   </h3>
                   {shippingSameAsBilling ? (
                     <p className="text-sm text-gray-500 italic">Identique à l'adresse de facturation</p>
@@ -5679,23 +5747,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                     </div>
                   )}
                 </div>
-
-                {/* Return Shipping Method */}
-                <div>
-                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
-                    🚚 Retour des appareils
-                  </h3>
-                  <div className={`rounded-lg p-4 border ${
-                    shipping.return_shipping === 'own_label' ? 'bg-amber-50 border-amber-200' 
-                    : shipping.return_shipping === 'pickup' ? 'bg-green-50 border-green-200' 
-                    : 'bg-blue-50 border-blue-200'
-                  }`}>
-                    <p className="font-medium text-sm">{returnShippingLabels[shipping.return_shipping] || returnShippingLabels.standard}</p>
-                    {shipping.return_shipping === 'standard' && (
-                      <p className="text-xs text-gray-500 mt-1">📦 {shipping.parcels} colis</p>
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Actions */}
@@ -6614,125 +6666,16 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
 // ============================================
 // SHIPPING SECTION (Reusable)
 // ============================================
-function ShippingSection({ shipping, setShipping, addresses, profile, notify, refresh }) {
+function ReturnAddressPicker({ shipping, setShipping, addresses, profile, notify, refresh }) {
   // Check if selected address is outside France Metropolitan
   const selectedAddress = addresses.find(a => a.id === shipping.address_id);
   const isOutsideMetro = selectedAddress ? isOutsideFranceMetropolitan(selectedAddress.postal_code) : false;
   const newAddressIsOutsideMetro = shipping.showNewForm && shipping.newAddress.postal_code && isOutsideFranceMetropolitan(shipping.newAddress.postal_code);
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
-      <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
-        Information de Livraison
-      </h2>
-
-      {/* Number of Parcels - FIRST */}
-      {(!shipping.return_shipping || shipping.return_shipping === 'standard') && (
-      <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
-        <label className="block text-sm font-bold text-[#1E3A5F] mb-2">
-          📦 Nombre de colis *
-        </label>
-        <p className="text-sm text-gray-600 mb-3">
-          Indiquez le nombre de colis/boîtes dans lesquels vous enverrez vos appareils.
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: Math.max(0, (shipping.parcels || 0) - 1) })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            −
-          </button>
-          <input
-            type="number"
-            min="0"
-            value={shipping.parcels || 0}
-            onChange={e => setShipping({ ...shipping, parcels: Math.max(0, parseInt(e.target.value) || 0) })}
-            className={`w-20 px-3 py-2 text-center border rounded-lg font-bold text-lg ${
-              (shipping.parcels || 0) === 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, parcels: (shipping.parcels || 0) + 1 })}
-            className="w-10 h-10 rounded-lg bg-white border border-gray-300 text-gray-600 font-bold hover:bg-gray-50"
-          >
-            +
-          </button>
-          <span className="text-gray-600 ml-2">colis</span>
-        </div>
-        {(shipping.parcels || 0) === 0 && (
-          <p className="text-red-600 text-sm mt-2 font-medium">⚠️ Veuillez indiquer le nombre de colis</p>
-        )}
-      </div>
-      )}
-
-      {/* Return Shipping Options */}
-      <div className="mb-6 p-4 bg-white rounded-lg border border-gray-200">
-        <label className="block text-sm font-bold text-[#1E3A5F] mb-3">
-          🚚 Options de retour
-        </label>
-        <div className="space-y-3">
-          <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-            shipping.return_shipping === 'standard' || !shipping.return_shipping
-              ? 'border-[#3B7AB4] bg-blue-50' 
-              : 'border-gray-200 hover:border-gray-300'
-          }`}>
-            <input
-              type="radio"
-              name="return_shipping"
-              checked={shipping.return_shipping === 'standard' || !shipping.return_shipping}
-              onChange={() => setShipping({ ...shipping, return_shipping: 'standard' })}
-              className="mt-1 w-4 h-4 text-[#3B7AB4]"
-            />
-            <div>
-              <span className="font-medium text-[#1E3A5F]">Retour standard par Lighthouse</span>
-              <p className="text-xs text-gray-500 mt-0.5">Nous organisons le retour de vos appareils (frais de port inclus dans le devis)</p>
-            </div>
-          </label>
-
-          <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-            shipping.return_shipping === 'own_label'
-              ? 'border-amber-400 bg-amber-50' 
-              : 'border-gray-200 hover:border-gray-300'
-          }`}>
-            <input
-              type="radio"
-              name="return_shipping"
-              checked={shipping.return_shipping === 'own_label'}
-              onChange={() => setShipping({ ...shipping, return_shipping: 'own_label' })}
-              className="mt-1 w-4 h-4 text-amber-500"
-            />
-            <div>
-              <span className="font-medium text-[#1E3A5F]">Je fournis ma propre étiquette de retour</span>
-              <p className="text-xs text-gray-500 mt-0.5">Vous nous enverrez votre étiquette de transport pour le retour</p>
-            </div>
-          </label>
-
-          <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-            shipping.return_shipping === 'pickup'
-              ? 'border-green-400 bg-green-50' 
-              : 'border-gray-200 hover:border-gray-300'
-          }`}>
-            <input
-              type="radio"
-              name="return_shipping"
-              checked={shipping.return_shipping === 'pickup'}
-              onChange={() => setShipping({ ...shipping, return_shipping: 'pickup' })}
-              className="mt-1 w-4 h-4 text-green-500"
-            />
-            <div>
-              <span className="font-medium text-[#1E3A5F]">Je récupère l'appareil moi-même</span>
-              <p className="text-xs text-gray-500 mt-0.5">Vous viendrez récupérer vos appareils à notre atelier à Créteil</p>
-            </div>
-          </label>
-        </div>
-      </div>
-
+    <div>
       {/* Existing Addresses */}
       <div className="mb-4">
-        <label className="block text-sm font-bold text-gray-700 mb-2">Adresse de Retour *</label>
-        
         {addresses.filter(a => !a.is_billing).length > 0 ? (
           <div className="space-y-2 mb-4">
             {addresses.filter(a => !a.is_billing).map(addr => {
@@ -6816,94 +6759,31 @@ function ShippingSection({ shipping, setShipping, addresses, profile, notify, re
           <div className="grid md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-gray-700 mb-1">Nom de la Société *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.company_name || ''}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, company_name: e.target.value }
-                })}
-                placeholder="ex: Lighthouse France"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.company_name || ''} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, company_name: e.target.value } })} placeholder="ex: Lighthouse France" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.address_line1}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, address_line1: e.target.value }
-                })}
-                placeholder="ex: 16 Rue Paul Séjourne"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.address_line1} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, address_line1: e.target.value } })} placeholder="ex: 16 Rue Paul Séjourne" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.attention || ''}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, attention: e.target.value }
-                })}
-                placeholder="Nom du destinataire"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.attention || ''} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, attention: e.target.value } })} placeholder="Nom du destinataire" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-gray-700 mb-1">Téléphone *</label>
-              <input
-                type="tel"
-                value={shipping.newAddress.phone || ''}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, phone: e.target.value }
-                })}
-                placeholder="+33 1 23 45 67 89"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="tel" value={shipping.newAddress.phone || ''} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, phone: e.target.value } })} placeholder="+33 1 23 45 67 89" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.postal_code}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, postal_code: e.target.value }
-                })}
-                placeholder="ex: 94000"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.postal_code} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, postal_code: e.target.value } })} placeholder="ex: 94000" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Ville *</label>
-              <input
-                type="text"
-                value={shipping.newAddress.city}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, city: e.target.value }
-                })}
-                placeholder="ex: Créteil"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.city} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, city: e.target.value } })} placeholder="ex: Créteil" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'adresse (pour référence)</label>
-              <input
-                type="text"
-                value={shipping.newAddress.label}
-                onChange={e => setShipping({
-                  ...shipping,
-                  newAddress: { ...shipping.newAddress, label: e.target.value }
-                })}
-                placeholder="ex: Bureau Principal, Labo 2, etc."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <input type="text" value={shipping.newAddress.label} onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, label: e.target.value } })} placeholder="ex: Bureau Principal, Labo 2, etc." className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             </div>
 
             {/* Warning for outside France Metropolitan in new address form */}
