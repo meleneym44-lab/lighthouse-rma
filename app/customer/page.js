@@ -5106,6 +5106,19 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
   const [showSuccess, setShowSuccess] = useState(false);
   // Get selected billing address for SIRET/TVA/Chorus display
   const selectedBillingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === billingAddressId);
+  
+  // Detect if return address is outside metropolitan France → disable standard return
+  const returnPostalCode = shippingSameAsBilling 
+    ? (selectedBillingAddr?.postal_code || '')
+    : (shipping.showNewForm ? shipping.newAddress.postal_code : (shippingAddresses.find(a => a.id === shipping.address_id)?.postal_code || ''));
+  const isReturnNonMetro = returnPostalCode ? !isFranceMetropolitan(returnPostalCode) : false;
+  
+  // Auto-switch away from standard if address is non-metro
+  useEffect(() => {
+    if (isReturnNonMetro && (shipping.return_shipping === 'standard' || !shipping.return_shipping)) {
+      setShipping(prev => ({ ...prev, return_shipping: 'own_label' }));
+    }
+  }, [isReturnNonMetro]);
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -5530,14 +5543,20 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">🚚 Options de retour</h2>
           
           <div className="space-y-3">
-            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-              shipping.return_shipping === 'standard' || !shipping.return_shipping
-                ? 'border-[#3B7AB4] bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+            {/* Standard return - disabled if non-metro */}
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 transition-all ${
+              isReturnNonMetro ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed' :
+              (shipping.return_shipping === 'standard' || !shipping.return_shipping)
+                ? 'border-[#3B7AB4] bg-blue-50 cursor-pointer' : 'border-gray-200 hover:border-gray-300 cursor-pointer'
             }`}>
-              <input type="radio" name="return_shipping_main" checked={shipping.return_shipping === 'standard' || !shipping.return_shipping} onChange={() => setShipping({ ...shipping, return_shipping: 'standard' })} className="mt-1 w-4 h-4 text-[#3B7AB4]" />
+              <input type="radio" name="return_shipping_main" disabled={isReturnNonMetro} checked={!isReturnNonMetro && (shipping.return_shipping === 'standard' || !shipping.return_shipping)} onChange={() => setShipping({ ...shipping, return_shipping: 'standard' })} className="mt-1 w-4 h-4 text-[#3B7AB4]" />
               <div>
-                <span className="font-medium text-[#1E3A5F]">🚚 Retour standard par Lighthouse</span>
-                <p className="text-xs text-gray-500 mt-0.5">Nous organisons le retour de vos appareils après service (frais de port inclus dans le devis)</p>
+                <span className={`font-medium ${isReturnNonMetro ? 'text-gray-400' : 'text-[#1E3A5F]'}`}>🚚 Retour standard par Lighthouse</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {isReturnNonMetro 
+                    ? 'Non disponible pour les adresses hors France métropolitaine'
+                    : 'Nous organisons le retour de vos appareils après service (frais de port inclus dans le devis)'}
+                </p>
               </div>
             </label>
 
