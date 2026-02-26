@@ -2855,9 +2855,20 @@ const StepProgress = ({ status, serviceType, bcApproved = true }) => {
     { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
   ];
 
+  // PARTS ORDER: 6 steps
+  const partsSteps = [
+    { id: 'submitted', label: 'Soumis', shortLabel: 'Soumis' },
+    { id: 'quote_sent', label: 'Devis Envoyé', shortLabel: 'Devis' },
+    { id: 'bc_approved', label: 'BC Approuvé', shortLabel: 'BC' },
+    { id: 'in_progress', label: 'Commande en traitement', shortLabel: 'Traitement' },
+    { id: 'ready_to_ship', label: 'Prêt à expédier', shortLabel: 'Prêt' },
+    { id: 'shipped', label: 'Expédié', shortLabel: 'Expédié' }
+  ];
+
   const isRepair = serviceType === 'repair' || serviceType === 'réparation';
   const isRental = serviceType === 'rental' || serviceType === 'location';
-  const steps = isRental ? rentalSteps : isRepair ? repairSteps : calibrationSteps;
+  const isParts = serviceType === 'parts';
+  const steps = isParts ? partsSteps : isRental ? rentalSteps : isRepair ? repairSteps : calibrationSteps;
 
   // Map current status to step index
   const getStepIndex = (currentStatus) => {
@@ -2874,6 +2885,17 @@ const StepProgress = ({ status, serviceType, bcApproved = true }) => {
         'completed': 6, 'cancelled': 0
       };
       return rentalMap[currentStatus] ?? 0;
+    } else if (isParts) {
+      const partsMap = {
+        'submitted': 0, 'pending': 0, 'pending_quote_review': 0,
+        'quote_sent': 1, 'quote_revision_requested': 1, 'quote_revision_declined': 1,
+        'waiting_bc': 1, 'waiting_po': 1, 'approved': 1,
+        'bc_review': 2, 'bc_submitted': 2, 'bc_approved': 2, 'waiting_reception': 2,
+        'in_progress': 3, 'received': 3, 'inspection': 3, 'repair': 3, 'repair_in_progress': 3,
+        'ready_to_ship': 4, 'qc': 4, 'final_qc': 4,
+        'shipped': 5, 'completed': 5, 'delivered': 5
+      };
+      return partsMap[currentStatus] ?? 0;
     } else if (isRepair) {
       // Repair flow mapping (12 steps: 0-11)
       const repairMap = {
@@ -12057,71 +12079,14 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   {/* Parts Order Progress Tracker */}
                   {isPartsOrder && (
                     <div>
-                      <div className="flex items-center gap-3 mb-6">
-                        <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                          <span className="text-lg">📦</span>
-                        </div>
-                        <div>
-                          <h2 className="text-lg font-bold text-[#1E3A5F]">Suivi de votre commande</h2>
-                          <p className="text-sm text-gray-500">Progression en temps réel</p>
-                        </div>
-                      </div>
-                      
-                      {/* Progress Steps */}
-                      <div className="relative">
-                        {(() => {
-                          const partsSteps = [
-                            { id: 'submitted', label: 'Demande soumise', icon: '📝' },
-                            { id: 'quote_sent', label: 'Devis envoyé', icon: '💰' },
-                            { id: 'bc_approved', label: 'BC approuvé', icon: '✅' },
-                            { id: 'in_progress', label: 'Commande en traitement', icon: '⚙️' },
-                            { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '📦' },
-                            { id: 'shipped', label: 'Expédié', icon: '🚚' }
-                          ];
-                          
-                          // Map actual statuses to progress step positions
-                          const statusToStep = {
-                            'submitted': 0, 'pending': 0, 'pending_quote_review': 0,
-                            'quote_sent': 1, 'quote_revision_requested': 1, 'quote_revision_declined': 1,
-                            'waiting_bc': 1, 'waiting_po': 1, 'approved': 1,
-                            'bc_review': 2, 'bc_submitted': 2, 'bc_approved': 2, 'waiting_reception': 2,
-                            'in_progress': 3, 'received': 3, 'inspection': 3, 'repair': 3, 'repair_in_progress': 3,
-                            'ready_to_ship': 4, 'qc': 4, 'final_qc': 4,
-                            'shipped': 5, 'completed': 5, 'delivered': 5
-                          };
-                          const currentStepIdx = statusToStep[request.status] ?? -1;
-                          
-                          return (
-                            <div className="flex items-center justify-between">
-                              {partsSteps.map((step, idx) => {
-                                const isComplete = currentStepIdx > idx;
-                                const isCurrent = currentStepIdx === idx;
-                                
-                                return (
-                                  <div key={step.id} className="flex flex-col items-center flex-1 relative">
-                                    {idx > 0 && (
-                                      <div className={`absolute top-5 right-1/2 w-full h-1 -z-10 ${isComplete || isCurrent ? 'bg-green-500' : 'bg-gray-200'}`} />
-                                    )}
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg z-10 ${
-                                      isCurrent ? 'bg-amber-500 text-white ring-4 ring-amber-200' :
-                                      isComplete ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
-                                    }`}>
-                                      {isComplete ? '✓' : step.icon}
-                                    </div>
-                                    <p className={`text-xs mt-2 text-center ${
-                                      isCurrent ? 'font-bold text-amber-700' : isComplete ? 'text-green-700' : 'text-gray-400'
-                                    }`}>{step.label}</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
+                      {/* Progress Bar - same style as RMA */}
+                      <div className="mb-6">
+                        <StepProgress status={request.status} serviceType="parts" bcApproved={!!request.bc_approved_at} />
                       </div>
                       
                       {/* Tracking Info */}
                       {request.ups_tracking_number && (
-                        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                           <p className="text-sm text-blue-700 font-medium">🚚 Suivi UPS</p>
                           <a href={`https://www.ups.com/track?tracknum=${request.ups_tracking_number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-mono">{request.ups_tracking_number}</a>
                         </div>
