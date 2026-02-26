@@ -482,18 +482,18 @@ function QuoteDocumentView({
           {/* Address Boxes */}
           {addressMode === 'both' ? (
             <div className="px-8 py-4 grid grid-cols-2 gap-4 border-b">
-              <div className="border border-[#2D5A7B]/40 rounded p-3">
+              <div className="border-2 border-[#2D5A7B]/50 rounded p-3">
                 <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">{shipLabel}</p>
                 {renderShipTo()}
               </div>
-              <div className="border border-[#2D5A7B]/40 rounded p-3">
+              <div className="border-2 border-[#2D5A7B]/50 rounded p-3">
                 <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">FACTURER À</p>
                 {renderBillTo()}
               </div>
             </div>
           ) : (
             <div className="px-8 py-4 border-b">
-              <div className="border border-[#2D5A7B]/40 rounded p-3">
+              <div className="border-2 border-[#2D5A7B]/50 rounded p-3">
                 <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">FACTURER À</p>
                 {renderBillTo()}
               </div>
@@ -520,7 +520,7 @@ function QuoteDocumentView({
                 <p className="font-bold text-lg text-[#1a1a2e]">{quoteData.createdBy || 'M. Meleney'}</p>
                 <p className="text-[#505050]">Lighthouse France SAS</p>
               </div>
-              <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+              <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
             </div>
             {bcData ? (
               <div className="text-right">
