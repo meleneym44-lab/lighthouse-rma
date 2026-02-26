@@ -9623,8 +9623,16 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
                 {/* Progress Bar */}
                 <DeviceProgressBar device={device} />
                 
-                {/* Return address line */}
-                {deviceAddresses[device.id] && (
+                {/* Return address / delivery method line */}
+                {rma.return_shipping === 'pickup' ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">🏢 {lang === 'en' ? 'Customer picks up on site' : 'Retrait client sur place'}</span>
+                  </div>
+                ) : rma.return_shipping === 'own_label' ? (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">🏷️ {lang === 'en' ? 'Customer provides shipping' : 'Le client fournit son transporteur'}</span>
+                  </div>
+                ) : deviceAddresses[device.id] && (
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-xs text-gray-400">{lang === 'en' ? '📍 Return:' : '📍 Retour:'}</span>
                     <span className="text-xs text-gray-500">
@@ -11716,9 +11724,26 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
   const [docUploadCategory, setDocUploadCategory] = useState('general');
   const [docUploadShared, setDocUploadShared] = useState(true);
   const [docUploading, setDocUploading] = useState(false);
+  const [partsBillingAddr, setPartsBillingAddr] = useState(null);
+  const [partsShippingAddr, setPartsShippingAddr] = useState(null);
   
   // Sync with parent prop changes
   useEffect(() => { setOrder(orderProp); }, [orderProp]);
+  
+  // Fetch billing and shipping addresses
+  useEffect(() => {
+    const fetchAddrs = async () => {
+      if (order?.billing_address_id) {
+        const { data } = await supabase.from('shipping_addresses').select('*').eq('id', order.billing_address_id).single();
+        if (data) setPartsBillingAddr(data);
+      } else { setPartsBillingAddr(null); }
+      if (order?.shipping_address_id) {
+        const { data } = await supabase.from('shipping_addresses').select('*').eq('id', order.shipping_address_id).single();
+        if (data) setPartsShippingAddr(data);
+      } else { setPartsShippingAddr(null); }
+    };
+    fetchAddrs();
+  }, [order?.id, order?.billing_address_id, order?.shipping_address_id]);
   
   // Safety check
   if (!order) {
@@ -12607,6 +12632,44 @@ const STATUS_STYLES = {
                     {(company.city || company.billing_city) && ` ${company.city || company.billing_city}`}
                     {company.country && `, ${company.country}`}
                   </p>
+                </div>
+                {/* Billing Address */}
+                {partsBillingAddr && (
+                  <div className="pt-2 border-t border-dashed">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">💳 {lang === 'en' ? 'Billing Address' : 'Adresse de facturation'}</p>
+                    <div className="text-sm text-gray-700">
+                      <p className="font-medium">{partsBillingAddr.company_name || partsBillingAddr.label}</p>
+                      {partsBillingAddr.attention && <p className="text-gray-500">Attn: {partsBillingAddr.attention}</p>}
+                      <p>{partsBillingAddr.address_line1}, {partsBillingAddr.postal_code} {partsBillingAddr.city}</p>
+                      {(partsBillingAddr.siret || partsBillingAddr.tva_number) && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          {partsBillingAddr.siret && <span className="mr-3">SIRET: <span className="font-mono">{partsBillingAddr.siret}</span></span>}
+                          {partsBillingAddr.tva_number && <span>TVA: <span className="font-mono">{partsBillingAddr.tva_number}</span></span>}
+                        </p>
+                      )}
+                      {partsBillingAddr.chorus_invoicing && (
+                        <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">📋 Chorus Pro{partsBillingAddr.chorus_service_code ? ` — ${partsBillingAddr.chorus_service_code}` : ''}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {/* Delivery Method + Shipping Address */}
+                <div className="pt-2 border-t border-dashed">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">🚚 {lang === 'en' ? 'Delivery' : 'Livraison'}</p>
+                  {order.return_shipping === 'pickup' ? (
+                    <span className="inline-flex items-center px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">🏢 {lang === 'en' ? 'Customer picks up on site' : 'Retrait client sur place'}</span>
+                  ) : order.return_shipping === 'own_label' ? (
+                    <span className="inline-flex items-center px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs font-medium">🏷️ {lang === 'en' ? 'Customer provides shipping' : 'Le client fournit son transporteur'}</span>
+                  ) : partsShippingAddr ? (
+                    <div className="text-sm text-gray-700">
+                      <p className="font-medium">{partsShippingAddr.company_name || partsShippingAddr.label}</p>
+                      {partsShippingAddr.attention && <p className="text-gray-500">Attn: {partsShippingAddr.attention}</p>}
+                      <p>{partsShippingAddr.address_line1}, {partsShippingAddr.postal_code} {partsShippingAddr.city}</p>
+                      {partsShippingAddr.phone && <p className="text-gray-400">📞 {partsShippingAddr.phone}</p>}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">{lang === 'en' ? 'Standard delivery' : 'Livraison standard'}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -33393,6 +33456,18 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
   const [showInspectionSheet, setShowInspectionSheet] = useState(false);
   const [savingInspection, setSavingInspection] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [rentalBillingAddr, setRentalBillingAddr] = useState(null);
+
+  // Fetch billing address
+  useEffect(() => {
+    const fetchBilling = async () => {
+      if (rental?.billing_address_id) {
+        const { data } = await supabase.from('shipping_addresses').select('*').eq('id', rental.billing_address_id).single();
+        if (data) setRentalBillingAddr(data);
+      } else { setRentalBillingAddr(null); }
+    };
+    fetchBilling();
+  }, [rental?.id, rental?.billing_address_id]);
 
   // Computed values from rental data
   const company = rental.companies || {};
@@ -34145,7 +34220,26 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                   <p className="text-xs text-gray-500 uppercase font-medium">Client</p>
                   <p className="font-bold">{company.name}</p>
                   <p className="text-sm text-gray-500">{company.email}</p>
+                  {company.phone && <p className="text-sm text-gray-400">📞 {company.phone}</p>}
                 </div>
+                {/* Billing Address */}
+                {rentalBillingAddr && (
+                  <div className="bg-gray-50 rounded-lg p-4 border">
+                    <p className="text-xs text-gray-500 uppercase font-medium mb-1">💳 {lang === 'en' ? 'Billing' : 'Facturation'}</p>
+                    <p className="font-medium text-sm">{rentalBillingAddr.company_name || rentalBillingAddr.label}</p>
+                    {rentalBillingAddr.attention && <p className="text-sm text-gray-500">Attn: {rentalBillingAddr.attention}</p>}
+                    <p className="text-sm">{rentalBillingAddr.address_line1}, {rentalBillingAddr.postal_code} {rentalBillingAddr.city}</p>
+                    {(rentalBillingAddr.siret || rentalBillingAddr.tva_number) && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {rentalBillingAddr.siret && <span className="mr-2">SIRET: <span className="font-mono">{rentalBillingAddr.siret}</span></span>}
+                        {rentalBillingAddr.tva_number && <span>TVA: <span className="font-mono">{rentalBillingAddr.tva_number}</span></span>}
+                      </p>
+                    )}
+                    {rentalBillingAddr.chorus_invoicing && (
+                      <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">📋 Chorus Pro{rentalBillingAddr.chorus_service_code ? ` — ${rentalBillingAddr.chorus_service_code}` : ''}</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Equipment */}
@@ -34165,17 +34259,25 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 </div>
               </div>
 
-              {/* Shipping Address */}
-              {address.address_line1 && (
-                <div className="bg-gray-50 rounded-lg p-4 border">
-                  <h3 className="font-bold text-gray-700 mb-2">📍 Adresse de livraison</h3>
-                  <p className="text-sm">{address.company_name || company.name}</p>
-                  {address.attention && <p className="text-sm text-gray-500">À l'att. {address.attention}</p>}
-                  <p className="text-sm">{address.address_line1}</p>
-                  <p className="text-sm">{address.postal_code} {address.city}</p>
-                  <p className="text-sm text-gray-400">{address.country || 'France'}</p>
-                </div>
-              )}
+              {/* Shipping / Delivery Method */}
+              <div className="bg-gray-50 rounded-lg p-4 border">
+                <h3 className="font-bold text-gray-700 mb-2">🚚 {lang === 'en' ? 'Delivery' : 'Livraison'}</h3>
+                {rental.return_shipping === 'pickup' ? (
+                  <span className="inline-flex items-center px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium">🏢 {lang === 'en' ? 'Customer picks up on site' : 'Retrait client sur place'}</span>
+                ) : rental.return_shipping === 'own_label' ? (
+                  <span className="inline-flex items-center px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-sm font-medium">🏷️ {lang === 'en' ? 'Customer provides shipping' : 'Le client fournit son transporteur'}</span>
+                ) : address.address_line1 ? (
+                  <div className="text-sm">
+                    <p className="font-medium">{address.company_name || company.name}</p>
+                    {address.attention && <p className="text-gray-500">À l'att. {address.attention}</p>}
+                    <p>{address.address_line1}</p>
+                    <p>{address.postal_code} {address.city}</p>
+                    {address.phone && <p className="text-gray-400">📞 {address.phone}</p>}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">{lang === 'en' ? 'Standard delivery' : 'Livraison standard'}</p>
+                )}
+              </div>
 
               {/* Customer Notes */}
               {rental.customer_notes && (
