@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Fragment } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // Expose supabase to window for debugging
@@ -15767,33 +15767,31 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
   const openContract = (contract) => { setPendingContractId(contract.id); setPage('contracts'); };
   const openRental = (rental) => { setPendingRentalId(rental.id); setPage('rentals'); };
 
-  // Build unified items list with type tags
-  const buildUnifiedList = () => {
+  // Memoize unified list - only rebuild when data/filter/search changes, NOT on pagination
+  const allItems = useMemo(() => {
     const items = [];
     const rmas = (requests || []).filter(r => r.request_type !== 'parts');
     const partsOrders = (requests || []).filter(r => r.request_type === 'parts');
 
     if (filter === 'all' || filter === 'rma') {
-      rmas.forEach(r => { if (matchesSearch(r, 'rma')) items.push({ ...r, _type: 'rma', _date: r.created_at }); });
+      rmas.forEach(r => { if (matchesSearch(r, 'rma')) items.push({ data: r, _type: 'rma', _date: r.created_at, _key: `rma-${r.id}`, id: r.id, status: r.status }); });
     }
     if (filter === 'all' || filter === 'parts') {
-      partsOrders.forEach(r => { if (matchesSearch(r, 'parts')) items.push({ ...r, _type: 'parts', _date: r.created_at }); });
+      partsOrders.forEach(r => { if (matchesSearch(r, 'parts')) items.push({ data: r, _type: 'parts', _date: r.created_at, _key: `parts-${r.id}`, id: r.id, status: r.status }); });
     }
     if (filter === 'all' || filter === 'contracts') {
-      (contracts || []).forEach(c => { if (matchesSearch(c, 'contract')) items.push({ ...c, _type: 'contract', _date: c.created_at }); });
+      (contracts || []).forEach(c => { if (matchesSearch(c, 'contract')) items.push({ data: c, _type: 'contract', _date: c.created_at, _key: `contract-${c.id}`, id: c.id, status: c.status }); });
     }
     if (filter === 'all' || filter === 'rentals') {
-      rentals.forEach(r => { if (matchesSearch(r, 'rental')) items.push({ ...r, _type: 'rental', _date: r.created_at }); });
+      rentals.forEach(r => { if (matchesSearch(r, 'rental')) items.push({ data: r, _type: 'rental', _date: r.created_at, _key: `rental-${r.id}`, id: r.id, status: r.status }); });
     }
 
-    // Sort by date newest first
     items.sort((a, b) => new Date(b._date || 0) - new Date(a._date || 0));
     return items;
-  };
+  }, [requests, contracts, rentals, filter, searchQuery]);
 
-  const allItems = buildUnifiedList();
-  const activeItems = allItems.filter(i => isActive(i.status));
-  const completedItems = allItems.filter(i => !isActive(i.status));
+  const activeItems = useMemo(() => allItems.filter(i => isActive(i.status)), [allItems]);
+  const completedItems = useMemo(() => allItems.filter(i => !isActive(i.status)), [allItems]);
 
   // Filter chip counts
   const rmaCount = (requests || []).filter(r => r.request_type !== 'parts').length;
@@ -15811,6 +15809,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
   // OrderCard
   const OrderCard = ({ item }) => {
     const type = item._type;
+    const d = item.data;
     const typeConfig = {
       rma: { badge: '🔧 Étalonnage/Réparation', color: 'border-l-blue-500', bg: 'bg-blue-50' },
       parts: { badge: '📦 Commande de Pièces', color: 'border-l-amber-500', bg: 'bg-amber-50' },
@@ -15822,34 +15821,34 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     let ref = '', date = '', status = '', summary = '', serials = [], active = false;
 
     if (type === 'rma' || type === 'parts') {
-      ref = item.request_number || 'En attente de numéro';
-      date = item.created_at; status = item.status; active = isActive(item.status);
+      ref = d.request_number || 'En attente de numéro';
+      date = d.created_at; status = d.status; active = isActive(d.status);
       if (type === 'rma') {
-        const devices = item.request_devices || [];
-        serials = devices.map(d => (d.model_name ? d.model_name + ' — ' : '') + (d.serial_number || '')).filter(s => s.length > 0);
-        summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${item.requested_service || 'Service'}`;
+        const devices = d.request_devices || [];
+        serials = devices.map(dv => (dv.model_name ? dv.model_name + ' — ' : '') + (dv.serial_number || '')).filter(s => s.length > 0);
+        summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${d.requested_service || 'Service'}`;
       } else {
-        summary = item.problem_description?.split('\n')[0]?.slice(0, 80) || 'Commande de pièces';
+        summary = d.problem_description?.split('\n')[0]?.slice(0, 80) || 'Commande de pièces';
       }
     } else if (type === 'contract') {
-      ref = item.contract_number || 'Contrat en cours de création';
-      date = item.created_at; status = item.status;
-      active = !['expired', 'cancelled', 'completed'].includes(item.status);
-      const devices = item.contract_devices || [];
-      serials = devices.map(d => (d.model_name ? d.model_name + ' — ' : '') + (d.serial_number || '')).filter(s => s.length > 0);
-      summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${item.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
+      ref = d.contract_number || 'Contrat en cours de création';
+      date = d.created_at; status = d.status;
+      active = !['expired', 'cancelled', 'completed'].includes(d.status);
+      const devices = d.contract_devices || [];
+      serials = devices.map(dv => (dv.model_name ? dv.model_name + ' — ' : '') + (dv.serial_number || '')).filter(s => s.length > 0);
+      summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${d.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
     } else if (type === 'rental') {
-      ref = item.rental_number || 'Location en cours de création';
-      date = item.created_at; status = item.status;
-      active = !['returned', 'cancelled', 'completed'].includes(item.status);
-      const items2 = item.rental_request_items || [];
+      ref = d.rental_number || 'Location en cours de création';
+      date = d.created_at; status = d.status;
+      active = !['returned', 'cancelled', 'completed'].includes(d.status);
+      const items2 = d.rental_request_items || [];
       serials = items2.map(ri => ri.equipment_name || ri.serial_number).filter(Boolean);
       summary = `${items2.length} appareil${items2.length > 1 ? 's' : ''}`;
     }
 
     const displaySerials = serials.slice(0, 2);
     const extraCount = serials.length - 2;
-    const onClick = type === 'rma' || type === 'parts' ? () => openRMA(item) : type === 'contract' ? () => openContract(item) : () => openRental(item);
+    const onClick = type === 'rma' || type === 'parts' ? () => openRMA(d) : type === 'contract' ? () => openContract(d) : () => openRental(d);
 
     return (
       <button onClick={onClick} className={`w-full bg-white rounded-xl shadow-sm border-l-4 ${cfg.color} p-5 hover:shadow-md transition-all text-left group`}>
@@ -15967,7 +15966,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
                 <span className="text-sm text-gray-400">({activeItems.length})</span>
               </div>
               <div className="space-y-3">
-                {visibleActive.map(item => <OrderCard key={`${item._type}-${item.id}`} item={item} />)}
+                {visibleActive.map(item => <OrderCard key={item._key} item={item} />)}
                 {hasMoreActive && (
                   <button
                     onClick={() => setVisibleCount(prev => prev + 5)}
@@ -15988,7 +15987,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
                 Historique ({completedItems.length})
               </summary>
               <div className="space-y-3 opacity-75">
-                {visibleCompleted.map(item => <OrderCard key={`${item._type}-${item.id}`} item={item} />)}
+                {visibleCompleted.map(item => <OrderCard key={item._key} item={item} />)}
                 {hasMoreCompleted && (
                   <button
                     onClick={() => setHistoryCount(prev => prev + 5)}
