@@ -4347,126 +4347,91 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                 <p className="text-xs text-red-400 mb-3 italic">🔒 Contactez votre administrateur pour approuver ces demandes</p>
               )}
               <div className="space-y-2">
-                {/* RMA Requests */}
-                {serviceRequests
-                  .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
-                  .map(req => (
-                  <div 
-                    key={req.id}
-                    onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-red-700">{req.request_number || 'En attente'}</span>
-                      <span className="text-sm text-red-600">
-                        {req.status === 'approved' || req.status === 'waiting_bc' || req.status === 'waiting_po' 
-                          ? 'Soumettre bon de commande' 
-                          : req.status === 'inspection_complete' || req.status === 'quote_sent'
-                          ? 'Approuver le devis'
-                          : 'Action requise'}
+                {/* All action items combined and sorted newest first */}
+                {(() => {
+                  const actionItems = [];
+                  // RMA Requests
+                  serviceRequests
+                    .filter(r => ['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && r.status !== 'bc_review' && !r.bc_submitted_at)
+                    .forEach(req => actionItems.push({
+                      key: req.id, type: 'rma', sortDate: req.quoted_at || req.updated_at || req.created_at,
+                      onClick: () => viewRequest(req),
+                      icon: null,
+                      number: req.request_number || 'En attente',
+                      label: req.status === 'approved' || req.status === 'waiting_bc' || req.status === 'waiting_po' 
+                        ? 'Soumettre bon de commande' 
+                        : req.status === 'inspection_complete' || req.status === 'quote_sent'
+                        ? 'Approuver le devis'
+                        : 'Action requise'
+                    }));
+                  // Device received but no BC
+                  serviceRequests
+                    .filter(r => !r.bc_approved_at && !r.bc_submitted_at && r.received_at &&
+                      !['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status))
+                    .forEach(req => actionItems.push({
+                      key: 'nobc-' + req.id, type: 'rma_urgent', sortDate: req.received_at || req.updated_at || req.created_at,
+                      onClick: () => viewRequest(req),
+                      icon: null, pulse: true,
+                      number: req.request_number,
+                      label: '⚠️ Appareil reçu — Approbation requise'
+                    }));
+                  // Supplement Pending
+                  serviceRequests
+                    .filter(r => r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at && !r.avenant_bc_submitted_at &&
+                      !(['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && !r.bc_submitted_at))
+                    .forEach(req => actionItems.push({
+                      key: `sup-${req.id}`, type: 'supplement', sortDate: req.avenant_sent_at || req.updated_at,
+                      onClick: () => viewRequest(req),
+                      icon: '⚠️',
+                      number: req.request_number,
+                      label: `Travaux supplémentaires - Action requise (${req.avenant_total?.toFixed(2)} €)`
+                    }));
+                  // Parts Orders
+                  partsNeedingAction.forEach(req => actionItems.push({
+                    key: req.id, type: 'parts', sortDate: req.quoted_at || req.updated_at || req.created_at,
+                    onClick: () => viewRequest(req),
+                    icon: '📦',
+                    number: req.request_number || 'En attente',
+                    label: 'Approuver le devis pièces'
+                  }));
+                  // Contract Quotes
+                  if (perms?.canInvoice && contracts) {
+                    contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected')
+                      .forEach(contract => actionItems.push({
+                        key: contract.id, type: 'contract', sortDate: contract.quote_sent_at || contract.updated_at || contract.created_at,
+                        onClick: () => { if (setPendingContractId) setPendingContractId(contract.id); setPage('contracts'); },
+                        icon: '📋',
+                        number: contract.contract_number || 'Nouveau Contrat',
+                        label: contract.status === 'quote_sent' ? 'Approuver le devis contrat' : 'Resoumettre BC contrat'
+                      }));
+                  }
+                  // Rental Quotes
+                  rentalActions.forEach(rental => actionItems.push({
+                    key: rental.id, type: 'rental', sortDate: rental.quote_sent_at || rental.updated_at || rental.created_at,
+                    onClick: () => { if (setPendingRentalId) setPendingRentalId(rental.id); setPage('rentals'); },
+                    icon: '📦',
+                    number: rental.rental_number,
+                    label: 'Approuver le devis location'
+                  }));
+                  // Sort newest first
+                  actionItems.sort((a, b) => new Date(b.sortDate || 0) - new Date(a.sortDate || 0));
+                  return actionItems.map(item => (
+                    <div 
+                      key={item.key}
+                      onClick={item.onClick}
+                      className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.icon && <span>{item.icon}</span>}
+                        <span className="font-mono font-bold text-red-700">{item.number}</span>
+                        <span className="text-sm text-red-600">{item.label}</span>
+                      </div>
+                      <span className={`px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full ${item.pulse ? 'animate-pulse' : ''}`}>
+                        Agir →
                       </span>
                     </div>
-                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                      Agir →
-                    </span>
-                  </div>
-                ))}
-                {/* Device received but no BC — urgent */}
-                {serviceRequests
-                  .filter(r => !r.bc_approved_at && !r.bc_submitted_at && r.received_at &&
-                    !['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status))
-                  .map(req => (
-                  <div 
-                    key={'nobc-' + req.id}
-                    onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono font-bold text-red-700">{req.request_number}</span>
-                      <span className="text-sm text-red-600">⚠️ Appareil reçu — Approbation requise</span>
-                    </div>
-                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse">
-                      Agir →
-                    </span>
-                  </div>
-                ))}
-                {/* RMA Requests - Supplement Pending (only if BC not yet submitted) */}
-                {serviceRequests
-                  .filter(r => r.avenant_sent_at && r.avenant_total > 0 && !r.avenant_approved_at && !r.avenant_bc_submitted_at &&
-                    !(['approved', 'waiting_bc', 'waiting_po', 'waiting_customer', 'inspection_complete', 'quote_sent'].includes(r.status) && !r.bc_submitted_at))
-                  .map(req => (
-                  <div 
-                    key={`sup-${req.id}`}
-                    onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-50 border border-red-300"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-red-500">⚠️</span>
-                      <span className="font-mono font-bold text-red-700">{req.request_number}</span>
-                      <span className="text-sm text-red-600">
-                        Travaux supplémentaires - Action requise ({req.avenant_total?.toFixed(2)} €)
-                      </span>
-                    </div>
-                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                      Agir →
-                    </span>
-                  </div>
-                ))}
-                {/* Parts Orders needing action */}
-                {partsNeedingAction.map(req => (
-                  <div 
-                    key={req.id}
-                    onClick={() => viewRequest(req)}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-orange-100 border border-orange-200"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-amber-500">📦</span>
-                      <span className="font-mono font-bold text-orange-700">{req.request_number || 'En attente'}</span>
-                      <span className="text-sm text-orange-600">Approuver le devis pièces</span>
-                    </div>
-                    <span className="px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
-                      Agir →
-                    </span>
-                  </div>
-                ))}
-                {/* Contract Quotes - only for canInvoice users */}
-                {perms?.canInvoice && contracts && contracts
-                  .filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected')
-                  .map(contract => (
-                  <div 
-                    key={contract.id}
-                    onClick={() => { if (setPendingContractId) setPendingContractId(contract.id); setPage('contracts'); }}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-blue-500">📋</span>
-                      <span className="font-mono font-bold text-red-700">{contract.contract_number || 'Nouveau Contrat'}</span>
-                      <span className="text-sm text-red-600">
-                        {contract.status === 'quote_sent' ? 'Approuver le devis contrat' : 'Resoumettre BC contrat'}
-                      </span>
-                    </div>
-                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                      Agir →
-                    </span>
-                  </div>
-                ))}
-                {/* Rental Quotes */}
-                {rentalActions.map(rental => (
-                  <div 
-                    key={rental.id}
-                    onClick={() => { if (setPendingRentalId) setPendingRentalId(rental.id); setPage('rentals'); }}
-                    className="flex justify-between items-center p-3 bg-white rounded-lg cursor-pointer hover:bg-red-100 border border-red-200"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-purple-500">📦</span>
-                      <span className="font-mono font-bold text-red-700">{rental.rental_number}</span>
-                      <span className="text-sm text-red-600">Approuver le devis location</span>
-                    </div>
-                    <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                      Agir →
-                    </span>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
           )}
