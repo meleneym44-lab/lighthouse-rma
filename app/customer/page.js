@@ -14965,6 +14965,10 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       notify('Veuillez compléter tous les champs', 'error');
       return;
     }
+    if (rentalDays < 5) {
+      notify('La durée minimum de location est de 5 jours', 'error');
+      return;
+    }
     if (rentalDeliveryMethod === 'standard' && !shippingAddressId) {
       notify('Veuillez sélectionner une adresse de livraison', 'error');
       return;
@@ -15176,7 +15180,17 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             if (isPast || isBlocked) return;
             if (!startDate || (startDate && endDate)) { setStartDate(date); setEndDate(null); }
             else if (date < startDate) setStartDate(date);
-            else setEndDate(date);
+            else {
+              // Enforce 7-day minimum
+              const diffDays = Math.ceil((date - startDate) / (1000 * 60 * 60 * 24)) + 1;
+              if (diffDays < 5) {
+                const minEnd = new Date(startDate);
+                minEnd.setDate(minEnd.getDate() + 4);
+                setEndDate(minEnd);
+              } else {
+                setEndDate(date);
+              }
+            }
           }}
         >{d}</div>
       );
@@ -15195,9 +15209,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           ))}
         </div>
         <div className="grid grid-cols-7 gap-1">{days}</div>
-        <div className="mt-4 flex gap-4 text-xs text-gray-500">
+        <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-500">
           <div className="flex items-center gap-2"><div className="w-4 h-4 bg-[#8B5CF6] rounded" /><span>Sélectionné</span></div>
           <div className="flex items-center gap-2"><div className="w-4 h-4 bg-red-100 rounded" /><span>Indisponible</span></div>
+        </div>
+        <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-xs text-amber-700 font-medium">⚠️ Durée minimum : 5 jours minimum pour toutes les locations</p>
         </div>
       </div>
     );
@@ -15249,9 +15266,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     </div>
                     <div className="bg-white rounded-lg p-4">
                       <p className="text-3xl font-bold text-[#8B5CF6]">{rentalDays} jour{rentalDays > 1 ? 's' : ''}</p>
+                      {rentalDays < 5 && (
+                        <p className="text-red-600 text-sm font-medium mt-1">⚠️ Minimum 5 jours requis</p>
+                      )}
                     </div>
-                    <button onClick={() => setStep(2)} className="w-full py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED]">
-                      Continuer → Choisir l'équipement
+                    <button onClick={() => setStep(2)} disabled={rentalDays < 5} className="w-full py-3 bg-[#8B5CF6] text-white rounded-lg font-bold hover:bg-[#7C3AED] disabled:opacity-50 disabled:cursor-not-allowed">
+                      {rentalDays < 5 ? 'Minimum 5 jours requis' : 'Continuer → Choisir l\'équipement'}
                     </button>
                   </div>
                 ) : (
@@ -15316,8 +15336,14 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                       <div key={device.id} onClick={() => available && toggleSelection('device', device)}
                         className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${!available ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : selected ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]' : 'bg-white border-gray-200 hover:border-[#8B5CF6]/50'}`}>
                         <div className="flex items-start justify-between mb-2">
-                          <div><div className="flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-8 h-8 object-contain" />}<h4 className="font-bold text-gray-800">{device.model_name}</h4></div><p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p></div>
-                          {selected && <span className="text-[#8B5CF6] text-xl">✓</span>}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-8 h-8 object-contain" />}<h4 className="font-bold text-gray-800">{device.model_name}</h4></div>
+                            <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p>
+                            {(device.description_fr || device.description) && (
+                              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{device.description_fr || device.description}</p>
+                            )}
+                          </div>
+                          {selected && <span className="text-[#8B5CF6] text-xl ml-2">✓</span>}
                         </div>
                         <div className="flex items-end justify-between">
                           <div><p className="text-2xl font-bold text-[#8B5CF6]">€{pricing.total.toFixed(2)}</p><p className="text-xs text-gray-500">€{device.price_per_day}/jour</p></div>
