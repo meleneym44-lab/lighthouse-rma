@@ -5400,6 +5400,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         nickname: equip.nickname || '',
         model: equip.model_name || '',
         serial_number: equip.serial_number || '',
+        device_type: equip.equipment_type || '',
         fromSaved: equipmentId,
         saveDevice: false // Already saved
       };
