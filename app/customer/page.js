@@ -5935,12 +5935,12 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
   const [shipping, setShipping] = useState({ 
     address_id: shippingAddresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '', country: 'France', phone: '' },
-    parcels: 1
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '', country: 'France', phone: '' }
   });
   const [shippingSameAsBilling, setShippingSameAsBilling] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   const selectedBillingAddr = billingAddresses.find(a => a.id === billingAddressId);
 
   function createNewPart(num) {
@@ -6023,15 +6023,20 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
     return uploadedUrls;
   };
 
-  const handleSubmit = async (e) => {
+  const openReview = (e) => {
     e.preventDefault();
-    
     for (const p of parts) {
-      if (!p.description) {
-        notify('Veuillez décrire la pièce demandée', 'error');
-        return;
-      }
+      if (!p.description) { notify('Veuillez décrire la pièce demandée', 'error'); return; }
     }
+    if (!billingAddressId && !showNewBillingForm) { notify('Veuillez sélectionner une adresse de facturation', 'error'); return; }
+    if (deliveryMethod === 'standard' && !shippingSameAsBilling && !shipping.showNewForm && !shipping.address_id) {
+      notify('Veuillez sélectionner une adresse de livraison', 'error'); return;
+    }
+    setShowReviewModal(true);
+  };
+
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
 
     // Handle billing address
     let finalBillingAddressId = billingAddressId || null;
@@ -6101,7 +6106,6 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           billing_address_id: finalBillingAddressId,
           billing_siret: billingAddr?.siret || null,
           billing_tva: billingAddr?.tva_number || null,
-          parcels_count: deliveryMethod === 'standard' ? (shipping.parcels || 1) : 0,
           return_shipping: deliveryMethod,
           chorus_invoicing: billingAddr?.chorus_invoicing || false,
           chorus_service_code: billingAddr?.chorus_invoicing ? (billingAddr?.chorus_service_code || null) : null,
@@ -6164,7 +6168,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
         <h1 className="text-2xl font-bold text-[#1E3A5F]">Commande de Pièces</h1>
       </div>
       
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={openReview}>
         {/* Parts List */}
         <div className="space-y-6 mb-8">
           {parts.map((part) => (
@@ -6354,13 +6358,6 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           {/* Shipping address - only for standard delivery */}
           {deliveryMethod === 'standard' && (
             <div className="mt-6 pt-4 border-t border-gray-100 space-y-4">
-              <div className="p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
-                <label className="block text-sm font-bold text-[#1E3A5F] mb-2">📦 Nombre de colis estimé</label>
-                <select value={shipping.parcels} onChange={e => setShipping({...shipping, parcels: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-[#3B7AB4]/40 rounded-lg bg-white">
-                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n} colis</option>)}
-                </select>
-              </div>
-
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={shippingSameAsBilling} onChange={e => setShippingSameAsBilling(e.target.checked)} className="w-5 h-5 rounded border-gray-300 text-[#3B7AB4]" />
                 <span className="text-sm font-medium text-gray-700">Même adresse que la facturation</span>
@@ -6387,13 +6384,78 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           </button>
           <button
             type="submit"
-            disabled={saving}
-            className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50"
+            className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600"
           >
-            {saving ? (uploadingPhotos ? 'Envoi des photos...' : 'Envoi en cours...') : 'Soumettre la Commande'}
+            Vérifier et soumettre →
           </button>
         </div>
       </form>
+
+      {/* ====== REVIEW MODAL ====== */}
+      {showReviewModal && (() => {
+        const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === billingAddressId);
+        const shippingAddr = shippingSameAsBilling ? billingAddr : (shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id));
+        const deliveryLabels = { standard: '🚚 Livraison standard par Lighthouse', own_label: '🏷️ Le client fournit son propre transporteur', pickup: '🏢 Récupération sur place à Créteil' };
+        return (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-5 border-b shrink-0 bg-amber-500 rounded-t-2xl">
+                <h2 className="text-xl font-bold text-white">📦 Récapitulatif de votre commande</h2>
+                <p className="text-white/70 text-sm mt-1">Vérifiez les informations avant de soumettre</p>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                {/* Parts */}
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3">📦 Pièces ({parts.length})</h3>
+                  <div className="space-y-2">
+                    {parts.map(p => (
+                      <div key={p.id} className="bg-gray-50 rounded-lg p-3 border text-sm">
+                        <p className="font-medium text-[#1E3A5F]">{p.description}</p>
+                        <p className="text-gray-500">{p.part_number ? `Réf: ${p.part_number} • ` : ''}Qté: {p.quantity}{p.device_for ? ` • Pour: ${p.device_for}` : ''}</p>
+                        {p.photos?.length > 0 && <p className="text-gray-400 text-xs mt-1">📷 {p.photos.length} photo(s)</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <hr className="border-gray-200" />
+                {/* Billing */}
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3">💳 Facturation</h3>
+                  {billingAddr && (
+                    <div className="bg-gray-50 rounded-lg p-3 border text-sm">
+                      <p className="font-medium">{billingAddr.company_name}</p>
+                      <p className="text-gray-600">{billingAddr.address_line1}, {billingAddr.postal_code} {billingAddr.city}</p>
+                      {billingAddr.siret && <p className="text-gray-500 text-xs mt-1">SIRET: {billingAddr.siret}{billingAddr.tva_number ? ` • TVA: ${billingAddr.tva_number}` : ''}</p>}
+                      {billingAddr.chorus_invoicing && <span className="inline-flex items-center mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">🏛️ Chorus Pro</span>}
+                    </div>
+                  )}
+                </div>
+                {/* Delivery */}
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3">🚚 Livraison</h3>
+                  <div className={`rounded-lg p-3 border text-sm ${deliveryMethod === 'pickup' ? 'bg-green-50 border-green-200' : deliveryMethod === 'own_label' ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+                    <p className="font-medium">{deliveryLabels[deliveryMethod]}</p>
+                  </div>
+                  {deliveryMethod === 'standard' && shippingAddr && (
+                    <div className="mt-2 bg-gray-50 rounded-lg p-3 border text-sm">
+                      <p className="text-xs font-bold text-gray-500 uppercase mb-1">Adresse de livraison</p>
+                      <p className="font-medium">{shippingAddr.company_name || shippingAddr.label}</p>
+                      {shippingAddr.attention && <p className="text-gray-600">Attn: {shippingAddr.attention}</p>}
+                      <p className="text-gray-600">{shippingAddr.address_line1}, {shippingAddr.postal_code} {shippingAddr.city}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t flex gap-3 shrink-0 bg-gray-50 rounded-b-2xl">
+                <button type="button" onClick={() => setShowReviewModal(false)} className="flex-1 py-3 bg-white border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-100">← Modifier</button>
+                <button type="button" onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 disabled:opacity-50">
+                  {saving ? (uploadingPhotos ? 'Envoi des photos...' : 'Envoi en cours...') : '✓ Confirmer et envoyer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -6406,6 +6468,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedEquipment, setSavedEquipment] = useState([]);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   
   // Billing address
   const billingAddresses = addresses.filter(a => a.is_billing);
@@ -6512,18 +6575,20 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
     notify(`${newDevices.length} appareils chargés`, 'success');
   };
 
-  const handleSubmit = async (e) => {
+  const openContractReview = (e) => {
     e.preventDefault();
-    
-    // Validate devices
     for (const d of devices) {
       if (!d.serial_number || !d.model_name) {
-        notify('Veuillez remplir le numéro de série et le modèle pour chaque appareil', 'error');
-        return;
+        notify('Veuillez remplir le numéro de série et le modèle pour chaque appareil', 'error'); return;
       }
     }
+    if (devices.length === 0) { notify('Veuillez ajouter au moins un appareil', 'error'); return; }
+    if (!billingAddressId && !showNewBillingForm) { notify('Veuillez sélectionner une adresse de facturation', 'error'); return; }
+    setShowReviewModal(true);
+  };
 
-    if (devices.length === 0) {
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();    if (devices.length === 0) {
       notify('Veuillez ajouter au moins un appareil', 'error');
       return;
     }
@@ -6654,7 +6719,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
           </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={openContractReview}>
           {/* Device Count Summary */}
           <div className="mb-4 text-sm text-gray-600">
             <span className="font-bold text-[#1E3A5F]">{devices.length}</span> appareil{devices.length > 1 ? 's' : ''} dans la demande
@@ -6821,10 +6886,68 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
               disabled={saving}
               className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008c44] disabled:opacity-50"
             >
-              {saving ? 'Envoi en cours...' : `Soumettre la demande (${devices.length} appareil${devices.length > 1 ? 's' : ''})`}
+              {saving ? 'Envoi en cours...' : `Vérifier la demande (${devices.length} appareil${devices.length > 1 ? 's' : ''})`}
             </button>
           </div>
         </form>
+
+        {/* Contract Review Modal */}
+        {showReviewModal && (() => {
+          const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === billingAddressId);
+          return (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="px-6 py-5 border-b shrink-0 bg-[#00A651] rounded-t-2xl">
+                  <h2 className="text-xl font-bold text-white">📋 Récapitulatif de votre demande de contrat</h2>
+                  <p className="text-white/70 text-sm mt-1">Vérifiez les informations avant de soumettre</p>
+                </div>
+                <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                  {/* Devices */}
+                  <div>
+                    <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3">🔧 Appareils ({devices.length})</h3>
+                    <div className="space-y-2">
+                      {devices.map(d => (
+                        <div key={d.id} className="bg-gray-50 rounded-lg p-3 border text-sm flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-[#1E3A5F]">{d.model_name || 'Modèle non spécifié'}</p>
+                            <p className="text-gray-500 font-mono text-xs">S/N: {d.serial_number}</p>
+                          </div>
+                          {d.nickname && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{d.nickname}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <hr className="border-gray-200" />
+                  {/* Billing */}
+                  <div>
+                    <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3">💳 Facturation</h3>
+                    {billingAddr ? (
+                      <div className="bg-gray-50 rounded-lg p-3 border text-sm">
+                        <p className="font-medium">{billingAddr.company_name}</p>
+                        <p className="text-gray-600">{billingAddr.address_line1}, {billingAddr.postal_code} {billingAddr.city}</p>
+                        {billingAddr.siret && <p className="text-gray-500 text-xs mt-1">SIRET: {billingAddr.siret}{billingAddr.tva_number ? ` • TVA: ${billingAddr.tva_number}` : ''}</p>}
+                        {billingAddr.chorus_invoicing && <span className="inline-flex items-center mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">🏛️ Chorus Pro</span>}
+                      </div>
+                    ) : <p className="text-gray-400 text-sm italic">Non sélectionnée</p>}
+                  </div>
+                  {/* Notes */}
+                  {notes && (
+                    <div>
+                      <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3">📝 Notes</h3>
+                      <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-3 border italic">"{notes}"</p>
+                    </div>
+                  )}
+                </div>
+                <div className="px-6 py-4 border-t flex gap-3 shrink-0 bg-gray-50 rounded-b-2xl">
+                  <button type="button" onClick={() => setShowReviewModal(false)} className="flex-1 py-3 bg-white border border-gray-300 text-gray-600 rounded-lg font-medium hover:bg-gray-100">← Modifier</button>
+                  <button type="button" onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008c44] disabled:opacity-50">
+                    {saving ? 'Envoi en cours...' : `✓ Confirmer et envoyer (${devices.length} appareil${devices.length > 1 ? 's' : ''})`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
