@@ -15696,6 +15696,89 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
 // ============================================
 // MY ORDERS PAGE (Unified view of all orders)
 // ============================================
+// Order card for MyOrdersPage - defined outside to prevent re-mount on parent re-render
+const ORDER_TYPE_CONFIG = {
+  rma: { badge: '🔧 Étalonnage/Réparation', color: 'border-l-blue-500', bg: 'bg-blue-50' },
+  parts: { badge: '📦 Commande de Pièces', color: 'border-l-amber-500', bg: 'bg-amber-50' },
+  contract: { badge: '📋 Contrat', color: 'border-l-green-500', bg: 'bg-green-50' },
+  rental: { badge: '📅 Location', color: 'border-l-purple-500', bg: 'bg-purple-50' },
+};
+const isOrderActive = (status) => !['completed', 'invoiced', 'cancelled', 'expired', 'returned'].includes(status);
+const getOrderStatusColor = (status) => { const s = STATUS_STYLES[status]; return s ? `${s.bg} ${s.text}` : 'bg-gray-100 text-gray-600'; };
+const getOrderStatusLabel = (status) => {
+  const extras = { active: 'Actif', expired: 'Expiré', quote: 'Devis', confirmed: 'Confirmée', return_pending: 'Retour en attente', returned: 'Retournée', invoiced: 'Facturée', rma_created: 'RMA créé', quote_approved: 'Devis approuvé', bc_submitted: 'BC soumis', bc_approved: 'BC approuvé' };
+  return STATUS_STYLES[status]?.label || extras[status] || status;
+};
+
+function OrderCard({ item, onOpen }) {
+  const type = item._type;
+  const d = item.data;
+  const cfg = ORDER_TYPE_CONFIG[type];
+
+  let ref = '', date = '', status = '', summary = '', serials = [], active = false;
+
+  if (type === 'rma' || type === 'parts') {
+    ref = d.request_number || 'En attente de numéro';
+    date = d.created_at; status = d.status; active = isOrderActive(d.status);
+    if (type === 'rma') {
+      const devices = d.request_devices || [];
+      serials = devices.map(dv => (dv.model_name ? dv.model_name + ' — ' : '') + (dv.serial_number || '')).filter(s => s.length > 0);
+      summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${d.requested_service || 'Service'}`;
+    } else {
+      summary = d.problem_description?.split('\n')[0]?.slice(0, 80) || 'Commande de pièces';
+    }
+  } else if (type === 'contract') {
+    ref = d.contract_number || 'Contrat en cours de création';
+    date = d.created_at; status = d.status;
+    active = !['expired', 'cancelled', 'completed'].includes(d.status);
+    const devices = d.contract_devices || [];
+    serials = devices.map(dv => (dv.model_name ? dv.model_name + ' — ' : '') + (dv.serial_number || '')).filter(s => s.length > 0);
+    summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${d.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
+  } else if (type === 'rental') {
+    ref = d.rental_number || 'Location en cours de création';
+    date = d.created_at; status = d.status;
+    active = !['returned', 'cancelled', 'completed'].includes(d.status);
+    const items2 = d.rental_request_items || [];
+    serials = items2.map(ri => ri.equipment_name || ri.serial_number).filter(Boolean);
+    summary = `${items2.length} appareil${items2.length > 1 ? 's' : ''}`;
+  }
+
+  const displaySerials = serials.slice(0, 2);
+  const extraCount = serials.length - 2;
+
+  return (
+    <button onClick={() => onOpen(type, d)} className={`w-full bg-white rounded-xl shadow-sm border-l-4 ${cfg.color} p-5 hover:shadow-md transition-all text-left group`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 mb-2">
+            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${cfg.bg}`}>{cfg.badge}</span>
+            {active && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
+          </div>
+          <div className="flex items-center gap-3 mb-1">
+            <span className="font-bold text-[#1E3A5F] text-lg">{ref}</span>
+            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${getOrderStatusColor(status)}`}>
+              {getOrderStatusLabel(status)}
+            </span>
+          </div>
+          <p className="text-gray-600 text-sm truncate">{summary}</p>
+          {displaySerials.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              {displaySerials.map((s, i) => (
+                <span key={i} className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{s}</span>
+              ))}
+              {extraCount > 0 && <span className="text-xs text-gray-400 font-medium">+{extraCount} autre{extraCount > 1 ? 's' : ''}</span>}
+            </div>
+          )}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className="text-xs text-gray-400">{date ? new Date(date).toLocaleDateString('fr-FR') : '—'}</p>
+          <span className="text-gray-300 group-hover:text-[#3B7AB4] transition-colors text-xl mt-2 block">→</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelectedRequest, setPreviousPage, setPendingRentalId, setPendingContractId, perms }) {
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -15722,76 +15805,61 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
   // Reset pagination when filter/search changes
   useEffect(() => { setVisibleCount(5); setHistoryCount(5); }, [filter, searchQuery]);
 
-  // Status helpers
-  const getStatusColor = (status) => {
-    const s = STATUS_STYLES[status];
-    if (s) return `${s.bg} ${s.text}`;
-    return 'bg-gray-100 text-gray-600';
-  };
-
-  const getStatusLabel = (status) => {
-    const extras = {
-      active: 'Actif', expired: 'Expiré', quote: 'Devis',
-      confirmed: 'Confirmée', return_pending: 'Retour en attente', returned: 'Retournée',
-      invoiced: 'Facturée', rma_created: 'RMA créé', quote_approved: 'Devis approuvé',
-      bc_submitted: 'BC soumis', bc_approved: 'BC approuvé',
-    };
-    return STATUS_STYLES[status]?.label || extras[status] || status;
-  };
-
-  const isActive = (status) => !['completed', 'invoiced', 'cancelled', 'expired', 'returned'].includes(status);
-
-  // Search filter
-  const matchesSearch = (item, type) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    if (type === 'rma' || type === 'parts') {
-      return (item.request_number || '').toLowerCase().includes(q) || 
-             (item.problem_description || '').toLowerCase().includes(q) ||
-             (item.requested_service || '').toLowerCase().includes(q) ||
-             item.request_devices?.some(d => (d.serial_number || '').toLowerCase().includes(q) || (d.model_name || '').toLowerCase().includes(q));
-    }
-    if (type === 'contract') {
-      return (item.contract_number || '').toLowerCase().includes(q) ||
-             item.contract_devices?.some(d => (d.serial_number || '').toLowerCase().includes(q) || (d.model_name || '').toLowerCase().includes(q));
-    }
-    if (type === 'rental') {
-      return (item.rental_number || '').toLowerCase().includes(q) ||
-             item.rental_request_items?.some(ri => (ri.equipment_name || '').toLowerCase().includes(q));
-    }
-    return true;
-  };
-
   // Navigate
   const openRMA = (request) => { setSelectedRequest(request); setPreviousPage('my-orders'); setPage('request-detail'); };
   const openContract = (contract) => { setPendingContractId(contract.id); setPage('contracts'); };
   const openRental = (rental) => { setPendingRentalId(rental.id); setPage('rentals'); };
 
+  const handleOpen = useCallback((type, data) => {
+    if (type === 'rma' || type === 'parts') openRMA(data);
+    else if (type === 'contract') openContract(data);
+    else openRental(data);
+  }, []);
+
   // Memoize unified list - only rebuild when data/filter/search changes, NOT on pagination
   const allItems = useMemo(() => {
+    const q = searchQuery?.toLowerCase() || '';
+    const matchSearch = (item, type) => {
+      if (!q) return true;
+      if (type === 'rma' || type === 'parts') {
+        return (item.request_number || '').toLowerCase().includes(q) || 
+               (item.problem_description || '').toLowerCase().includes(q) ||
+               (item.requested_service || '').toLowerCase().includes(q) ||
+               item.request_devices?.some(d => (d.serial_number || '').toLowerCase().includes(q) || (d.model_name || '').toLowerCase().includes(q));
+      }
+      if (type === 'contract') {
+        return (item.contract_number || '').toLowerCase().includes(q) ||
+               item.contract_devices?.some(d => (d.serial_number || '').toLowerCase().includes(q) || (d.model_name || '').toLowerCase().includes(q));
+      }
+      if (type === 'rental') {
+        return (item.rental_number || '').toLowerCase().includes(q) ||
+               item.rental_request_items?.some(ri => (ri.equipment_name || '').toLowerCase().includes(q));
+      }
+      return true;
+    };
     const items = [];
     const rmas = (requests || []).filter(r => r.request_type !== 'parts');
     const partsOrders = (requests || []).filter(r => r.request_type === 'parts');
 
     if (filter === 'all' || filter === 'rma') {
-      rmas.forEach(r => { if (matchesSearch(r, 'rma')) items.push({ data: r, _type: 'rma', _date: r.created_at, _key: `rma-${r.id}`, id: r.id, status: r.status }); });
+      rmas.forEach(r => { if (matchSearch(r, 'rma')) items.push({ data: r, _type: 'rma', _date: r.created_at, _key: `rma-${r.id}`, id: r.id, status: r.status }); });
     }
     if (filter === 'all' || filter === 'parts') {
-      partsOrders.forEach(r => { if (matchesSearch(r, 'parts')) items.push({ data: r, _type: 'parts', _date: r.created_at, _key: `parts-${r.id}`, id: r.id, status: r.status }); });
+      partsOrders.forEach(r => { if (matchSearch(r, 'parts')) items.push({ data: r, _type: 'parts', _date: r.created_at, _key: `parts-${r.id}`, id: r.id, status: r.status }); });
     }
     if (filter === 'all' || filter === 'contracts') {
-      (contracts || []).forEach(c => { if (matchesSearch(c, 'contract')) items.push({ data: c, _type: 'contract', _date: c.created_at, _key: `contract-${c.id}`, id: c.id, status: c.status }); });
+      (contracts || []).forEach(c => { if (matchSearch(c, 'contract')) items.push({ data: c, _type: 'contract', _date: c.created_at, _key: `contract-${c.id}`, id: c.id, status: c.status }); });
     }
     if (filter === 'all' || filter === 'rentals') {
-      rentals.forEach(r => { if (matchesSearch(r, 'rental')) items.push({ data: r, _type: 'rental', _date: r.created_at, _key: `rental-${r.id}`, id: r.id, status: r.status }); });
+      rentals.forEach(r => { if (matchSearch(r, 'rental')) items.push({ data: r, _type: 'rental', _date: r.created_at, _key: `rental-${r.id}`, id: r.id, status: r.status }); });
     }
 
     items.sort((a, b) => new Date(b._date || 0) - new Date(a._date || 0));
     return items;
   }, [requests, contracts, rentals, filter, searchQuery]);
 
-  const activeItems = useMemo(() => allItems.filter(i => isActive(i.status)), [allItems]);
-  const completedItems = useMemo(() => allItems.filter(i => !isActive(i.status)), [allItems]);
+  const activeItems = useMemo(() => allItems.filter(i => isOrderActive(i.status)), [allItems]);
+  const completedItems = useMemo(() => allItems.filter(i => !isOrderActive(i.status)), [allItems]);
 
   // Filter chip counts
   const rmaCount = (requests || []).filter(r => r.request_type !== 'parts').length;
@@ -15805,83 +15873,6 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     { id: 'contracts', label: 'Contrats', icon: '📋', count: contractCount },
     { id: 'rentals', label: 'Locations', icon: '📅', count: rentalCount },
   ];
-
-  // OrderCard
-  const OrderCard = ({ item }) => {
-    const type = item._type;
-    const d = item.data;
-    const typeConfig = {
-      rma: { badge: '🔧 Étalonnage/Réparation', color: 'border-l-blue-500', bg: 'bg-blue-50' },
-      parts: { badge: '📦 Commande de Pièces', color: 'border-l-amber-500', bg: 'bg-amber-50' },
-      contract: { badge: '📋 Contrat', color: 'border-l-green-500', bg: 'bg-green-50' },
-      rental: { badge: '📅 Location', color: 'border-l-purple-500', bg: 'bg-purple-50' },
-    };
-    const cfg = typeConfig[type];
-
-    let ref = '', date = '', status = '', summary = '', serials = [], active = false;
-
-    if (type === 'rma' || type === 'parts') {
-      ref = d.request_number || 'En attente de numéro';
-      date = d.created_at; status = d.status; active = isActive(d.status);
-      if (type === 'rma') {
-        const devices = d.request_devices || [];
-        serials = devices.map(dv => (dv.model_name ? dv.model_name + ' — ' : '') + (dv.serial_number || '')).filter(s => s.length > 0);
-        summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${d.requested_service || 'Service'}`;
-      } else {
-        summary = d.problem_description?.split('\n')[0]?.slice(0, 80) || 'Commande de pièces';
-      }
-    } else if (type === 'contract') {
-      ref = d.contract_number || 'Contrat en cours de création';
-      date = d.created_at; status = d.status;
-      active = !['expired', 'cancelled', 'completed'].includes(d.status);
-      const devices = d.contract_devices || [];
-      serials = devices.map(dv => (dv.model_name ? dv.model_name + ' — ' : '') + (dv.serial_number || '')).filter(s => s.length > 0);
-      summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${d.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
-    } else if (type === 'rental') {
-      ref = d.rental_number || 'Location en cours de création';
-      date = d.created_at; status = d.status;
-      active = !['returned', 'cancelled', 'completed'].includes(d.status);
-      const items2 = d.rental_request_items || [];
-      serials = items2.map(ri => ri.equipment_name || ri.serial_number).filter(Boolean);
-      summary = `${items2.length} appareil${items2.length > 1 ? 's' : ''}`;
-    }
-
-    const displaySerials = serials.slice(0, 2);
-    const extraCount = serials.length - 2;
-    const onClick = type === 'rma' || type === 'parts' ? () => openRMA(d) : type === 'contract' ? () => openContract(d) : () => openRental(d);
-
-    return (
-      <button onClick={onClick} className={`w-full bg-white rounded-xl shadow-sm border-l-4 ${cfg.color} p-5 hover:shadow-md transition-all text-left group`}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-2">
-              <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${cfg.bg}`}>{cfg.badge}</span>
-              {active && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
-            </div>
-            <div className="flex items-center gap-3 mb-1">
-              <span className="font-bold text-[#1E3A5F] text-lg">{ref}</span>
-              <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${getStatusColor(status)}`}>
-                {getStatusLabel(status)}
-              </span>
-            </div>
-            <p className="text-gray-600 text-sm truncate">{summary}</p>
-            {displaySerials.length > 0 && (
-              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                {displaySerials.map((s, i) => (
-                  <span key={i} className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{s}</span>
-                ))}
-                {extraCount > 0 && <span className="text-xs text-gray-400 font-medium">+{extraCount} autre{extraCount > 1 ? 's' : ''}</span>}
-              </div>
-            )}
-          </div>
-          <div className="text-right flex-shrink-0">
-            <p className="text-xs text-gray-400">{date ? new Date(date).toLocaleDateString('fr-FR') : '—'}</p>
-            <span className="text-gray-300 group-hover:text-[#3B7AB4] transition-colors text-xl mt-2 block">→</span>
-          </div>
-        </div>
-      </button>
-    );
-  };
 
   const visibleActive = activeItems.slice(0, visibleCount);
   const hasMoreActive = activeItems.length > visibleCount;
@@ -15966,7 +15957,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
                 <span className="text-sm text-gray-400">({activeItems.length})</span>
               </div>
               <div className="space-y-3">
-                {visibleActive.map(item => <OrderCard key={item._key} item={item} />)}
+                {visibleActive.map(item => <OrderCard key={item._key} item={item} onOpen={handleOpen} />)}
                 {hasMoreActive && (
                   <button
                     onClick={() => setVisibleCount(prev => prev + 5)}
@@ -15987,7 +15978,7 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
                 Historique ({completedItems.length})
               </summary>
               <div className="space-y-3 opacity-75">
-                {visibleCompleted.map(item => <OrderCard key={item._key} item={item} />)}
+                {visibleCompleted.map(item => <OrderCard key={item._key} item={item} onOpen={handleOpen} />)}
                 {hasMoreCompleted && (
                   <button
                     onClick={() => setHistoryCount(prev => prev + 5)}
