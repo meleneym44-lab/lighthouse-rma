@@ -6499,7 +6499,8 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
       nickname: '',
       serial_number: '',
       model_name: '',
-      device_type: ''
+      device_type: '',
+      calibrations_per_year: 1
     };
   }
 
@@ -6551,7 +6552,8 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
       nickname: equip.nickname || '',
       serial_number: equip.serial_number || '',
       model_name: equip.model_name || '',
-      device_type: equip.equipment_type || ''
+      device_type: equip.equipment_type || '',
+      calibrations_per_year: 1
     });
   };
 
@@ -6568,7 +6570,8 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
       nickname: equip.nickname || '',
       serial_number: equip.serial_number || '',
       model_name: equip.model_name || '',
-      device_type: equip.equipment_type || ''
+      device_type: equip.equipment_type || '',
+      calibrations_per_year: 1
     }));
     
     setDevices(newDevices);
@@ -6624,8 +6627,8 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
           billing_tva: billingAddr?.tva_number || null,
           chorus_invoicing: billingAddr?.chorus_invoicing || false,
           chorus_service_code: billingAddr?.chorus_invoicing ? (billingAddr?.chorus_service_code || null) : null,
-          start_date: new Date().toISOString().split('T')[0],
-          end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+          start_date: '2027-01-01',
+          end_date: '2027-12-31'
         })
         .select()
         .single();
@@ -6642,7 +6645,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
         model_name: d.model_name,
         device_type: d.device_type,
         nickname: d.nickname || null,
-        tokens_total: 1,
+        tokens_total: d.calibrations_per_year || 1,
         tokens_used: 0
       }));
 
@@ -6684,6 +6687,24 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
           </div>
         </div>
 
+        {/* 2027 Contract Notice */}
+        <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-300 rounded-xl">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">📅</span>
+            <div>
+              <p className="font-bold text-blue-800 text-sm">Contrats 2026 clôturés — Demandes ouvertes pour 2027</p>
+              <p className="text-blue-700 text-sm mt-1">
+                Les contrats d'étalonnage couvrent la période du <strong>1er janvier au 31 décembre</strong> de l'année concernée. 
+                Les demandes actuelles sont pour des contrats <strong>2027</strong>.
+              </p>
+              <p className="text-blue-600 text-xs mt-2 italic">
+                Si vous souhaitez une durée de contrat différente (pluriannuel, démarrage en cours d'année, etc.), 
+                veuillez le préciser dans la section « Notes / Commentaires » ci-dessous.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Quick Actions */}
         <div className="mb-6 p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/20">
           <h3 className="font-bold text-[#1E3A5F] mb-3">Actions Rapides</h3>
@@ -6717,7 +6738,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
         <form onSubmit={openContractReview}>
           {/* Device Count Summary */}
           <div className="mb-4 text-sm text-gray-600">
-            <span className="font-bold text-[#1E3A5F]">{devices.length}</span> appareil{devices.length > 1 ? 's' : ''} dans la demande
+            <span className="font-bold text-[#1E3A5F]">{devices.length}</span> appareil{devices.length > 1 ? 's' : ''} — <span className="font-bold text-[#00A651]">{devices.reduce((sum, d) => sum + (d.calibrations_per_year || 1), 0)}</span> étalonnage{devices.reduce((sum, d) => sum + (d.calibrations_per_year || 1), 0) > 1 ? 's' : ''} /an au total
           </div>
 
           {/* Devices Table */}
@@ -6730,6 +6751,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
                   <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">N° de Série *</th>
                   <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Modèle *</th>
                   <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border">Type</th>
+                  <th className="px-3 py-2 text-center text-xs font-bold text-gray-600 border">Étal./an *</th>
                   <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 border w-10"></th>
                 </tr>
               </thead>
@@ -6785,6 +6807,18 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
                       </select>
                     </td>
                     <td className="px-2 py-1 border text-center">
+                      <select
+                        value={device.calibrations_per_year || 1}
+                        onChange={e => updateDevice(device.id, 'calibrations_per_year', parseInt(e.target.value))}
+                        className="px-2 py-1 text-sm border-0 focus:ring-1 focus:ring-[#3B7AB4] rounded bg-green-50 font-bold text-center w-16"
+                      >
+                        <option value={1}>1×</option>
+                        <option value={2}>2×</option>
+                        <option value={3}>3×</option>
+                        <option value={4}>4×</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-1 border text-center">
                       {devices.length > 1 && (
                         <button
                           type="button"
@@ -6818,7 +6852,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Précisions sur votre demande de contrat (fréquence souhaitée, conditions particulières, etc.)"
+              placeholder="Précisions sur votre demande (durée pluriannuelle, démarrage en cours d'année, fréquence spécifique, conditions particulières, etc.)"
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             />
@@ -6897,6 +6931,11 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
                   <p className="text-white/70 text-sm mt-1">Vérifiez les informations avant de soumettre</p>
                 </div>
                 <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                  {/* Contract Period */}
+                  <div className="bg-blue-50 rounded-lg p-3 border border-blue-200 text-sm">
+                    <p className="font-medium text-blue-800">📅 Période du contrat : <strong>1er janvier 2027 — 31 décembre 2027</strong></p>
+                    <p className="text-blue-600 text-xs mt-1">Total étalonnages demandés : {devices.reduce((sum, d) => sum + (d.calibrations_per_year || 1), 0)}</p>
+                  </div>
                   {/* Devices */}
                   <div>
                     <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3">🔧 Appareils ({devices.length})</h3>
@@ -6907,7 +6946,10 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
                             <p className="font-medium text-[#1E3A5F]">{d.model_name || 'Modèle non spécifié'}</p>
                             <p className="text-gray-500 font-mono text-xs">S/N: {d.serial_number}</p>
                           </div>
-                          {d.nickname && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{d.nickname}</span>}
+                          <div className="flex items-center gap-2">
+                            {d.nickname && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{d.nickname}</span>}
+                            <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{d.calibrations_per_year || 1}× /an</span>
+                          </div>
                         </div>
                       ))}
                     </div>
