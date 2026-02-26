@@ -5152,7 +5152,8 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
       other_accessories: '',
       saveDevice: false, // Option to save this device
       fromSaved: null, // ID if loaded from saved
-      shipping_address_id: null // Per-device return address (null = use default)
+      shipping_address_id: null, // Per-device return address (null = use default)
+      custom_shipping_address: null // Inline new address for this device
     };
   }
 
@@ -5370,6 +5371,36 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 
       // Save devices with full details
       for (const d of devices) {
+        // Handle per-device custom shipping address
+        let deviceAddressId = d.shipping_address_id || null;
+        if (d.shipping_address_id === 'new' && d.custom_shipping_address) {
+          const ca = d.custom_shipping_address;
+          if (!ca.company_name || !ca.attention || !ca.address_line1 || !ca.postal_code || !ca.city || !ca.phone) {
+            notify(`Veuillez remplir tous les champs obligatoires de l'adresse pour l'appareil ${d.model || d.serial_number}`, 'error');
+            setSaving(false);
+            return;
+          }
+          const { data: newAddr, error: addrErr } = await supabase.from('shipping_addresses').insert({
+            company_id: profile.company_id,
+            label: `${ca.company_name} - ${ca.city}`,
+            company_name: ca.company_name,
+            attention: ca.attention,
+            address_line1: ca.address_line1,
+            city: ca.city,
+            postal_code: ca.postal_code,
+            country: ca.country || 'France',
+            phone: ca.phone,
+            is_billing: false,
+            is_default: false
+          }).select().single();
+          if (addrErr) {
+            notify("Erreur lors de la création de l'adresse pour " + (d.model || d.serial_number), 'error');
+            setSaving(false);
+            return;
+          }
+          deviceAddressId = newAddr.id;
+        }
+
         await supabase.from('request_devices').insert({
           request_id: request.id,
           serial_number: d.serial_number,
@@ -5379,7 +5410,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           service_type: d.service_type === 'other' ? d.service_other : d.service_type,
           notes: d.notes,
           accessories: d.accessories,
-          shipping_address_id: d.shipping_address_id || null
+          shipping_address_id: deviceAddressId
         });
 
         // Auto-save device to equipment (always, so customer can track history)
@@ -5675,7 +5706,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                   </h3>
                   <div className="space-y-3">
                     {devices.map((d, i) => {
-                      const devAddr = d.shipping_address_id ? addresses.find(a => a.id === d.shipping_address_id) : null;
+                      const devAddr = d.shipping_address_id === 'new' ? d.custom_shipping_address : (d.shipping_address_id ? addresses.find(a => a.id === d.shipping_address_id) : null);
                       return (
                         <div key={d.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
                           <div className="flex justify-between items-start">
@@ -5694,7 +5725,11 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                             <p className="text-xs text-gray-400 mt-1">Accessoires : {d.accessories.join(', ')}</p>
                           )}
                           {devAddr && (
-                            <p className="text-xs text-amber-600 mt-1">↩ Retour : {devAddr.label || devAddr.company_name}, {devAddr.city}</p>
+                            <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200">
+                              <p className="text-xs font-medium text-amber-700">📍 Adresse de retour spécifique :</p>
+                              <p className="text-xs text-amber-800">{devAddr.company_name || devAddr.label}, {devAddr.attention ? `Attn: ${devAddr.attention}` : ''}</p>
+                              <p className="text-xs text-amber-600">{devAddr.address_line1}, {devAddr.postal_code} {devAddr.city}{devAddr.phone ? ` • Tél: ${devAddr.phone}` : ''}</p>
+                            </div>
                           )}
                         </div>
                       );
@@ -5754,7 +5789,12 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                   <h3 className="text-sm font-bold text-[#1E3A5F] uppercase tracking-wider mb-3 flex items-center gap-2">
                     📍 Adresse de retour
                   </h3>
-                  {shippingSameAsBilling ? (
+                  {devices.some(d => d.shipping_address_id) ? (
+                    <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                      <p className="font-medium text-amber-800 text-sm">⚠️ Adresses de retour multiples</p>
+                      <p className="text-xs text-amber-600 mt-1">Certains appareils seront retournés à des adresses différentes. Voir le détail par appareil ci-dessus.</p>
+                    </div>
+                  ) : shippingSameAsBilling ? (
                     <p className="text-sm text-gray-500 italic">Identique à l'adresse de facturation</p>
                   ) : shippingAddr && (
                     <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
@@ -7152,31 +7192,38 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
         )}
 
         {/* Per-Device Shipping Address */}
-        {addresses && addresses.filter(a => !a.is_billing).length > 1 && (
-          <div className="md:col-span-2 mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
-            <label className="flex items-center gap-3 cursor-pointer mb-2">
-              <input
-                type="checkbox"
-                checked={showDifferentAddress}
+        <div className="md:col-span-2 mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+          <label className="flex items-center gap-3 cursor-pointer mb-2">
+            <input
+              type="checkbox"
+              checked={showDifferentAddress}
+              onChange={e => {
+                setShowDifferentAddress(e.target.checked);
+                if (!e.target.checked) {
+                  updateDeviceMultiple(device.id, { shipping_address_id: null, custom_shipping_address: null });
+                }
+              }}
+              className="w-5 h-5 rounded border-amber-400 text-amber-600"
+            />
+            <div>
+              <span className="font-medium text-amber-800">📍 Envoyer à une adresse différente</span>
+              <p className="text-xs text-amber-600">Cet appareil sera retourné à une autre adresse que l'adresse de retour principale</p>
+            </div>
+          </label>
+          
+          {showDifferentAddress && (
+            <div className="mt-2 space-y-2">
+              <select
+                value={device.shipping_address_id === 'new' ? 'new' : (device.shipping_address_id || '')}
                 onChange={e => {
-                  setShowDifferentAddress(e.target.checked);
-                  if (!e.target.checked) {
-                    updateDevice(device.id, 'shipping_address_id', null);
+                  const val = e.target.value;
+                  if (val === 'new') {
+                    updateDeviceMultiple(device.id, { shipping_address_id: 'new', custom_shipping_address: { company_name: '', attention: '', address_line1: '', city: '', postal_code: '', country: 'France', phone: '' } });
+                  } else {
+                    updateDeviceMultiple(device.id, { shipping_address_id: val || null, custom_shipping_address: null });
                   }
                 }}
-                className="w-5 h-5 rounded border-amber-400 text-amber-600"
-              />
-              <div>
-                <span className="font-medium text-amber-800">📍 Envoyer à une adresse différente</span>
-                <p className="text-xs text-amber-600">Cet appareil sera retourné à une autre adresse</p>
-              </div>
-            </label>
-            
-            {showDifferentAddress && (
-              <select
-                value={device.shipping_address_id || ''}
-                onChange={e => updateDevice(device.id, 'shipping_address_id', e.target.value || null)}
-                className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-white mt-2"
+                className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-white"
               >
                 <option value="">-- Sélectionner une adresse --</option>
                 {addresses.filter(a => !a.is_billing).map(addr => (
@@ -7184,10 +7231,44 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
                     {addr.company_name || addr.label} - {addr.address_line1}, {addr.postal_code} {addr.city} {addr.is_default ? '(Par défaut)' : ''}
                   </option>
                 ))}
+                <option value="new">➕ Nouvelle adresse...</option>
               </select>
-            )}
-          </div>
-        )}
+              
+              {device.shipping_address_id === 'new' && device.custom_shipping_address && (
+                <div className="grid grid-cols-2 gap-2 p-3 bg-white rounded-lg border border-amber-200">
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-500 mb-0.5">Société *</label>
+                    <input type="text" value={device.custom_shipping_address.company_name} onChange={e => updateDevice(device.id, 'custom_shipping_address', { ...device.custom_shipping_address, company_name: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Nom de la société" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-500 mb-0.5">À l'attention de *</label>
+                    <input type="text" value={device.custom_shipping_address.attention} onChange={e => updateDevice(device.id, 'custom_shipping_address', { ...device.custom_shipping_address, attention: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Nom du destinataire" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-500 mb-0.5">Adresse *</label>
+                    <input type="text" value={device.custom_shipping_address.address_line1} onChange={e => updateDevice(device.id, 'custom_shipping_address', { ...device.custom_shipping_address, address_line1: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Rue, numéro" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">Code postal *</label>
+                    <input type="text" value={device.custom_shipping_address.postal_code} onChange={e => updateDevice(device.id, 'custom_shipping_address', { ...device.custom_shipping_address, postal_code: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="75001" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">Ville *</label>
+                    <input type="text" value={device.custom_shipping_address.city} onChange={e => updateDevice(device.id, 'custom_shipping_address', { ...device.custom_shipping_address, city: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="Paris" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">Pays</label>
+                    <input type="text" value={device.custom_shipping_address.country} onChange={e => updateDevice(device.id, 'custom_shipping_address', { ...device.custom_shipping_address, country: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">Téléphone *</label>
+                    <input type="text" value={device.custom_shipping_address.phone} onChange={e => updateDevice(device.id, 'custom_shipping_address', { ...device.custom_shipping_address, phone: e.target.value })} className="w-full px-2 py-1.5 border rounded text-sm" placeholder="+33 1 23 45 67 89" />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
