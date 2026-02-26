@@ -6613,12 +6613,7 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
       }
       const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === finalBillingAddressId);
 
-      // Generate contract number manually (no RPC needed)
-      const year = new Date().getFullYear();
-      const timestamp = Date.now().toString().slice(-4);
-      const contractNum = `CTR-${year}-${timestamp}`;
-      
-      // Create contract with only columns that exist
+      // Create contract - number will be assigned admin-side when quote is sent
       const { data: contract, error: contractError } = await supabase
         .from('contracts')
         .insert({
@@ -14992,40 +14987,11 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     
     setSaving(true);
     try {
-      // Generate rental number from doc counter system (same as DEV/SUP/etc)
-      let rentalNumber = null;
-      try {
-        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'LOC' });
-        if (!docNumError && docNumData) {
-          rentalNumber = docNumData;
-        }
-      } catch (e) {
-        console.error('Could not generate LOC number:', e);
-      }
-      if (!rentalNumber) {
-        // Fallback: LOC-MMYY-XXX
-        const mm = String(new Date().getMonth() + 1).padStart(2, '0');
-        const yy = String(new Date().getFullYear()).slice(-2);
-        const { data: lastLoc } = await supabase.from('rental_requests').select('rental_number').like('rental_number', `LOC-${mm}${yy}-%`).order('rental_number', { ascending: false }).limit(1);
-        const lastNum = lastLoc?.[0]?.rental_number ? parseInt(lastLoc[0].rental_number.split('-').pop()) : 0;
-        rentalNumber = `LOC-${mm}${yy}-${String(lastNum + 1).padStart(3, '0')}`;
-      }
-      
-      // Check for duplicates and increment if needed
-      const { data: existing } = await supabase.from('rental_requests').select('rental_number').eq('rental_number', rentalNumber).maybeSingle();
-      if (existing) {
-        // Collision - find the true max and increment
-        const prefix = rentalNumber.substring(0, rentalNumber.lastIndexOf('-') + 1); // e.g. "LOC-0226-"
-        const { data: allExisting } = await supabase.from('rental_requests').select('rental_number').like('rental_number', `${prefix}%`).order('rental_number', { ascending: false }).limit(1);
-        const maxNum = allExisting?.[0]?.rental_number ? parseInt(allExisting[0].rental_number.split('-').pop()) : 0;
-        rentalNumber = `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
-      }
-      
       // Create rental request
       const { data: rental, error: rentalErr } = await supabase
         .from('rental_requests')
         .insert({
-          rental_number: rentalNumber,
+          rental_number: null,
           company_id: profile.company_id,
           submitted_by: profile.id,
           start_date: startDate.toISOString().split('T')[0],
