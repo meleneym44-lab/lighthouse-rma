@@ -6907,7 +6907,6 @@ function ReturnAddressPicker({ shipping, setShipping, addresses, profile, notify
 function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId, returnShipping = 'standard' }) {
   const [charCount, setCharCount] = useState(device.notes.length);
   const [showDifferentAddress, setShowDifferentAddress] = useState(!!device.shipping_address_id);
-  const isStandardReturn = returnShipping === 'standard' || !returnShipping;
   const maxChars = 500;
 
   const handleNotesChange = (e) => {
@@ -7213,8 +7212,7 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
           </div>
         )}
 
-        {/* Per-Device Shipping Address — only for standard Lighthouse return */}
-        {isStandardReturn && (
+        {/* Per-Device Shipping Address */}
         <div className="md:col-span-2 mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
           <label className="flex items-center gap-3 cursor-pointer mb-2">
             <input
@@ -7292,7 +7290,6 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
             </div>
           )}
         </div>
-        )}
       </div>
     </div>
   );
