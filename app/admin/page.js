@@ -7582,9 +7582,21 @@ function RMAActions({ rma, devices, notify, reload, onOpenShipping, onOpenAvenan
           {/* Ready to ship - show shipping button */}
           {isReadyToShip && (
             <div className="flex items-center gap-3">
+              {(rma.return_shipping === 'pickup' || rma.return_shipping === 'own_label') && (
+                <span className="px-3 py-1.5 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-800 font-medium">
+                  ⚠️ {rma.return_shipping === 'pickup' ? 'Retrait client' : 'Retour client'}
+                </span>
+              )}
               <button
-                onClick={onOpenShipping}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center gap-2"
+                onClick={() => {
+                  const isNonStandard = rma.return_shipping === 'pickup' || rma.return_shipping === 'own_label';
+                  if (isNonStandard) {
+                    const msg = 'Ce client a choisi ' + (rma.return_shipping === 'pickup' ? 'un retrait sur place' : 'son propre transporteur') + '. Voulez-vous quand même préparer une expédition ?';
+                    if (!window.confirm(msg)) return;
+                  }
+                  onOpenShipping();
+                }}
+                className={`px-4 py-2 ${(rma.return_shipping === 'pickup' || rma.return_shipping === 'own_label') ? 'bg-amber-500 hover:bg-amber-600 ring-2 ring-amber-300' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg font-medium flex items-center gap-2`}
               >
                 {lang === 'en' ? '🚚 Prepare Shipment' : '🚚 Préparer Expédition'}
               </button>
@@ -12039,12 +12051,34 @@ const STATUS_STYLES = {
                 </button>
               )}
               {order.status === 'ready_to_ship' && !shippingData.trackingNumber && (
-                <button
-                  onClick={() => setShowShipping(true)}
-                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium"
-                >
-                  📦 Créer Expédition
-                </button>
+                <>
+                  {(order.return_shipping === 'pickup' || order.return_shipping === 'own_label') && (
+                    <div className="px-3 py-2 bg-amber-100 border border-amber-300 rounded-lg text-xs text-amber-800">
+                      ⚠️ {order.return_shipping === 'pickup' ? 'Retrait client' : 'Retour par le client'} — pas de retour standard prévu
+                    </div>
+                  )}
+                  {(!order.shipping_address_id && order.return_shipping === 'standard') && (
+                    <div className="px-3 py-2 bg-red-100 border border-red-300 rounded-lg text-xs text-red-800">
+                      ⚠️ Aucune adresse de retour sur cette RMA
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      const isNonStandard = order.return_shipping === 'pickup' || order.return_shipping === 'own_label';
+                      const noAddr = !order.shipping_address_id && !(order.request_devices || []).some(d => d.shipping_address_id);
+                      if (isNonStandard || noAddr) {
+                        const msg = isNonStandard 
+                          ? 'Ce client a choisi ' + (order.return_shipping === 'pickup' ? 'un retrait sur place' : 'son propre transporteur') + '. Êtes-vous sûr de vouloir créer une expédition ?'
+                          : 'Aucune adresse de retour n\'est définie. Êtes-vous sûr de vouloir continuer ?';
+                        if (!window.confirm(msg)) return;
+                      }
+                      setShowShipping(true);
+                    }}
+                    className={`px-4 py-2 ${(order.return_shipping === 'pickup' || order.return_shipping === 'own_label') ? 'bg-amber-500 hover:bg-amber-600 ring-2 ring-amber-300' : 'bg-green-500 hover:bg-green-600'} text-white rounded-lg font-medium`}
+                  >
+                    📦 Créer Expédition
+                  </button>
+                </>
               )}
               {order.status === 'ready_to_ship' && shippingData.trackingNumber && (
                 <>
