@@ -368,6 +368,202 @@ const QUOTE_DISCLAIMERS = [
 ];
 
 // ============================================
+// SHARED QUOTE DOCUMENT VIEW COMPONENT
+// Matches the PDF style exactly for all quote types
+// ============================================
+function QuoteDocumentView({ 
+  title = 'OFFRE DE PRIX', docNumber, reference, refLabel = 'RMA',
+  date, company = {}, quoteData = {}, conditions = [],
+  addressMode = 'both', // 'both' = ship+bill boxes, 'billing_only' = full-width bill box
+  children, onClose, onApprove, showApprove = false,
+  bcData = null, extraInfoBar = null, extraFooterLeft = null
+}) {
+  const billingAddr = quoteData.billingAddress || null;
+  const shippingAddr = quoteData.shippingAddress || null;
+  const submitterName = quoteData.submitterName || null;
+  const returnShipping = quoteData.returnShipping || 'standard';
+  const qDate = date ? formatDateWrittenFR(new Date(date)) : formatDateWrittenFR(new Date());
+
+  const renderShipTo = () => {
+    if (returnShipping === 'pickup') return (
+      <><p className="font-bold text-[#003366]">Enlèvement client</p>
+      <p className="text-sm text-gray-600">Le client récupérera la commande dans nos locaux.</p></>
+    );
+    if (returnShipping === 'own_label') return (
+      <><p className="font-bold text-[#003366]">Expédition client</p>
+      <p className="text-sm text-gray-600">Le client fournira son propre transporteur.</p></>
+    );
+    const addr = shippingAddr;
+    const name = addr?.company_name || company.name || 'Client';
+    const attn = addr?.attention || submitterName || company.contact_name;
+    return (<>
+      <p className="font-bold text-[#003366]">{name}</p>
+      {attn && <p className="text-sm text-gray-600">Attn: {attn}</p>}
+      {addr ? (<>
+        {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
+        {(addr.postal_code || addr.city) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
+        {addr.phone && <p className="text-sm text-gray-500">Tél: {addr.phone}</p>}
+      </>) : (<>
+        {(company.billing_address || company.address) && <p className="text-sm text-gray-600">{company.billing_address || company.address}</p>}
+        {(company.billing_postal_code || company.postal_code || company.billing_city || company.city) && <p className="text-sm text-gray-600">{[company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ')}</p>}
+        {company.phone && <p className="text-sm text-gray-500">Tél: {company.phone}</p>}
+      </>)}
+    </>);
+  };
+
+  const renderBillTo = () => {
+    const addr = billingAddr;
+    const name = addr?.company_name || company.name || 'Client';
+    return (<>
+      <p className="font-bold text-[#003366]">{name}</p>
+      {addr ? (<>
+        {addr.attention && <p className="text-sm text-gray-600">Contact: {addr.attention}</p>}
+        {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
+        {(addr.postal_code || addr.city) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
+        {addr.phone && <p className="text-sm text-gray-500">Tél: {addr.phone}</p>}
+        {addr.siret && <p className="text-sm font-bold text-[#003366]">SIRET: {addr.siret}</p>}
+        {addr.tva_number && <p className="text-sm font-bold text-[#003366]">TVA: {addr.tva_number}</p>}
+        {addr.chorus_invoicing && <p className="text-xs text-blue-600">Chorus Pro{addr.chorus_service_code ? ` — Service: ${addr.chorus_service_code}` : ''}</p>}
+      </>) : (<>
+        {(company.billing_address || company.address) && <p className="text-sm text-gray-600">{company.billing_address || company.address}</p>}
+        {(company.billing_postal_code || company.postal_code || company.billing_city || company.city) && <p className="text-sm text-gray-600">{[company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ')}</p>}
+        {company.tva_number && <p className="text-sm font-bold text-[#003366]">TVA: {company.tva_number}</p>}
+      </>)}
+    </>);
+  };
+
+  const shipLabel = returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'TRANSPORT CLIENT' : 'LIVRER À';
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-[#003366] text-white px-6 py-4 flex justify-between items-center z-10">
+          <div>
+            <h2 className="text-xl font-bold">{title}</h2>
+            <p className="text-gray-300">{docNumber || reference || ''}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-white text-2xl">&times;</button>
+        </div>
+
+        <div id="quote-doc-content">
+          {/* Header */}
+          <div className="px-8 pt-8 pb-4 border-b-4 border-[#003366]">
+            <div className="flex justify-between items-start">
+              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto"
+                onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+              <div style={{ display: 'none' }}><h1 className="text-3xl font-bold text-[#003366]">LIGHTHOUSE</h1></div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-[#003366]">{title}</p>
+                <p className="font-medium text-[#003366]">N° {docNumber || '—'}</p>
+                {reference && docNumber !== reference && <p className="text-xs text-gray-400">{refLabel}: {reference}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* Info Bar */}
+          <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+            <div>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wider">Date</p>
+              <p className="font-bold text-[#003366]">{qDate}</p>
+            </div>
+            {extraInfoBar ? extraInfoBar : (<>
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Validité</p>
+                <p className="font-bold text-[#003366]">30 jours</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Conditions</p>
+                <p className="font-bold text-[#003366]">À réception de facture</p>
+              </div>
+            </>)}
+          </div>
+
+          {/* Address Boxes */}
+          {addressMode === 'both' ? (
+            <div className="px-8 py-4 grid grid-cols-2 gap-4 border-b">
+              <div className="border border-[#003366]/30 rounded p-3">
+                <p className="text-[10px] font-bold text-[#003366] uppercase tracking-wider mb-2">{shipLabel}</p>
+                {renderShipTo()}
+              </div>
+              <div className="border border-[#003366]/30 rounded p-3">
+                <p className="text-[10px] font-bold text-[#003366] uppercase tracking-wider mb-2">FACTURER À</p>
+                {renderBillTo()}
+              </div>
+            </div>
+          ) : (
+            <div className="px-8 py-4 border-b">
+              <div className="border border-[#003366]/30 rounded p-3">
+                <p className="text-[10px] font-bold text-[#003366] uppercase tracking-wider mb-2">FACTURER À</p>
+                {renderBillTo()}
+              </div>
+            </div>
+          )}
+
+          {children}
+
+          {/* Conditions */}
+          {conditions.length > 0 && (
+            <div className="px-8 py-4 border-t">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Conditions</p>
+              <ul className="text-xs text-gray-600 space-y-1">
+                {conditions.map((d, i) => <li key={i}>- {d}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* Signature */}
+          <div className="px-8 py-6 border-t flex justify-between items-end">
+            <div className="flex items-end gap-6">
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
+                <p className="font-bold text-lg text-[#003366]">{quoteData.createdBy || 'M. Meleney'}</p>
+                <p className="text-gray-600">Lighthouse France</p>
+              </div>
+              <img src="/images/logos/capcert-logo.png" alt="Capcert" className="h-14 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+            </div>
+            {bcData ? (
+              <div className="text-right">
+                <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                  <p className="text-xs text-green-600 uppercase mb-1">Approuvé</p>
+                  <p className="font-bold text-green-800">{bcData.signedBy || 'Client'}</p>
+                  <p className="text-sm text-green-700">{bcData.signedDate ? formatDateWrittenFR(new Date(bcData.signedDate)) : ''}</p>
+                  {bcData.signatureUrl && <img src={bcData.signatureUrl} alt="Signature" className="max-h-16 mt-2" />}
+                </div>
+              </div>
+            ) : (
+              <div className="text-right">
+                <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="bg-[#003366] text-white px-8 py-4 text-center text-sm">
+            <p className="font-medium">Lighthouse France SAS</p>
+            <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex justify-between items-center">
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Fermer</button>
+            {extraFooterLeft}
+          </div>
+          {showApprove && onApprove && (
+            <button onClick={onApprove} className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]">
+              ✅ Approuver et soumettre BC
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
 // PDF GENERATION - PROFESSIONAL BLOCK-BASED
 // No emojis, signature always at page bottom
 // ============================================
@@ -9827,6 +10023,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const [sending, setSending] = useState(false);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'messages'
   const [shippingAddress, setShippingAddress] = useState(null);
+  const [billingAddress, setBillingAddress] = useState(null);
   const [deviceAddresses, setDeviceAddresses] = useState({});
   const [attachments, setAttachments] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null); // device object or null
@@ -10010,6 +10207,16 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         if (addr) setShippingAddress(addr);
       }
       
+      // Load billing address
+      if (request.billing_address_id) {
+        const { data: bAddr } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .eq('id', request.billing_address_id)
+          .single();
+        if (bAddr) setBillingAddress(bAddr);
+      }
+      
       // Load per-device shipping addresses
       const devices = request.request_devices || [];
       const addressIds = new Set();
@@ -10035,7 +10242,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
       }
     };
     loadData();
-  }, [request.id, request.shipping_address_id]);
+  }, [request.id, request.shipping_address_id, request.billing_address_id]);
 
   // Submit BC / Approval
   const submitBonCommande = async () => {
@@ -11052,714 +11259,234 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         {/* Quote Review Modal */}
         {showQuoteModal && (() => {
           const quoteData = request.quote_data || {};
-          
-          // Check if this is a parts order
+          const company = request.companies || {};
+          const isClientReturn = request.return_shipping === 'own_label' || request.return_shipping === 'pickup';
+          const qDocData = {
+            billingAddress: billingAddress ? {
+              company_name: billingAddress.company_name, attention: billingAddress.attention,
+              address_line1: billingAddress.address_line1, city: billingAddress.city,
+              postal_code: billingAddress.postal_code, country: billingAddress.country,
+              phone: billingAddress.phone, siret: billingAddress.siret,
+              tva_number: billingAddress.tva_number, chorus_invoicing: billingAddress.chorus_invoicing,
+              chorus_service_code: billingAddress.chorus_service_code
+            } : null,
+            shippingAddress: shippingAddress ? {
+              company_name: shippingAddress.company_name, attention: shippingAddress.attention,
+              address_line1: shippingAddress.address_line1, city: shippingAddress.city,
+              postal_code: shippingAddress.postal_code, country: shippingAddress.country,
+              phone: shippingAddress.phone
+            } : null,
+            submitterName: profile?.full_name || company.contact_name || null,
+            returnShipping: request.return_shipping || 'standard',
+            createdBy: quoteData.createdBy || 'M. Meleney'
+          };
+          const bcInfo = request.bc_submitted_at ? {
+            signedBy: request.bc_signed_by || 'Client',
+            signedDate: request.bc_signature_date || request.bc_submitted_at,
+            signatureUrl: request.bc_signature_url
+          } : null;
+
+          // === PARTS ORDER ===
           if (isPartsOrder) {
-            // Parts Order Quote Modal - A4 Paper Layout
             const parts = quoteData.parts || [];
             const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
             const partsTotal = quoteData.partsTotal || parts.reduce((sum, p) => sum + (p.lineTotal || 0), 0);
             const grandTotal = quoteData.grandTotal || (partsTotal + (shipping.total || 0));
-            
-            // Print function - opens PDF in new tab
-            const handlePrint = async () => {
-              try {
-                const pdfBlob = await generatePartsQuotePDF({ request, isSigned: false });
-                const url = URL.createObjectURL(pdfBlob);
-                window.open(url, '_blank');
-              } catch (e) {
-                console.error('PDF generation error:', e);
-              }
-            };
-            
-            // Download PDF function
-            const handleDownload = async () => {
-              try {
-                const pdfBlob = await generatePartsQuotePDF({ request, isSigned: false });
-                const url = URL.createObjectURL(pdfBlob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `devis_pieces_${request.request_number || 'draft'}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-              } catch (e) {
-                console.error('PDF generation error:', e);
-              }
-            };
-            
-            // Get company info from request
-            const company = request.companies || {};
-            
             return (
-              <div className="fixed inset-0 bg-black/70 z-50 overflow-hidden flex flex-col">
-                {/* Fixed Header */}
-                <div className="bg-amber-600 text-white px-6 py-4 flex justify-between items-center flex-shrink-0">
-                  <div>
-                    <h2 className="text-xl font-bold">Devis Pièces Détachées</h2>
-                    <p className="text-amber-200">{request.request_number || 'En attente'}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={handlePrint}
-                      className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 rounded text-sm flex items-center gap-1"
-                    >
-                      🖨️ Imprimer
-                    </button>
-                    <button
-                      onClick={handleDownload}
-                      className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 rounded text-sm flex items-center gap-1"
-                    >
-                      📥 Télécharger PDF
-                    </button>
-                    <button onClick={() => setShowQuoteModal(false)} className="text-amber-200 hover:text-white text-2xl ml-2">&times;</button>
-                  </div>
-                </div>
-
-                {/* Scrollable Content Area */}
-                <div className="flex-1 overflow-y-auto bg-gray-400 p-6">
-                  {/* A4 Paper Container */}
-                  <div id="parts-quote-print" className="bg-white shadow-2xl mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm', maxWidth: '100%' }}>
-                    
-                    {/* Quote Header */}
-                    <div className="px-8 pt-8 pb-4">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <img 
-                            src="/images/logos/Lighthouse-color-logo.jpg" 
-                            alt="Lighthouse France" 
-                            className="h-24 w-auto mb-1"
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              e.target.nextSibling.style.display = 'block';
-                            }}
-                          />
-                          <div style={{ display: 'none' }}>
-                            <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
-                            <p className="text-gray-500">France</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xl font-bold text-[#2D5A7B]">DEVIS PIÈCES</p>
-                          <p className="text-gray-500 font-mono">{quoteData.quoteRef || request.request_number}</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Navy accent line */}
-                    <div className="h-1.5 bg-[#2D5A7B]"></div>
-                    
-                    {/* Date bar */}
-                    <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm">
-                      <div>
-                        <span className="text-gray-500">Date: </span>
-                        <span className="font-medium">{quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Validité: </span>
-                        <span className="font-medium">30 jours</span>
-                      </div>
-                    </div>
-                    
-                    {/* Client Info */}
-                    <div className="px-8 py-4 border-b">
-                      <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Client</p>
-                      <p className="font-bold text-lg text-[#1a1a2e]">{company.name || 'Client'}</p>
-                      {company.billing_address && (
-                        <p className="text-gray-600">{company.billing_address}</p>
+              <QuoteDocumentView
+                title="OFFRE DE PRIX" docNumber={quoteData.quoteRef || request.request_number}
+                reference={request.request_number} refLabel="Réf"
+                date={quoteData.createdAt || request.quoted_at} company={company} quoteData={qDocData}
+                conditions={["Devis valable 30 jours.", "Paiement : 30 jours fin de mois.", "Livraison : sous réserve de disponibilité."]}
+                onClose={() => setShowQuoteModal(false)}
+                showApprove={request.status === 'quote_sent'} onApprove={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+                bcData={bcInfo}
+              >
+                <div className="px-8 py-6">
+                  <h3 className="font-bold text-[#003366] mb-3">Pièces Commandées</h3>
+                  <table className="w-full border-collapse mb-4 text-sm">
+                    <thead>
+                      <tr className="bg-[#003366] text-white">
+                        <th className="px-3 py-2.5 text-center w-12">Qté</th>
+                        <th className="px-3 py-2.5 text-left w-24">Réf.</th>
+                        <th className="px-3 py-2.5 text-left">Désignation</th>
+                        <th className="px-3 py-2.5 text-right w-20">P.U.</th>
+                        <th className="px-3 py-2.5 text-right w-20">Total HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parts.map((part, idx) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 border-b border-gray-100 text-center">{part.quantity}</td>
+                          <td className="px-3 py-2 border-b border-gray-100 font-mono text-xs">{part.partNumber || '—'}</td>
+                          <td className="px-3 py-2 border-b border-gray-100">{part.description}</td>
+                          <td className="px-3 py-2 border-b border-gray-100 text-right whitespace-nowrap">{(part.unitPrice || 0).toFixed(2)} €</td>
+                          <td className="px-3 py-2 border-b border-gray-100 text-right font-medium whitespace-nowrap">{(part.lineTotal || 0).toFixed(2)} €</td>
+                        </tr>
+                      ))}
+                      {!isClientReturn && shipping.total > 0 && (
+                        <tr className="bg-blue-50">
+                          <td className="px-3 py-2 border-b border-blue-100 text-center">{shipping.parcels}</td>
+                          <td className="px-3 py-2 border-b border-blue-100 font-mono text-xs">PORT</td>
+                          <td className="px-3 py-2 border-b border-blue-100 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
+                          <td className="px-3 py-2 border-b border-blue-100 text-right whitespace-nowrap">{(shipping.unitPrice || 0).toFixed(2)} €</td>
+                          <td className="px-3 py-2 border-b border-blue-100 text-right font-medium whitespace-nowrap">{(shipping.total || 0).toFixed(2)} €</td>
+                        </tr>
                       )}
-                      {(company.billing_postal_code || company.billing_city) && (
-                        <p className="text-gray-600">
-                          {company.billing_postal_code} {company.billing_city}
-                        </p>
-                      )}
-                      {company.siret && (
-                        <p className="text-gray-500 text-sm mt-1">SIRET: {company.siret}</p>
-                      )}
-                    </div>
-                    
-                    {/* Main content area - flex-1 to push footer down */}
-                    <div className="px-8 py-6 flex-1">
-                      {/* Parts Table */}
-                      <h3 className="font-bold text-[#1a1a2e] mb-3">Pièces Commandées</h3>
-                      <table className="w-full border-collapse mb-6 text-sm">
-                        <thead>
-                          <tr className="bg-[#1a1a2e] text-white">
-                            <th className="px-2 py-2 text-center w-10">Qté</th>
-                            <th className="px-2 py-2 text-left w-24">Réf.</th>
-                            <th className="px-2 py-2 text-left">Désignation</th>
-                            <th className="px-2 py-2 text-right w-16">P.U.</th>
-                            <th className="px-2 py-2 text-right w-16">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parts.map((part, idx) => (
-                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-2 py-2 border-b border-gray-200 text-center">{part.quantity}</td>
-                              <td className="px-2 py-2 border-b border-gray-200 font-mono text-xs">{part.partNumber || '—'}</td>
-                              <td className="px-2 py-2 border-b border-gray-200">{part.description}</td>
-                              <td className="px-2 py-2 border-b border-gray-200 text-right whitespace-nowrap">{(part.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-2 py-2 border-b border-gray-200 text-right font-medium whitespace-nowrap">{(part.lineTotal || 0).toFixed(2)} €</td>
-                            </tr>
-                          ))}
-                          {shipping.total > 0 && (
-                            <tr className="bg-blue-50">
-                              <td className="px-2 py-2 border-b border-blue-200 text-center">{shipping.parcels}</td>
-                              <td className="px-2 py-2 border-b border-blue-200 font-mono text-xs">PORT</td>
-                              <td className="px-2 py-2 border-b border-blue-200 text-blue-800">Frais de port ({shipping.parcels} colis)</td>
-                              <td className="px-2 py-2 border-b border-blue-200 text-right whitespace-nowrap">{(shipping.unitPrice || 0).toFixed(2)} €</td>
-                              <td className="px-2 py-2 border-b border-blue-200 text-right font-medium whitespace-nowrap">{(shipping.total || 0).toFixed(2)} €</td>
-                            </tr>
-                          )}
-                        </tbody>
-                        <tfoot>
-                          <tr className="bg-[#2D5A7B] text-white">
-                            <td colSpan={4} className="px-2 py-2 text-right font-bold whitespace-nowrap">TOTAL HT</td>
-                            <td className="px-2 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                      
-                      {/* Conditions */}
-                      <div className="bg-gray-50 rounded-lg p-4 mb-8">
-                        <p className="font-bold text-[#1a1a2e] text-sm mb-2">Conditions:</p>
-                        <ul className="text-sm text-gray-600 space-y-1">
-                          <li>• Devis valable 30 jours</li>
-                          <li>• Paiement: 30 jours fin de mois</li>
-                          <li>• Livraison: Sous réserve de disponibilité</li>
-                        </ul>
-                      </div>
-                      
-                      {/* Signature Section */}
-                      <div className="flex justify-between items-end pt-6 border-t border-gray-200">
-                        <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
-                          <p className="font-bold text-lg text-[#1a1a2e]">{quoteData.createdBy || 'Lighthouse France'}</p>
-                          <p className="text-gray-500">Lighthouse France</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Bon pour accord</p>
-                          <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
-                            <span className="text-gray-300 text-xs">Signature et cachet</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Footer */}
-                    <div className="bg-[#1a1a2e] text-white px-8 py-3 text-center">
-                      <p className="font-medium text-sm">Lighthouse France SAS</p>
-                      <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-                    </div>
-                  </div>
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-[#003366] text-white">
+                        <td colSpan={4} className="px-3 py-3 text-right font-bold whitespace-nowrap">TOTAL HT</td>
+                        <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-
-                {/* Fixed Footer Actions */}
-                <div className="bg-gray-100 px-6 py-4 border-t flex justify-between items-center flex-shrink-0">
-                  <button
-                    onClick={() => setShowQuoteModal(false)}
-                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-                  >
-                    Fermer
-                  </button>
-                  {request.status === 'quote_sent' && (
-                    <button
-                      onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-                      className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]"
-                    >
-                      ✅ Approuver et soumettre BC
-                    </button>
-                  )}
-                </div>
-              </div>
+              </QuoteDocumentView>
             );
           }
-          
-          // RMA Quote Modal (existing code)
+
+          // === RMA Quote ===
           const devices = quoteData.devices || request.request_devices || [];
-          
-          // Detect required sections from quote_data or devices
           let calibrationTypes = quoteData.requiredSections?.calibrationTypes || [];
           let hasRepair = quoteData.requiredSections?.hasRepair || false;
-          
           if (calibrationTypes.length === 0 && devices.length > 0) {
             const calTypes = new Set();
             devices.forEach(d => {
               const deviceType = d.deviceType || d.device_type || 'particle_counter';
               const serviceType = d.serviceType || d.service_type || 'calibration';
-              if (serviceType.includes('calibration') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
-                calTypes.add(deviceType);
-              }
-              if (serviceType.includes('repair') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') {
-                hasRepair = true;
-              }
+              if (serviceType.includes('calibration') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') calTypes.add(deviceType);
+              if (serviceType.includes('repair') || serviceType === 'cal_repair' || serviceType === 'calibration_repair') hasRepair = true;
             });
             calibrationTypes = Array.from(calTypes);
           }
-
           const servicesSubtotal = quoteData.servicesSubtotal || request.quote_subtotal || 0;
-          
-          // Check if fully contract covered
           const isFullyContractCovered = devices.length > 0 && devices.every(d => d.isContractCovered);
           const shippingTotal = isFullyContractCovered ? 0 : (quoteData.shippingTotal || request.quote_shipping || 0);
           const grandTotal = isFullyContractCovered ? 0 : (quoteData.grandTotal || request.quote_total || 0);
 
           return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              {/* Modal Header */}
-              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
-                <div>
-                  <h2 className="text-xl font-bold">
-                    {request.quote_revision_count > 0 ? `Devis Rev-${request.quote_revision_count}` : 'Offre de Prix'}
-                  </h2>
-                  <p className="text-gray-400">{request.quote_number || request.request_number}</p>
-                </div>
-                <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
-              </div>
-
-              {/* Quote Document - This prints */}
-              <div id="quote-print-content">
-                {/* Quote Header */}
-                <div className="px-8 pt-8 pb-4 border-b-4 border-[#2D5A7B]">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <img 
-                        src="/images/logos/Lighthouse-color-logo.jpg" 
-                        alt="Lighthouse France" 
-                        className="h-24 w-auto mb-1"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          e.target.nextSibling.style.display = 'block';
-                        }}
-                      />
-                      <div className="hidden">
-                        <h1 className="text-3xl font-bold tracking-tight text-[#1a1a2e]">LIGHTHOUSE</h1>
-                        <p className="text-gray-500">Worldwide Solutions</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-[#2D5A7B]">
-                        {request.quote_revision_count > 0 ? `OFFRE DE PRIX Rev-${request.quote_revision_count}` : 'OFFRE DE PRIX'}
-                      </p>
-                      <p className="text-gray-500 font-medium">N° {request.quote_number || request.request_number}</p>
-                      {request.quote_number && request.request_number && <p className="text-xs text-gray-400">RMA: {request.request_number}</p>}
-                    </div>
+          <QuoteDocumentView
+            title={request.quote_revision_count > 0 ? `OFFRE DE PRIX Rev-${request.quote_revision_count}` : 'OFFRE DE PRIX'}
+            docNumber={request.quote_number || request.request_number} reference={request.request_number} refLabel="RMA"
+            date={request.quoted_at} company={company} quoteData={qDocData} conditions={QUOTE_DISCLAIMERS}
+            onClose={() => setShowQuoteModal(false)}
+            showApprove={isQuoteSent && !request.bc_submitted_at}
+            onApprove={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+            bcData={bcInfo}
+          >
+            {/* Service Descriptions */}
+            <div className="px-8 py-6 space-y-6">
+              {calibrationTypes.map(type => {
+                const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+                return (
+                  <div key={type} className="border-l-4 border-blue-500 pl-4">
+                    <h3 className="font-bold text-lg text-[#003366] mb-3 flex items-center gap-2">
+                      <span>{template.icon}</span> {template.title}
+                    </h3>
+                    <ul className="space-y-1">
+                      {template.prestations.map((p, i) => (
+                        <li key={i} className="text-gray-700 flex items-start gap-2">
+                          <span className="text-[#003366] mt-1">▸</span><span>{p}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </div>
-
-                {/* Info Bar */}
-                <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Date</p>
-                    <p className="font-medium">{request.quoted_at ? new Date(request.quoted_at).toLocaleDateString('fr-FR') : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Validité</p>
-                    <p className="font-medium">30 jours</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase">Conditions</p>
-                    <p className="font-medium">À réception de facture</p>
-                  </div>
-                </div>
-
-                {/* Client Info */}
-                <div className="px-8 py-4 border-b">
-                  <p className="text-xs text-gray-500 uppercase">Client</p>
-                  <p className="font-bold text-xl text-[#1a1a2e]">{request.companies?.name}</p>
-                  {request.companies?.billing_address && <p className="text-gray-600">{request.companies?.billing_address}</p>}
-                  <p className="text-gray-600">{request.companies?.billing_postal_code} {request.companies?.billing_city}</p>
-                </div>
-
-                {/* SERVICE DESCRIPTION SECTIONS */}
-                <div className="px-8 py-6 space-y-6">
-                  {calibrationTypes.map(type => {
-                    const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
-                    return (
-                      <div key={type} className="border-l-4 border-blue-500 pl-4">
-                        <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
-                          <span>{template.icon}</span> {template.title}
-                        </h3>
-                        <ul className="space-y-1">
-                          {template.prestations.map((p, i) => (
-                            <li key={i} className="text-gray-700 flex items-start gap-2">
-                              <span className="text-[#2D5A7B] mt-1">▸</span>
-                              <span>{p}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-
-                  {hasRepair && (
-                    <div className="border-l-4 border-orange-500 pl-4">
-                      <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
-                        <span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}
-                      </h3>
-                      <ul className="space-y-1">
-                        {REPAIR_TEMPLATE.prestations.map((p, i) => (
-                          <li key={i} className="text-gray-700 flex items-start gap-2">
-                            <span className="text-orange-500 mt-1">▸</span>
-                            <span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-
-                {/* DETAILED PRICING BREAKDOWN TABLE - Qté | Désignation | Prix Unit. | Total HT */}
-                <div className="px-8 py-6 bg-gray-50">
-                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
-                  
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-3 py-3 text-center w-12">Qté</th>
-                        <th className="px-3 py-3 text-left">Désignation</th>
-                        <th className="px-3 py-3 text-right w-24">Prix Unit.</th>
-                        <th className="px-3 py-3 text-right w-24">Total HT</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {devices.map((device, i) => {
-                        const rows = [];
-                        
-                        // Calibration row
-                        if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) {
-                          const qty = device.calibrationQty || 1;
-                          const unitPrice = parseFloat(device.calibrationPrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          const isContract = device.isContractCovered;
-                          rows.push(
-                            <tr key={`${i}-cal`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">
-                                Étalonnage {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})
-                                {isContract && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}
-                              </td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">{isContract ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}</td>
-                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
-                            </tr>
-                          );
-                        }
-                        
-                        // Nettoyage row
-                        if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
-                          const qty = device.nettoyageQty || 1;
-                          const unitPrice = parseFloat(device.nettoyagePrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-nettoyage`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">Nettoyage cellule - si requis selon l'état du capteur</td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        }
-                        
-                        // Repair row
-                        if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) {
-                          const qty = device.repairQty || 1;
-                          const unitPrice = parseFloat(device.repairPrice) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-repair`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">Réparation {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})</td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        }
-                        
-                        // Additional parts
-                        (device.additionalParts || []).forEach((part, pi) => {
-                          const qty = parseInt(part.quantity) || 1;
-                          const unitPrice = parseFloat(part.price) || 0;
-                          const lineTotal = qty * unitPrice;
-                          rows.push(
-                            <tr key={`${i}-part-${pi}`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-3 py-2 text-center">{qty}</td>
-                              <td className="px-3 py-2">
-                                {part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}
-                                {part.description || 'Pièce/Service'}
-                              </td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
-                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
-                            </tr>
-                          );
-                        });
-                        
-                        return rows;
-                      })}
-                      
-                      {/* Shipping row */}
-                      <tr className={isFullyContractCovered ? "bg-emerald-50" : "bg-gray-100"}>
-                        <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
-                        <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap">
-                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(quoteData.shipping?.unitPrice || 45).toFixed(2)} €`}
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
-                          {isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}
-                        </td>
-                      </tr>
-                    </tbody>
-                    <tfoot>
-                      <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
-                        <td colSpan={2} className="px-3 py-4"></td>
-                        <td className="px-3 py-4 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
-                        <td className="px-3 py-4 text-right font-bold text-xl whitespace-nowrap">
-                          {isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                  
-                  {/* Nettoyage disclaimer */}
-                  {devices.some(d => d.needsNettoyage && !d.isContractCovered) && (
-                    <p className="text-xs text-gray-500 mt-3 italic">
-                      * Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.
-                    </p>
-                  )}
-                </div>
-
-                {/* Disclaimers */}
-                <div className="px-8 py-4 border-t">
-                  <p className="text-xs text-gray-500 uppercase mb-2">Conditions</p>
-                  <ul className="text-xs text-gray-600 space-y-1">
-                    {QUOTE_DISCLAIMERS.map((d, i) => (
-                      <li key={i}>• {d}</li>
+                );
+              })}
+              {hasRepair && (
+                <div className="border-l-4 border-orange-500 pl-4">
+                  <h3 className="font-bold text-lg text-[#003366] mb-3 flex items-center gap-2">
+                    <span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}
+                  </h3>
+                  <ul className="space-y-1">
+                    {REPAIR_TEMPLATE.prestations.map((p, i) => (
+                      <li key={i} className="text-gray-700 flex items-start gap-2">
+                        <span className="text-orange-500 mt-1">▸</span><span>{p}</span>
+                      </li>
                     ))}
                   </ul>
                 </div>
-
-                {/* Signature Section */}
-                <div className="px-8 py-6 border-t flex justify-between items-end">
-                  <div className="flex items-end gap-6">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                      <p className="font-bold text-lg">{quoteData.createdBy || 'Lighthouse France'}</p>
-                      <p className="text-gray-600">Lighthouse France</p>
-                    </div>
-                    {/* Capcert Logo */}
-                    <img 
-                      src="/images/logos/capcert-logo.png" 
-                      alt="Capcert Certification" 
-                      className="h-14 w-auto"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                  </div>
-                  
-                  {request.bc_submitted_at ? (
-                    <div className="text-right">
-                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
-                        <p className="text-xs text-green-600 uppercase mb-1">Approuve</p>
-                        <p className="font-bold text-green-800">{request.bc_signed_by || 'Client'}</p>
-                        <p className="text-sm text-green-700">
-                          {request.bc_signature_date 
-                            ? new Date(request.bc_signature_date).toLocaleDateString('fr-FR')
-                            : new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')}
-                        </p>
-                        {request.bc_signature_url && (
-                          <img src={request.bc_signature_url} alt="Signature" className="max-h-16 mt-2" />
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400 mb-1">Signature client</p>
-                      <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                      <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer */}
-                <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
-                  <p className="font-medium">Lighthouse France SAS</p>
-                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-                </div>
-              </div>
-
-              {/* Action Buttons - Hidden on print */}
-              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
-                <div className="flex gap-2">
-                  <button onClick={() => {
-                    const content = document.getElementById('quote-print-content');
-                    const printWindow = window.open('', '_blank');
-                    printWindow.document.write(`
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                        <title>Devis - ${request.request_number}</title>
-                        <style>
-                          * { margin: 0; padding: 0; box-sizing: border-box; }
-                          body { font-family: Arial, sans-serif; }
-                          .border-b { border-bottom: 1px solid #e5e7eb; }
-                          .border-b-4 { border-bottom: 4px solid; }
-                          .border-t { border-top: 1px solid #e5e7eb; }
-                          .border-t-2 { border-top: 2px solid #d1d5db; }
-                          .border-l-4 { border-left: 4px solid; }
-                          .border-blue-500 { border-color: #3b82f6; }
-                          .border-orange-500 { border-color: #f97316; }
-                          .border-green-200 { border-color: #bbf7d0; }
-                          .border-\\[\\#00A651\\] { border-color: #00A651; }
-                          .border-\\[\\#2D5A7B\\] { border-color: #2D5A7B; }
-                          .bg-gray-50 { background: #f9fafb; }
-                          .bg-gray-100 { background: #f3f4f6; }
-                          .bg-gray-200 { background: #e5e7eb; }
-                          .bg-white { background: white; }
-                          .bg-green-50 { background: #f0fdf4; }
-                          .bg-\\[\\#1a1a2e\\] { background: #1a1a2e; }
-                          .bg-\\[\\#00A651\\] { background: #00A651; }
-                          .bg-\\[\\#2D5A7B\\] { background: #2D5A7B; }
-                          .text-white { color: white; }
-                          .text-gray-400 { color: #9ca3af; }
-                          .text-gray-500 { color: #6b7280; }
-                          .text-gray-600 { color: #4b5563; }
-                          .text-gray-700 { color: #374151; }
-                          .text-green-600 { color: #16a34a; }
-                          .text-green-700 { color: #15803d; }
-                          .text-green-800 { color: #166534; }
-                          .text-\\[\\#1a1a2e\\] { color: #1a1a2e; }
-                          .text-\\[\\#00A651\\] { color: #00A651; }
-                          .text-\\[\\#2D5A7B\\] { color: #2D5A7B; }
-                          .text-orange-500 { color: #f97316; }
-                          .text-xs { font-size: 0.75rem; }
-                          .text-sm { font-size: 0.875rem; }
-                          .text-lg { font-size: 1.125rem; }
-                          .text-xl { font-size: 1.25rem; }
-                          .text-2xl { font-size: 1.5rem; }
-                          .text-3xl { font-size: 1.875rem; }
-                          .font-medium { font-weight: 500; }
-                          .font-bold { font-weight: 700; }
-                          .font-mono { font-family: monospace; }
-                          .uppercase { text-transform: uppercase; }
-                          .text-left { text-align: left; }
-                          .text-right { text-align: right; }
-                          .text-center { text-align: center; }
-                          .px-4 { padding-left: 1rem; padding-right: 1rem; }
-                          .px-8 { padding-left: 2rem; padding-right: 2rem; }
-                          .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
-                          .py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
-                          .py-4 { padding-top: 1rem; padding-bottom: 1rem; }
-                          .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-                          .pt-8 { padding-top: 2rem; }
-                          .pb-4 { padding-bottom: 1rem; }
-                          .pl-4 { padding-left: 1rem; }
-                          .pl-8 { padding-left: 2rem; }
-                          .p-4 { padding: 1rem; }
-                          .mb-1 { margin-bottom: 0.25rem; }
-                          .mb-2 { margin-bottom: 0.5rem; }
-                          .mb-3 { margin-bottom: 0.75rem; }
-                          .mb-4 { margin-bottom: 1rem; }
-                          .mt-1 { margin-top: 0.25rem; }
-                          .mt-2 { margin-top: 0.5rem; }
-                          .space-y-1 > * + * { margin-top: 0.25rem; }
-                          .space-y-6 > * + * { margin-top: 1.5rem; }
-                          .gap-2 { gap: 0.5rem; }
-                          .flex { display: flex; }
-                          .items-start { align-items: flex-start; }
-                          .items-end { align-items: flex-end; }
-                          .justify-between { justify-content: space-between; }
-                          .rounded-lg { border-radius: 0.5rem; }
-                          .w-full { width: 100%; }
-                          .w-48 { width: 12rem; }
-                          .h-20 { height: 5rem; }
-                          .max-h-16 { max-height: 4rem; }
-                          .border-2 { border-width: 2px; }
-                          .border-dashed { border-style: dashed; }
-                          .border-gray-300 { border-color: #d1d5db; }
-                          table { width: 100%; border-collapse: collapse; }
-                          th, td { padding: 0.75rem 1rem; }
-                          @media print {
-                            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-                          }
-                        </style>
-                      </head>
-                      <body>${content.innerHTML}</body>
-                      </html>
-                    `);
-                    printWindow.document.close();
-                    printWindow.focus();
-                    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
-                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
-                    Imprimer
-                  </button>
-                  <button onClick={async () => {
-                    try {
-                      const quoteInfo = getQuoteDataFromRequest(request);
-                      const pdfBlob = await generateQuotePDF({
-                        request,
-                        ...quoteInfo,
-                        isSigned: false
-                      });
-                      const url = URL.createObjectURL(pdfBlob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `Devis_${request.request_number}.pdf`;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      URL.revokeObjectURL(url);
-                    } catch (err) {
-                      console.error('PDF error:', err);
-                    }
-                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
-                    Telecharger PDF
-                  </button>
-                </div>
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => setShowRevisionModal(true)}
-                    className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
-                  >
-                    Demander modification
-                  </button>
-                  <button 
-                    onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-                    className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
-                  >
-                    ✅ Approuver et soumettre BC
-                  </button>
-                </div>
-              </div>
-
-              {/* Revision Request Sub-Modal */}
-              {showRevisionModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
-                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
-                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
-                    <textarea
-                      value={revisionNotes}
-                      onChange={e => setRevisionNotes(e.target.value)}
-                      className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                      placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
-                    />
-                    <div className="mt-4 flex justify-end gap-3">
-                      <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-                        Annuler
-                      </button>
-                      <button 
-                        onClick={handleRequestRevision}
-                        disabled={approvingQuote || !revisionNotes.trim()}
-                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
-                      >
-                        {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
               )}
             </div>
-          </div>
+
+            {/* Pricing Table */}
+            <div className="px-8 py-6 bg-gray-50">
+              <h3 className="font-bold text-lg text-[#003366] mb-4">Récapitulatif des Prix</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#003366] text-white">
+                    <th className="px-3 py-2.5 text-center w-12">Qté</th>
+                    <th className="px-3 py-2.5 text-left">Désignation</th>
+                    <th className="px-3 py-2.5 text-right w-24">Prix Unit.</th>
+                    <th className="px-3 py-2.5 text-right w-24">Total HT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {devices.map((device, i) => {
+                    const rows = [];
+                    if (device.needsCalibration || (device.serviceType || device.service_type || '').includes('calibration')) {
+                      const qty = device.calibrationQty || 1; const unitPrice = parseFloat(device.calibrationPrice) || 0;
+                      const lineTotal = qty * unitPrice; const isContract = device.isContractCovered;
+                      rows.push(<tr key={`${i}-cal`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-2 text-center">{qty}</td>
+                        <td className="px-3 py-2">Étalonnage {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})
+                          {isContract && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{isContract ? <span className="text-emerald-600">Contrat</span> : `${unitPrice.toFixed(2)} €`}</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
+                      </tr>);
+                    }
+                    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
+                      const qty = device.nettoyageQty || 1; const unitPrice = parseFloat(device.nettoyagePrice) || 0; const lineTotal = qty * unitPrice;
+                      rows.push(<tr key={`${i}-nett`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-2 text-center">{qty}</td>
+                        <td className="px-3 py-2">Nettoyage cellule - si requis selon l'état du capteur</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
+                      </tr>);
+                    }
+                    if (device.needsRepair || (device.serviceType || device.service_type || '').includes('repair')) {
+                      const qty = device.repairQty || 1; const unitPrice = parseFloat(device.repairPrice) || 0; const lineTotal = qty * unitPrice;
+                      rows.push(<tr key={`${i}-rep`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-2 text-center">{qty}</td>
+                        <td className="px-3 py-2">Réparation {device.model || device.model_name || ''} (SN: {device.serial || device.serial_number || ''})</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
+                      </tr>);
+                    }
+                    (device.additionalParts || []).forEach((part, pi) => {
+                      const qty = parseInt(part.quantity) || 1; const unitPrice = parseFloat(part.price) || 0; const lineTotal = qty * unitPrice;
+                      rows.push(<tr key={`${i}-p-${pi}`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-2 text-center">{qty}</td>
+                        <td className="px-3 py-2">{part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}{part.description || 'Pièce/Service'}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
+                      </tr>);
+                    });
+                    return rows;
+                  })}
+                  {!isClientReturn && (
+                    <tr className={isFullyContractCovered ? "bg-emerald-50" : "bg-gray-100"}>
+                      <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
+                      <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(quoteData.shipping?.unitPrice || 45).toFixed(2)} €`}</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}</td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#003366] text-white"}>
+                    <td colSpan={2} className="px-3 py-3"></td>
+                    <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                    <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}</td>
+                  </tr>
+                </tfoot>
+              </table>
+              {devices.some(d => d.needsNettoyage && !d.isContractCovered) && (
+                <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>
+              )}
+            </div>
+          </QuoteDocumentView>
           );
         })()}
 
@@ -14150,7 +13877,6 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
             QUOTE REVIEW MODAL - Contract Style matching Admin
             ======================================== */}
         {showQuoteModal && (() => {
-          // Get data from quote_data (same as admin)
           const quoteData = contract.quote_data || {};
           const quoteDevices = quoteData.devices || [];
           const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
@@ -14159,521 +13885,101 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
           const grandTotalFromQuote = quoteData.grandTotal || (servicesSubtotal + shippingTotal);
           const contractDates = quoteData.contractDates || { start_date: contract.start_date, end_date: contract.end_date };
           const totalTokensFromQuote = quoteData.totalTokens || totalTokens;
-          
-          // Check if we have nettoyage
           const hasNettoyage = quoteDevices.some(d => d.needsNettoyage && d.nettoyagePrice > 0);
-          
-          // Get device data for pricing
           const pricingDevices = quoteDevices.length > 0 ? quoteDevices : devices.map(d => ({
-            ...d,
-            serial: d.serial_number,
-            model: d.model_name,
+            ...d, serial: d.serial_number, model: d.model_name,
             deviceType: d.device_type || 'particle_counter',
-            tokens_total: d.tokens_total || 1,
-            calibrationPrice: d.unit_price || 350,
-            needsCalibration: true,
-            needsNettoyage: d.device_type === 'particle_counter',
-            nettoyagePrice: 0
+            tokens_total: d.tokens_total || 1, calibrationPrice: d.unit_price || 350,
+            needsCalibration: true, needsNettoyage: d.device_type === 'particle_counter', nettoyagePrice: 0
           }));
-          
           const deviceTypes = [...new Set(pricingDevices.map(d => d.deviceType || 'particle_counter'))];
-          
-          // Service description templates (IDENTICAL to admin)
-          const CAL_TEMPLATES = {
-            particle_counter: {
-              title: "Étalonnage Compteur de Particules Aéroportées",
-              icon: "🔬",
-              prestations: [
-                "Vérification des fonctionnalités du compteur",
-                "Vérification et réglage du débit",
-                "Vérification de la cellule de mesure",
-                "Contrôle et réglage des seuils granulométriques à l'aide de sphères de latex calibrées",
-                "Vérification en nombre par comparaison à un étalon ISO 17025 / ISO 21501-4",
-                "Fourniture d'un rapport de test et de calibration"
-              ]
-            },
-            bio_collector: {
-              title: "Étalonnage Bio Collecteur",
-              icon: "🧫",
-              prestations: [
-                "Vérification des fonctionnalités de l'appareil",
-                "Vérification et réglage du débit",
-                "Vérification de la cellule d'impaction",
-                "Contrôle des paramètres de collecte",
-                "Fourniture d'un rapport de test et de calibration"
-              ]
-            },
-            liquid_counter: {
-              title: "Étalonnage Compteur Particules Liquide",
-              icon: "💧",
-              prestations: [
-                "Vérification des fonctionnalités du compteur",
-                "Vérification et réglage du débit",
-                "Vérification de la cellule de mesure optique",
-                "Contrôle et réglage des seuils granulométriques",
-                "Vérification en nombre par comparaison à un étalon",
-                "Fourniture d'un rapport de test et de calibration"
-              ]
-            },
-            temp_humidity: {
-              title: "Étalonnage Capteur Température/Humidité",
-              icon: "🌡️",
-              prestations: [
-                "Vérification des fonctionnalités du capteur",
-                "Étalonnage température sur points de référence certifiés",
-                "Étalonnage humidité relative",
-                "Vérification de la stabilité des mesures",
-                "Fourniture d'un certificat d'étalonnage"
-              ]
-            },
-            other: {
-              title: "Étalonnage Équipement",
-              icon: "📦",
-              prestations: [
-                "Vérification des fonctionnalités de l'appareil",
-                "Étalonnage selon les spécifications du fabricant",
-                "Tests de fonctionnement",
-                "Fourniture d'un rapport de test"
-              ]
-            }
-          };
-
-          // Build content blocks for pagination (IDENTICAL to admin)
-          const contentBlocks = [];
-          
-          // Block: Client Info
-          contentBlocks.push({
-            type: 'client',
-            height: 100,
-            render: () => (
-              <div className="px-6 py-4 mt-2 border-b">
-                <p className="text-xs text-gray-500 uppercase">Client</p>
-                <p className="font-bold text-lg text-[#1a1a2e]">{contract.companies?.name}</p>
-                {contract.companies?.contact_name && (
-                  <p className="text-gray-700 text-sm">À l'attention de: {contract.companies.contact_name}</p>
-                )}
-                {(contract.companies?.billing_address || contract.companies?.address) && (
-                  <p className="text-gray-600 text-sm">{contract.companies.billing_address || contract.companies.address}</p>
-                )}
-                {(contract.companies?.billing_postal_code || contract.companies?.postal_code || contract.companies?.billing_city || contract.companies?.city) && (
-                  <p className="text-gray-600 text-sm">
-                    {contract.companies?.billing_postal_code || contract.companies?.postal_code} {contract.companies?.billing_city || contract.companies?.city}
-                  </p>
-                )}
-                {contract.companies?.phone && (
-                  <p className="text-gray-600 text-sm">Tél: {contract.companies.phone}</p>
-                )}
-              </div>
-            )
-          });
-
-          // Block: Service descriptions
-          deviceTypes.forEach(type => {
-            const template = CAL_TEMPLATES[type] || CAL_TEMPLATES.particle_counter;
-            contentBlocks.push({
-              type: 'service',
-              deviceType: type,
-              height: 120,
-              render: () => (
-                <div className="px-6 py-3 border-b">
-                  <div className="flex items-start gap-2">
-                    <div className="w-1 bg-blue-500 self-stretch rounded" style={{minHeight: '80px'}}></div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-[#1a1a2e] mb-1 text-sm flex items-center gap-2">
-                        <span>{template.icon}</span>
-                        {template.title}
-                      </h3>
-                      <ul className="text-xs text-gray-600 space-y-0.5">
-                        {template.prestations.map((p, i) => (
-                          <li key={i} className="flex items-start gap-1">
-                            <span className="text-gray-400">-</span>
-                            <span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              )
-            });
-          });
-
-          // Block: Conditions
-          contentBlocks.push({
-            type: 'conditions',
-            height: 80,
-            render: () => (
-              <div className="px-6 py-3 border-b bg-gray-50">
-                <p className="text-xs text-gray-500 uppercase mb-1">Conditions</p>
-                <ul className="text-xs text-gray-600 space-y-0.5">
-                  <li>• Période du contrat: {new Date(contractDates.start_date).toLocaleDateString('fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</li>
-                  <li>• {totalTokensFromQuote} étalonnage(s) inclus pendant la période contractuelle</li>
-                  <li>• Étalonnages supplémentaires facturés au tarif standard</li>
-                  <li>• Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables</li>
-                  <li>• Un devis complémentaire sera établi si des pièces sont trouvées défectueuses</li>
-                  <li>• Paiement à 30 jours date de facture</li>
-                </ul>
-              </div>
-            )
-          });
-
-          // Block: Table header
-          contentBlocks.push({
-            type: 'table_header',
-            height: 45,
-            render: () => (
-              <div className="px-6 pt-4">
-                <h3 className="font-bold text-[#1a1a2e] mb-2 text-sm">Récapitulatif des Prix</h3>
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-[#1a1a2e] text-white">
-                      <th className="px-3 py-2 text-left text-xs font-bold w-12">Qté</th>
-                      <th className="px-3 py-2 text-left text-xs font-bold">Désignation</th>
-                      <th className="px-3 py-2 text-right text-xs font-bold w-20">Prix Unit.</th>
-                      <th className="px-3 py-2 text-right text-xs font-bold w-20">Total HT</th>
-                    </tr>
-                  </thead>
-                </table>
-              </div>
-            )
-          });
-
-          // Block: Device rows
-          pricingDevices.forEach((device, idx) => {
-            contentBlocks.push({
-              type: 'device',
-              device: device,
-              index: idx,
-              height: device.needsNettoyage && device.nettoyagePrice > 0 ? 60 : 32,
-              render: () => (
-                <div className="px-6">
-                  <table className="w-full">
-                    <tbody>
-                      {device.needsCalibration !== false && (
-                        <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="px-3 py-2 text-center text-sm w-12">{device.tokens_total || 1}</td>
-                          <td className="px-3 py-2 text-sm">
-                            <span className="font-medium">Étalonnage {device.model}</span>
-                            <span className="text-gray-500 text-xs ml-1">(SN: {device.serial})</span>
-                          </td>
-                          <td className="px-3 py-2 text-right text-sm w-20">{(device.calibrationPrice || 0).toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right text-sm font-medium w-20">{((device.tokens_total || 1) * (device.calibrationPrice || 0)).toFixed(2)} €</td>
-                        </tr>
-                      )}
-                      {device.needsNettoyage && device.nettoyagePrice > 0 && (
-                        <tr className="bg-amber-50">
-                          <td className="px-3 py-2 text-center text-sm w-12">{device.nettoyageQty || 1}</td>
-                          <td className="px-3 py-2 text-sm">
-                            <span className="font-medium text-amber-800">Nettoyage cellule</span>
-                            <span className="text-amber-600 text-xs ml-1">- si requis ({device.model})</span>
-                          </td>
-                          <td className="px-3 py-2 text-right text-sm w-20">{(device.nettoyagePrice || 0).toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right text-sm font-medium w-20">{((device.nettoyageQty || 1) * (device.nettoyagePrice || 0)).toFixed(2)} €</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            });
-          });
-
-          // Block: Shipping
-          contentBlocks.push({
-            type: 'shipping',
-            height: 32,
-            render: () => (
-              <div className="px-6">
-                <table className="w-full">
-                  <tbody>
-                    <tr className="bg-blue-50">
-                      <td className="px-3 py-2 text-center text-sm w-12">{shipping.parcels || 1}</td>
-                      <td className="px-3 py-2 text-sm">
-                        <span className="font-medium text-blue-800">Frais de port</span>
-                        <span className="text-blue-600 text-xs ml-1">({shipping.parcels || 1} colis)</span>
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm w-20">{(shipping.unitPrice || 45).toFixed(2)} €</td>
-                      <td className="px-3 py-2 text-right text-sm font-medium w-20">{shippingTotal.toFixed(2)} €</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )
-          });
-
-          // Block: Total
-          contentBlocks.push({
-            type: 'total',
-            height: 35,
-            render: () => (
-              <div className="px-6 pb-4">
-                <table className="w-full">
-                  <tbody>
-                    <tr className="bg-[#00A651] text-white">
-                      <td className="px-3 py-2 w-12"></td>
-                      <td className="px-3 py-2"></td>
-                      <td className="px-3 py-2 text-right font-bold text-sm w-20">TOTAL HT</td>
-                      <td className="px-3 py-2 text-right font-bold text-sm w-20">{grandTotalFromQuote.toFixed(2)} €</td>
-                    </tr>
-                  </tbody>
-                </table>
-                {hasNettoyage && (
-                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 p-2 rounded">
-                    * Le nettoyage sera effectué si nécessaire selon l'état du capteur.
-                  </p>
-                )}
-              </div>
-            )
-          });
-
-          // Block: Signature
-          contentBlocks.push({
-            type: 'signature',
-            height: 120,
-            alwaysLast: true,
-            render: () => (
-              <div className="px-6 py-6 border-t">
-                <div className="flex justify-between items-end">
-                  <div className="flex items-end gap-6">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">Établi par</p>
-                      <p className="font-bold text-lg">{quoteData.createdBy || 'Lighthouse France'}</p>
-                      <p className="text-gray-500 text-sm">Lighthouse France</p>
-                    </div>
-                    <img 
-                      src="/images/logos/capcert-logo.png" 
-                      alt="Capcert" 
-                      className="h-24 w-auto"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                  </div>
-                  {contract.bc_submitted_at ? (
-                    <div className="text-center">
-                      <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
-                        <p className="text-xs text-green-600 uppercase mb-1">Approuvé</p>
-                        <p className="font-bold text-green-800">{contract.bc_signed_by || 'Client'}</p>
-                        <p className="text-sm text-green-700">
-                          {contract.bc_signature_date 
-                            ? new Date(contract.bc_signature_date).toLocaleDateString('fr-FR')
-                            : new Date(contract.bc_submitted_at).toLocaleDateString('fr-FR')}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500 uppercase mb-1">Bon pour accord</p>
-                      <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
-                      <p className="text-xs text-gray-400 mt-1">Signature et cachet</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          });
-
-          // Paginate content (IDENTICAL to admin)
-          const PAGE_CONTENT_HEIGHT = 680;
-          const pages = [];
-          let currentPage = { blocks: [], usedHeight: 0 };
-          
-          const signatureBlock = contentBlocks.find(b => b.type === 'signature');
-          const otherBlocks = contentBlocks.filter(b => b.type !== 'signature');
-          
-          otherBlocks.forEach(block => {
-            if (currentPage.usedHeight + block.height > PAGE_CONTENT_HEIGHT) {
-              pages.push(currentPage);
-              currentPage = { blocks: [], usedHeight: 0 };
-            }
-            currentPage.blocks.push(block);
-            currentPage.usedHeight += block.height;
-          });
-          
-          if (signatureBlock) {
-            if (currentPage.usedHeight + signatureBlock.height > PAGE_CONTENT_HEIGHT) {
-              pages.push(currentPage);
-              currentPage = { blocks: [signatureBlock], usedHeight: signatureBlock.height };
-            } else {
-              currentPage.blocks.push(signatureBlock);
-            }
-          }
-          pages.push(currentPage);
-          
-          const totalPages = pages.length;
-          const today = new Date();
-
-          // Page Header Component
-          const PageHeader = ({ pageNum }) => (
-            <div className="border-b-4 border-[#00A651] mb-4">
-              <div className="px-6 py-4 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <img 
-                    src="/images/logos/Lighthouse-color-logo.jpg" 
-                    alt="Lighthouse" 
-                    className="h-24 w-auto"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      if (e.target.nextSibling) e.target.nextSibling.style.display = 'block';
-                    }}
-                  />
-                  <div className="hidden">
-                    <span className="text-xl font-bold text-[#1a1a2e]">LIGHTHOUSE</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-[#00A651]">DEVIS CONTRAT</p>
-                  <p className="text-gray-500 text-sm">{contract.contract_number}</p>
-                </div>
-              </div>
-              {pageNum === 1 && (
-                <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-t">
-                  <div>
-                    <span className="text-gray-500">Date: </span>
-                    <span className="font-medium">{contract.quote_sent_at ? new Date(contract.quote_sent_at).toLocaleDateString('fr-FR') : today.toLocaleDateString('fr-FR')}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Période: </span>
-                    <span className="font-medium">{new Date(contractDates.start_date).toLocaleDateString('fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString('fr-FR')}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Validité: </span>
-                    <span className="font-medium">30 jours</span>
-                  </div>
-                </div>
-              )}
+          const company = contract.companies || {};
+          const qDocData = { billingAddress: null, submitterName: company.contact_name || null, createdBy: quoteData.createdBy || 'M. Meleney' };
+          const bcInfo = contract.bc_submitted_at ? { signedBy: contract.bc_signed_by || 'Client', signedDate: contract.bc_signature_date || contract.bc_submitted_at, signatureUrl: contract.bc_signature_url } : null;
+          const contractConditions = [
+            `Période du contrat : du ${formatDateWrittenFR(contractDates.start_date)} au ${formatDateWrittenFR(contractDates.end_date)}.`,
+            `${totalTokensFromQuote} étalonnage(s) inclus pendant la période contractuelle.`,
+            "Étalonnages supplémentaires facturés au tarif standard.",
+            "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+            "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.",
+            "Paiement à 30 jours date de facture."
+          ];
+          const contractInfoBar = (<>
+            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Début</p><p className="font-bold text-[#003366]">{formatDateWrittenFR(contractDates.start_date)}</p></div>
+            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Fin</p><p className="font-bold text-[#003366]">{formatDateWrittenFR(contractDates.end_date)}</p></div>
+            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Validité</p><p className="font-bold text-[#003366]">30 jours</p></div>
+          </>);
+          return (<>
+          <QuoteDocumentView
+            title="OFFRE DE PRIX" docNumber={contract.contract_number} reference={contract.contract_number} refLabel="Contrat"
+            date={contract.quote_sent_at} company={company} quoteData={qDocData} conditions={contractConditions}
+            addressMode="billing_only" extraInfoBar={contractInfoBar}
+            onClose={() => setShowQuoteModal(false)}
+            showApprove={contract.status === 'quote_sent' && !contract.bc_submitted_at}
+            onApprove={() => { setShowQuoteModal(false); setShowBCModal(true); }}
+            bcData={bcInfo}
+            extraFooterLeft={contract.status === 'quote_sent' ? <button onClick={() => setShowRevisionModal(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">Demander modification</button> : null}
+          >
+            <div className="px-8 py-2"><p className="text-sm text-gray-500 italic">Contrat de tarification / d'étalonnage</p></div>
+            <div className="px-8 py-4 space-y-5">
+              {deviceTypes.map(type => {
+                const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+                return (<div key={type} className="border-l-4 border-blue-500 pl-4">
+                  <h3 className="font-bold text-[#003366] mb-2 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
+                  <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 text-sm flex items-start gap-2"><span className="text-[#003366] mt-0.5">▸</span><span>{p}</span></li>))}</ul>
+                </div>);
+              })}
             </div>
-          );
-
-          // Page Footer Component
-          const PageFooter = ({ pageNum, totalPages }) => (
-            <div className="bg-[#1a1a2e] text-white px-6 py-3 text-center text-xs">
-              <p>Lighthouse France SAS • 16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-              <p className="font-medium mt-1">Page {pageNum}/{totalPages}</p>
+            <div className="px-8 py-6 bg-gray-50">
+              <h3 className="font-bold text-lg text-[#003366] mb-4">Récapitulatif des Prix</h3>
+              <table className="w-full text-sm">
+                <thead><tr className="bg-[#003366] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-20">Prix Unit.</th><th className="px-3 py-2.5 text-right w-20">Total HT</th></tr></thead>
+                <tbody>
+                  {pricingDevices.map((device, idx) => (<Fragment key={idx}>
+                    {device.needsCalibration !== false && (<tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 text-center">{device.tokens_total || 1}</td>
+                      <td className="px-3 py-2"><span className="font-medium">Étalonnage {device.model || device.model_name}</span> <span className="text-gray-500 text-xs">(SN: {device.serial || device.serial_number})</span></td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{(device.calibrationPrice || 0).toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((device.tokens_total || 1) * (device.calibrationPrice || 0)).toFixed(2)} €</td>
+                    </tr>)}
+                    {device.needsNettoyage && device.nettoyagePrice > 0 && (<tr className="bg-amber-50">
+                      <td className="px-3 py-2 text-center">{device.nettoyageQty || 1}</td>
+                      <td className="px-3 py-2"><span className="font-medium text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis ({device.model || device.model_name})</span></td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{(device.nettoyagePrice || 0).toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((device.nettoyageQty || 1) * (device.nettoyagePrice || 0)).toFixed(2)} €</td>
+                    </tr>)}
+                  </Fragment>))}
+                  {shippingTotal > 0 && (<tr className="bg-blue-50">
+                    <td className="px-3 py-2 text-center">{shipping.parcels || 1}</td>
+                    <td className="px-3 py-2"><span className="font-medium text-blue-800">Frais de port</span> <span className="text-blue-600 text-xs">({shipping.parcels || 1} colis)</span></td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{(shipping.unitPrice || 45).toFixed(2)} €</td>
+                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
+                  </tr>)}
+                </tbody>
+                <tfoot><tr className="bg-[#003366] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotalFromQuote.toFixed(2)} €</td></tr></tfoot>
+              </table>
+              {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
             </div>
-          );
-
-          return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-              {/* Modal Header with actions */}
-              <div className="bg-[#1a1a2e] text-white px-6 py-3 flex justify-between items-center flex-shrink-0">
-                <div>
-                  <h2 className="text-lg font-bold">Offre de Prix - Contrat d'Étalonnage</h2>
-                  <p className="text-gray-400 text-sm">{contract.contract_number}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button onClick={async () => {
-                    try {
-                      const pdfBlob = await generateContractQuotePDF({
-                        contract,
-                        devices: pricingDevices,
-                        totalPrice: servicesSubtotal,
-                        totalTokens: totalTokensFromQuote,
-                        isSigned: false
-                      });
-                      const url = URL.createObjectURL(pdfBlob);
-                      const printWindow = window.open(url, '_blank');
-                      if (printWindow) printWindow.onload = () => printWindow.print();
-                    } catch (err) { console.error('Print error:', err); }
-                  }} className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 rounded text-sm">
-                    🖨️ Imprimer
+          </QuoteDocumentView>
+          {showRevisionModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+              <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                <textarea value={revisionNotes} onChange={e => setRevisionNotes(e.target.value)}
+                  className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
+                  placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc." />
+                <div className="mt-4 flex justify-end gap-3">
+                  <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+                  <button onClick={handleRequestRevision} disabled={approvingQuote || !revisionNotes.trim()}
+                    className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
+                    {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
                   </button>
-                  <button onClick={async () => {
-                    try {
-                      const pdfBlob = await generateContractQuotePDF({
-                        contract,
-                        devices: pricingDevices,
-                        totalPrice: servicesSubtotal,
-                        totalTokens: totalTokensFromQuote,
-                        isSigned: false
-                      });
-                      const url = URL.createObjectURL(pdfBlob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `Devis_Contrat_${contract.contract_number}.pdf`;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      URL.revokeObjectURL(url);
-                    } catch (err) { console.error('PDF error:', err); }
-                  }} className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 rounded text-sm">
-                    📥 PDF
-                  </button>
-                  <button onClick={() => setShowQuoteModal(false)} className="text-gray-400 hover:text-white text-2xl ml-2">&times;</button>
                 </div>
               </div>
-
-              {/* Quote Document Preview - Paginated like admin */}
-              <div className="flex-1 overflow-y-auto bg-gray-300 p-6">
-                <div className="space-y-8">
-                  {pages.map((page, pageIdx) => (
-                    <div 
-                      key={pageIdx} 
-                      className="bg-white shadow-xl mx-auto"
-                      style={{ 
-                        width: '210mm', 
-                        minHeight: '297mm',
-                        display: 'flex',
-                        flexDirection: 'column'
-                      }}
-                    >
-                      <PageHeader pageNum={pageIdx + 1} />
-                      <div className="flex-1">
-                        {page.blocks.map((block, blockIdx) => (
-                          <div key={blockIdx}>{block.render()}</div>
-                        ))}
-                      </div>
-                      <PageFooter pageNum={pageIdx + 1} totalPages={totalPages} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Action Footer */}
-              <div className="bg-gray-100 px-6 py-4 border-t flex justify-between items-center flex-shrink-0">
-                <button 
-                  onClick={() => setShowRevisionModal(true)}
-                  className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
-                >
-                  ✏️ Demander modification
-                </button>
-                <button 
-                  onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-                  className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold"
-                >
-                  ✅ Approuver et soumettre BC
-                </button>
-              </div>
-
-              {/* Revision Request Sub-Modal */}
-              {showRevisionModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
-                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
-                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
-                    <textarea
-                      value={revisionNotes}
-                      onChange={e => setRevisionNotes(e.target.value)}
-                      className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent"
-                      placeholder="Ex: Veuillez ajouter un appareil supplémentaire, modifier le prix, retirer les frais de transport, etc."
-                    />
-                    <div className="mt-4 flex justify-end gap-3">
-                      <button onClick={() => setShowRevisionModal(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-                        Annuler
-                      </button>
-                      <button 
-                        onClick={handleRequestRevision}
-                        disabled={approvingQuote || !revisionNotes.trim()}
-                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50"
-                      >
-                        {approvingQuote ? 'Envoi...' : 'Envoyer la demande'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-          </div>
-          );
+          )}
+          </>);
         })()}
       </div>
     );
@@ -16160,244 +15466,143 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
         {/* ========== FULL QUOTE MODAL (identical layout to RMA) ========== */}
         {showRentalQuote && hasQuote && (() => {
           const totalRetailValue = qd.totalRetailValue || items.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
-          return (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              {/* Modal Header */}
-              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10">
-                <div>
-                  <h2 className="text-xl font-bold">Devis Location</h2>
-                  <p className="text-gray-400">{rental.rental_number}</p>
-                </div>
-                <button onClick={() => setShowRentalQuote(false)} className="text-gray-400 hover:text-white text-2xl">&times;</button>
+          const shipAddr = rental.shipping_address || null;
+          const rentalQDocData = {
+            billingAddress: null,
+            shippingAddress: shipAddr ? {
+              company_name: shipAddr.company_name, attention: shipAddr.attention,
+              address_line1: shipAddr.address_line1, city: shipAddr.city,
+              postal_code: shipAddr.postal_code, country: shipAddr.country, phone: shipAddr.phone
+            } : null,
+            submitterName: company.contact_name || null,
+            returnShipping: rental.return_shipping || 'standard',
+            createdBy: qd.businessSettings?.quote_signatory || 'M. Meleney'
+          };
+          const rentalBcInfo = rental.bc_submitted_at ? {
+            signedBy: rental.bc_signed_by || 'Client',
+            signedDate: rental.bc_signature_date || rental.bc_submitted_at,
+            signatureUrl: rental.bc_signature_url
+          } : null;
+          const rentalConditions = [
+            "Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution.",
+            "Utilisation conforme par personnel qualifié. Sous-location interdite sans accord écrit. Tout incident doit être signalé sous 48h par écrit.",
+            "Le client doit souscrire une assurance « Bien Confié » couvrant : vol, incendie, dégâts des eaux, bris accidentel.",
+            "Le matériel doit être restitué en bon état à la date convenue. Les dommages ou pièces manquantes seront facturés au coût de remise en état.",
+            "Les jours de retard seront facturés au tarif journalier majoré de 50%. Lighthouse France pourra récupérer le matériel à tout moment.",
+            "Le non-respect des conditions peut entraîner la résiliation immédiate du contrat de location."
+          ];
+          const isClientReturn = rental.return_shipping === 'own_label' || rental.return_shipping === 'pickup';
+          return (<>
+          <QuoteDocumentView
+            title="OFFRE DE PRIX" docNumber={rental.rental_number} reference={rental.rental_number} refLabel="Location"
+            date={rental.quote_sent_at} company={company} quoteData={rentalQDocData} conditions={rentalConditions}
+            addressMode="both"
+            onClose={() => setShowRentalQuote(false)}
+            showApprove={rental.status === 'quote_sent'}
+            onApprove={() => { setShowRentalQuote(false); setShowBCModal(true); }}
+            bcData={rentalBcInfo}
+            extraFooterLeft={rental.status === 'quote_sent' ? <button onClick={() => setShowRentalRevision(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">Demander modification</button> : null}
+          >
+            <div className="px-8 py-3">
+              <div className="border-l-4 border-purple-500 pl-4">
+                <h3 className="font-bold text-[#003366] mb-2">Location de Matériel</h3>
+                <p className="text-sm text-gray-600">- Période : du {formatDateWrittenFR(period.start || rental.start_date)} au {formatDateWrittenFR(period.end || rental.end_date)} ({period.days || rentalDaysDisplay} jours)</p>
+                {qd.deliveryTerms && <p className="text-sm text-gray-600">- Délai de livraison : {qd.deliveryTerms}</p>}
+                <p className="text-sm text-gray-600">- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
               </div>
-
-              {/* Quote Document - PDF Style */}
-              <div id="rental-quote-print" style={{fontFamily:'Helvetica,Arial,sans-serif'}}>
-                {/* Header: Logo left, Title right, navy line */}
-                <div style={{padding:'32px 32px 0 32px'}}>
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{height:'80px', width:'auto'}} />
-                    <div style={{textAlign:'right'}}>
-                      <p style={{fontSize:'24px', fontWeight:'bold', color:'#2D5A7B', margin:0}}>DEVIS LOCATION</p>
-                      <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>N° {rental.rental_number}</p>
-                    </div>
-                  </div>
-                  <div style={{height:'4px', background:'#2D5A7B', marginTop:'16px'}} />
-                </div>
-
-                {/* Info Bar */}
-                <div style={{display:'flex', background:'#f5f5f5', margin:'10px 32px 0 32px', padding:'10px 16px'}}>
-                  <div style={{flex:1}}>
-                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Date</p>
-                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{formatDateWrittenFR(rental.quote_sent_at || new Date())}</p>
-                  </div>
-                  <div style={{flex:1}}>
-                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Validité</p>
-                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>30 jours</p>
-                  </div>
-                  <div style={{flex:1}}>
-                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Conditions</p>
-                    <p style={{fontSize:'13px', fontWeight:'bold', color:'#1a1a2e', margin:'3px 0 0 0'}}>{qd.paymentTerms || 'À réception de facture'}</p>
-                  </div>
-                </div>
-
-                {/* Client */}
-                <div style={{padding:'16px 32px 0 32px'}}>
-                  <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:0}}>Client</p>
-                  <p style={{fontSize:'17px', fontWeight:'bold', color:'#1a1a2e', margin:'4px 0 0 0'}}>{company.name || qd.clientName || 'Client'}</p>
-                  {(qd.clientAddress || company.billing_address || company.address) && <p style={{fontSize:'12px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientAddress || company.billing_address || company.address}</p>}
-                  {(qd.clientPostalCode || company.billing_postal_code || company.postal_code || qd.clientCity || company.billing_city || company.city) && <p style={{fontSize:'12px', color:'#505050', margin:'2px 0 0 0'}}>{qd.clientPostalCode || company.billing_postal_code || company.postal_code} {qd.clientCity || company.billing_city || company.city}</p>}
-                </div>
-
-                {/* Location de Materiel block with purple left border */}
-                <div style={{margin:'16px 32px 0 32px', borderLeft:'3px solid #8B5CF6', paddingLeft:'12px'}}>
-                  <p style={{fontSize:'15px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Location de Matériel</p>
-                  <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Période : du {formatDateWrittenFR(period.start || rental.start_date)} au {formatDateWrittenFR(period.end || rental.end_date)} ({period.days || rentalDaysDisplay} jours)</p>
-                  {qd.deliveryTerms && <p style={{fontSize:'11px', color:'#505050', margin:'0 0 3px 0'}}>- Délai de livraison : {qd.deliveryTerms}</p>}
-                  <p style={{fontSize:'11px', color:'#505050', margin:0}}>- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
-                </div>
-
-                {/* Récapitulatif des Prix */}
-                <div style={{padding:'20px 32px 0 32px'}}>
-                  <p style={{fontSize:'16px', fontWeight:'bold', color:'#1a1a2e', margin:'0 0 8px 0'}}>Récapitulatif des Prix</p>
-                  <table style={{width:'100%', borderCollapse:'collapse', fontSize:'11px'}}>
-                    <thead>
-                      <tr style={{background:'#1a1a2e'}}>
-                        <th style={{color:'white', padding:'8px 10px', textAlign:'left', fontWeight:'bold', width:'5%'}}>Qté</th>
-                        <th style={{color:'white', padding:'8px 10px', textAlign:'left', fontWeight:'bold', width:'45%'}}>Désignation</th>
-                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'18%'}}>Tarif</th>
-                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'12%'}}>Durée</th>
-                        <th style={{color:'white', padding:'8px 10px', textAlign:'right', fontWeight:'bold', width:'20%'}}>Total HT</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item, idx) => {
-                        const rawName = item.item_name || 'Équipement';
-                        const serial = item.serial_number || '';
-                        const nameHasSerial = serial && rawName.includes(serial);
-                        const displayName = nameHasSerial ? rawName : (serial ? rawName + ' (SN: ' + serial + ')' : rawName);
-                        const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : '/jour';
-                        const appliedRate = parseFloat(item.applied_rate) || 0;
-                        const retailVal = parseFloat(item.retail_value) || 0;
-                        return (
-                        <Fragment key={idx}>
-                        {/* Device name bar - darker gray strip across full width */}
-                        <tr style={{background:'#e2e8f0', borderTop: idx > 0 ? '2px solid #cbd5e1' : 'none'}}>
-                          <td style={{padding:'8px 10px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>1</td>
-                          <td style={{padding:'8px 10px', fontWeight:'bold', color:'#1a1a2e', fontSize:'12px'}}>{displayName}</td>
-                          <td style={{padding:'8px 10px', textAlign:'right', fontSize:'11px', color:'#505050'}}>{appliedRate > 0 ? appliedRate.toFixed(2) + ' EUR' + rateLabel : ''}</td>
-                          <td style={{padding:'8px 10px', textAlign:'right', fontSize:'11px', color:'#505050'}}>{(item.rental_days || period.days || rentalDaysDisplay)}j</td>
-                          <td style={{padding:'8px 10px', textAlign:'right', fontWeight:'bold', fontSize:'12px', color:'#1a1a2e'}}>{(parseFloat(item.line_total) || 0).toFixed(2)} EUR</td>
-                        </tr>
-                        {/* Detail row: specs, insurance */}
-                        {(item.specs || retailVal > 0) && (
-                        <tr style={{background: idx % 2 === 0 ? '#fff' : '#fafafa'}}>
-                          <td style={{padding:'2px 10px 6px'}}></td>
-                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}} colSpan={2}>
-                            {item.specs && <p style={{fontSize:'10px', color:'#828282', margin:'0 0 2px 0'}}>{item.specs}</p>}
-                            {retailVal > 0 && <p style={{fontSize:'10px', color:'#828282', fontStyle:'italic', margin:'0'}}>Valeur neuf (assurance) : {retailVal.toFixed(2)} EUR</p>}
-                          </td>
-                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}}></td>
-                          <td style={{padding:'2px 10px 6px', borderBottom:'1px solid #eee'}}></td>
-                        </tr>
-                        )}
-                        </Fragment>);
-                      })}
-                      {(qd.shipping || 0) > 0 && (
-                        <tr style={{background:'#f5f5f5'}}>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}>1</td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}>Frais de port</td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right'}}>{parseFloat(qd.shipping).toFixed(2)} EUR</td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee'}}></td>
-                          <td style={{padding:'8px', borderBottom:'1px solid #eee', textAlign:'right', fontWeight:'bold'}}>{parseFloat(qd.shipping).toFixed(2)} EUR</td>
-                        </tr>
-                      )}
-                      {(qd.discountAmount || 0) > 0 && (
-                        <tr style={{background:'#fffbeb'}}>
-                          <td style={{padding:'8px'}}>1</td>
-                          <td style={{padding:'8px', color:'#b41e1e'}}>{qd.discountType === 'percent' ? 'Remise (' + qd.discount + '%)' : 'Remise'}</td>
-                          <td style={{padding:'8px'}}></td>
-                          <td style={{padding:'8px'}}></td>
-                          <td style={{padding:'8px', textAlign:'right', fontWeight:'bold', color:'#b41e1e'}}>-{(qd.discountAmount || 0).toFixed(2)} EUR</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-
-                  {/* Navy Total Bar */}
-                  <div style={{background:'#2D5A7B', display:'flex', justifyContent:'flex-end', alignItems:'center', padding:'10px 16px', marginTop:'0'}}>
-                    <span style={{color:'white', fontWeight:'bold', fontSize:'14px', marginRight:'20px'}}>TOTAL HT</span>
-                    <span style={{color:'white', fontWeight:'bold', fontSize:'22px'}}>{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} EUR</span>
-                  </div>
-                </div>
-
-                {/* Conditions */}
-                <div style={{padding:'16px 32px 0 32px'}}>
-                  <p style={{fontSize:'11px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 6px 0'}}>Conditions Générales de Location</p>
-                  <div style={{fontSize:'11px', color:'#505050', lineHeight:'1.6'}}>
-                    <p style={{margin:'0 0 3px 0'}}>1. Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution.</p>
-                    <p style={{margin:'0 0 3px 0'}}>2. Utilisation conforme par personnel qualifié. Sous-location interdite sans accord écrit. Tout incident doit être signalé sous 48h par écrit.</p>
-                    <p style={{margin:'0 0 3px 0'}}>3. Le client doit souscrire une assurance « Bien Confié » couvrant : vol, incendie, dégâts des eaux, bris accidentel.</p>
-                    <p style={{margin:'0 0 3px 0'}}>4. Le matériel doit être restitué en bon état à la date convenue. Les dommages ou pièces manquantes seront facturés au coût de remise en état.</p>
-                    <p style={{margin:'0 0 3px 0'}}>5. Les jours de retard seront facturés au tarif journalier majoré de 50%. Lighthouse France pourra récupérer le matériel à tout moment.</p>
-                    <p style={{margin:0}}>6. Le non-respect des conditions peut entraîner la résiliation immédiate du contrat de location.</p>
-                  </div>
-                </div>
-
-                {/* Notes */}
-                {qd.notes && (
-                  <div style={{padding:'12px 32px 0 32px'}}>
-                    <p style={{fontSize:'11px', fontWeight:'bold', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Notes</p>
-                    <p style={{fontSize:'11px', color:'#505050', margin:0}}>{qd.notes}</p>
-                  </div>
-                )}
-
-                {/* Signature Section */}
-                <div style={{margin:'20px 32px 0 32px', borderTop:'1px solid #ccc', paddingTop:'12px', display:'flex', alignItems:'flex-start'}}>
-                  <div style={{marginRight:'12px'}}>
-                    <p style={{fontSize:'10px', color:'#828282', textTransform:'uppercase', margin:'0 0 4px 0'}}>Établi par</p>
-                    <p style={{fontSize:'14px', fontWeight:'bold', color:'#1a1a2e', margin:0}}>{qd.businessSettings?.quote_signatory || 'M. Meleney'}</p>
-                    <p style={{fontSize:'11px', color:'#505050', margin:'2px 0 0 0'}}>{qd.businessSettings?.company_name || 'Lighthouse France SAS'}</p>
-                  </div>
-                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" style={{width:'85px', height:'85px'}} />
-                  <div style={{marginLeft:'auto', textAlign:'center'}}>
-                    <p style={{fontSize:'10px', color:'#828282', margin:'0 0 4px 0'}}>Signature client</p>
-                    <div style={{width:'160px', height:'60px', border:'2px dashed #b4b4b4', borderRadius:'6px'}} />
-                    <p style={{fontSize:'9px', color:'#828282', margin:'4px 0 0 0'}}>Lu et approuvé</p>
-                  </div>
-                </div>
-
-                {/* Footer */}
-                <div style={{background:'#1a1a2e', padding:'8px 0', marginTop:'16px', textAlign:'center'}}>
-                  <p style={{color:'white', fontSize:'10px', fontWeight:'bold', margin:0}}>Lighthouse France SAS</p>
-                  <p style={{color:'#b4b4b4', fontSize:'9px', margin:'2px 0 0 0'}}>16, rue Paul Séjourné - 94000 CRÉTEIL - Tél. 01 43 77 28 07</p>
-                </div>
-              </div>
-
-              {/* Action Footer */}
-              <div className="print-hide sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex flex-wrap gap-3 justify-between items-center">
-                <div className="flex gap-2">
-                  <button onClick={() => {
-                    const content = document.getElementById('rental-quote-print');
-                    if (!content) return;
-                    const printWindow = window.open('', '_blank');
-                    printWindow.document.write('<!DOCTYPE html><html><head><title>Devis ' + rental.rental_number + '</title><style>* { margin:0; padding:0; box-sizing:border-box; } body { font-family:Helvetica,Arial,sans-serif; } @media print { body { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }</style></head><body>' + content.innerHTML + '</body></html>');
-                    printWindow.document.close();
-                    printWindow.focus();
-                    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
-                  }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium flex items-center gap-2">
-                    Imprimer
-                  </button>
-                  <button onClick={async () => {
-                    try {
-                      const blob = await generateRentalQuotePDF({ rental, isSigned: false });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = rental.rental_number + '_devis.pdf';
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      URL.revokeObjectURL(url);
-                    } catch (err) { console.error('PDF download error:', err); }
-                  }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
-                    Telecharger PDF
-                  </button>
-                </div>
-                <div className="flex gap-3">
-                  {(rental.status === 'quote_sent') && (
-                    <>
-                      <button onClick={() => setShowRentalRevision(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">
-                        Demander modification
-                      </button>
-                      <button onClick={() => { setShowRentalQuote(false); setShowBCModal(true); }} className="px-6 py-2 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold">
-                        ✅ Approuver et soumettre BC
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Revision Sub-Modal */}
-              {showRentalRevision && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
-                  <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
-                    <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
-                    <textarea value={rentalRevisionNotes} onChange={e => setRentalRevisionNotes(e.target.value)} className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="Ex: modifier le tarif, changer la durée, retirer les frais de transport, etc." />
-                    <div className="mt-4 flex justify-end gap-3">
-                      <button onClick={() => setShowRentalRevision(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
-                      <button onClick={handleRentalRevision} disabled={rentalProcessing || !rentalRevisionNotes.trim()} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
-                        {rentalProcessing ? 'Envoi...' : 'Envoyer la demande'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-          </div>
-        ); })()}
+            <div className="px-8 py-6 bg-gray-50">
+              <h3 className="font-bold text-lg text-[#003366] mb-4">Récapitulatif des Prix</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#003366] text-white">
+                    <th className="px-3 py-2.5 text-center w-10">Qté</th>
+                    <th className="px-3 py-2.5 text-left">Désignation</th>
+                    <th className="px-3 py-2.5 text-right w-20">Tarif</th>
+                    <th className="px-3 py-2.5 text-right w-14">Durée</th>
+                    <th className="px-3 py-2.5 text-right w-20">Total HT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, idx) => {
+                    const rawName = item.item_name || 'Équipement';
+                    const serial = item.serial_number || '';
+                    const nameHasSerial = serial && rawName.includes(serial);
+                    const displayName = nameHasSerial ? rawName : (serial ? rawName + ' (SN: ' + serial + ')' : rawName);
+                    const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : '/jour';
+                    const appliedRate = parseFloat(item.applied_rate) || 0;
+                    const retailVal = parseFloat(item.retail_value) || 0;
+                    return (<Fragment key={idx}>
+                      <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} style={{borderTop: idx > 0 ? '2px solid #e2e8f0' : 'none'}}>
+                        <td className="px-3 py-2 text-center font-medium">1</td>
+                        <td className="px-3 py-2 font-medium">{displayName}</td>
+                        <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{appliedRate > 0 ? appliedRate.toFixed(2) + ' €' + rateLabel : ''}</td>
+                        <td className="px-3 py-2 text-right text-gray-600">{item.rental_days || period.days || rentalDaysDisplay}j</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
+                      </tr>
+                      {(item.specs || retailVal > 0) && (
+                        <tr className="bg-white">
+                          <td className="px-3 py-1"></td>
+                          <td className="px-3 py-1 border-b border-gray-100" colSpan={2}>
+                            {item.specs && <p className="text-xs text-gray-400">{item.specs}</p>}
+                            {retailVal > 0 && <p className="text-xs text-gray-400 italic">Valeur neuf (assurance) : {retailVal.toFixed(2)} €</p>}
+                          </td>
+                          <td className="px-3 py-1 border-b border-gray-100"></td>
+                          <td className="px-3 py-1 border-b border-gray-100"></td>
+                        </tr>
+                      )}
+                    </Fragment>);
+                  })}
+                  {!isClientReturn && (qd.shipping || 0) > 0 && (
+                    <tr className="bg-blue-50">
+                      <td className="px-3 py-2 text-center">1</td>
+                      <td className="px-3 py-2"><span className="font-medium text-blue-800">Frais de port</span></td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{parseFloat(qd.shipping).toFixed(2)} €</td>
+                      <td className="px-3 py-2"></td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{parseFloat(qd.shipping).toFixed(2)} €</td>
+                    </tr>
+                  )}
+                  {(qd.discountAmount || 0) > 0 && (
+                    <tr className="bg-amber-50">
+                      <td className="px-3 py-2 text-center">1</td>
+                      <td className="px-3 py-2 text-red-700">{qd.discountType === 'percent' ? 'Remise (' + qd.discount + '%)' : 'Remise'}</td>
+                      <td className="px-3 py-2"></td><td className="px-3 py-2"></td>
+                      <td className="px-3 py-2 text-right font-medium text-red-700 whitespace-nowrap">-{(qd.discountAmount || 0).toFixed(2)} €</td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-[#003366] text-white">
+                    <td colSpan={3} className="px-3 py-3"></td>
+                    <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                    <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            {qd.notes && (
+              <div className="px-8 py-3">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Notes</p>
+                <p className="text-sm text-gray-600">{qd.notes}</p>
+              </div>
+            )}
+          </QuoteDocumentView>
+          {showRentalRevision && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
+              <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+                <h3 className="text-xl font-bold text-gray-800 mb-4">Demander une modification</h3>
+                <p className="text-gray-600 mb-4">Décrivez les modifications que vous souhaitez apporter au devis :</p>
+                <textarea value={rentalRevisionNotes} onChange={e => setRentalRevisionNotes(e.target.value)} className="w-full h-32 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-[#00A651] focus:border-transparent" placeholder="Ex: modifier le tarif, changer la durée, retirer les frais de transport, etc." />
+                <div className="mt-4 flex justify-end gap-3">
+                  <button onClick={() => setShowRentalRevision(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Annuler</button>
+                  <button onClick={handleRentalRevision} disabled={rentalProcessing || !rentalRevisionNotes.trim()} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-50">
+                    {rentalProcessing ? 'Envoi...' : 'Envoyer la demande'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          </>); })()}
 
         {/* ========== BC SUBMISSION MODAL (identical to RMA) ========== */}
         {showBCModal && (
