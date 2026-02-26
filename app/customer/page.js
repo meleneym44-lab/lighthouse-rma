@@ -378,6 +378,7 @@ function QuoteDocumentView({
   children, onClose, onApprove, showApprove = false,
   bcData = null, extraInfoBar = null, extraFooterLeft = null
 }) {
+  // PDF-matched colors: darkBlue=#1a1a2e (headers/footer), navy=#2D5A7B (titles/total/accents)
   const billingAddr = quoteData.billingAddress || null;
   const shippingAddr = quoteData.shippingAddress || null;
   const submitterName = quoteData.submitterName || null;
@@ -386,18 +387,18 @@ function QuoteDocumentView({
 
   const renderShipTo = () => {
     if (returnShipping === 'pickup') return (
-      <><p className="font-bold text-[#003366]">Enlèvement client</p>
+      <><p className="font-bold text-[#1a1a2e]">Enlèvement client</p>
       <p className="text-sm text-gray-600">Le client récupérera la commande dans nos locaux.</p></>
     );
     if (returnShipping === 'own_label') return (
-      <><p className="font-bold text-[#003366]">Expédition client</p>
+      <><p className="font-bold text-[#1a1a2e]">Expédition client</p>
       <p className="text-sm text-gray-600">Le client fournira son propre transporteur.</p></>
     );
     const addr = shippingAddr;
     const name = addr?.company_name || company.name || 'Client';
     const attn = addr?.attention || submitterName || company.contact_name;
     return (<>
-      <p className="font-bold text-[#003366]">{name}</p>
+      <p className="font-bold text-[#1a1a2e]">{name}</p>
       {attn && <p className="text-sm text-gray-600">Attn: {attn}</p>}
       {addr ? (<>
         {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
@@ -415,19 +416,19 @@ function QuoteDocumentView({
     const addr = billingAddr;
     const name = addr?.company_name || company.name || 'Client';
     return (<>
-      <p className="font-bold text-[#003366]">{name}</p>
+      <p className="font-bold text-[#1a1a2e]">{name}</p>
       {addr ? (<>
         {addr.attention && <p className="text-sm text-gray-600">Contact: {addr.attention}</p>}
         {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
         {(addr.postal_code || addr.city) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
         {addr.phone && <p className="text-sm text-gray-500">Tél: {addr.phone}</p>}
-        {addr.siret && <p className="text-sm font-bold text-[#003366]">SIRET: {addr.siret}</p>}
-        {addr.tva_number && <p className="text-sm font-bold text-[#003366]">TVA: {addr.tva_number}</p>}
+        {addr.siret && <p className="text-sm font-bold text-[#1a1a2e]">SIRET: {addr.siret}</p>}
+        {addr.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {addr.tva_number}</p>}
         {addr.chorus_invoicing && <p className="text-xs text-blue-600">Chorus Pro{addr.chorus_service_code ? ` — Service: ${addr.chorus_service_code}` : ''}</p>}
       </>) : (<>
         {(company.billing_address || company.address) && <p className="text-sm text-gray-600">{company.billing_address || company.address}</p>}
         {(company.billing_postal_code || company.postal_code || company.billing_city || company.city) && <p className="text-sm text-gray-600">{[company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ')}</p>}
-        {company.tva_number && <p className="text-sm font-bold text-[#003366]">TVA: {company.tva_number}</p>}
+        {company.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {company.tva_number}</p>}
       </>)}
     </>);
   };
@@ -437,7 +438,7 @@ function QuoteDocumentView({
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-[#003366] text-white px-6 py-4 flex justify-between items-center z-10">
+        <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10 rounded-t-xl">
           <div>
             <h2 className="text-xl font-bold">{title}</h2>
             <p className="text-gray-300">{docNumber || reference || ''}</p>
@@ -447,33 +448,33 @@ function QuoteDocumentView({
 
         <div id="quote-doc-content">
           {/* Header */}
-          <div className="px-8 pt-8 pb-4 border-b-4 border-[#003366]">
+          <div className="px-8 pt-8 pb-4 border-b-2 border-[#2D5A7B]">
             <div className="flex justify-between items-start">
               <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto"
                 onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-              <div style={{ display: 'none' }}><h1 className="text-3xl font-bold text-[#003366]">LIGHTHOUSE</h1></div>
+              <div style={{ display: 'none' }}><h1 className="text-3xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1></div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-[#003366]">{title}</p>
-                <p className="font-medium text-[#003366]">N° {docNumber || '—'}</p>
+                <p className="text-2xl font-bold text-[#2D5A7B]">{title}</p>
+                <p className="font-bold text-[#1a1a2e]">N° {docNumber || '—'}</p>
                 {reference && docNumber !== reference && <p className="text-xs text-gray-400">{refLabel}: {reference}</p>}
               </div>
             </div>
           </div>
 
           {/* Info Bar */}
-          <div className="bg-gray-100 px-8 py-3 flex justify-between text-sm border-b">
+          <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
             <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wider">Date</p>
-              <p className="font-bold text-[#003366]">{qDate}</p>
+              <p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p>
+              <p className="font-bold text-[#1a1a2e]">{qDate}</p>
             </div>
             {extraInfoBar ? extraInfoBar : (<>
               <div>
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Validité</p>
-                <p className="font-bold text-[#003366]">30 jours</p>
+                <p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p>
+                <p className="font-bold text-[#1a1a2e]">30 jours</p>
               </div>
               <div>
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Conditions</p>
-                <p className="font-bold text-[#003366]">À réception de facture</p>
+                <p className="text-[10px] text-[#828282] uppercase tracking-wider">CONDITIONS</p>
+                <p className="font-bold text-[#1a1a2e]">À réception de facture</p>
               </div>
             </>)}
           </div>
@@ -481,19 +482,19 @@ function QuoteDocumentView({
           {/* Address Boxes */}
           {addressMode === 'both' ? (
             <div className="px-8 py-4 grid grid-cols-2 gap-4 border-b">
-              <div className="border border-[#003366]/30 rounded p-3">
-                <p className="text-[10px] font-bold text-[#003366] uppercase tracking-wider mb-2">{shipLabel}</p>
+              <div className="border border-[#2D5A7B]/40 rounded p-3">
+                <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">{shipLabel}</p>
                 {renderShipTo()}
               </div>
-              <div className="border border-[#003366]/30 rounded p-3">
-                <p className="text-[10px] font-bold text-[#003366] uppercase tracking-wider mb-2">FACTURER À</p>
+              <div className="border border-[#2D5A7B]/40 rounded p-3">
+                <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">FACTURER À</p>
                 {renderBillTo()}
               </div>
             </div>
           ) : (
             <div className="px-8 py-4 border-b">
-              <div className="border border-[#003366]/30 rounded p-3">
-                <p className="text-[10px] font-bold text-[#003366] uppercase tracking-wider mb-2">FACTURER À</p>
+              <div className="border border-[#2D5A7B]/40 rounded p-3">
+                <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">FACTURER À</p>
                 {renderBillTo()}
               </div>
             </div>
@@ -503,9 +504,9 @@ function QuoteDocumentView({
 
           {/* Conditions */}
           {conditions.length > 0 && (
-            <div className="px-8 py-4 border-t">
-              <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-2">Conditions</p>
-              <ul className="text-xs text-gray-600 space-y-1">
+            <div className="px-8 py-4 border-t bg-[#f9fafb]">
+              <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+              <ul className="text-xs text-[#505050] space-y-1">
                 {conditions.map((d, i) => <li key={i}>- {d}</li>)}
               </ul>
             </div>
@@ -515,11 +516,11 @@ function QuoteDocumentView({
           <div className="px-8 py-6 border-t flex justify-between items-end">
             <div className="flex items-end gap-6">
               <div>
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Établi par</p>
-                <p className="font-bold text-lg text-[#003366]">{quoteData.createdBy || 'M. Meleney'}</p>
-                <p className="text-gray-600">Lighthouse France</p>
+                <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+                <p className="font-bold text-lg text-[#1a1a2e]">{quoteData.createdBy || 'M. Meleney'}</p>
+                <p className="text-[#505050]">Lighthouse France SAS</p>
               </div>
-              <img src="/images/logos/capcert-logo.png" alt="Capcert" className="h-14 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+              <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
             </div>
             {bcData ? (
               <div className="text-right">
@@ -532,16 +533,16 @@ function QuoteDocumentView({
               </div>
             ) : (
               <div className="text-right">
-                <p className="text-xs text-gray-400 mb-1">Signature client</p>
+                <p className="text-xs text-[#828282] mb-1">Signature client</p>
                 <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
-                <p className="text-xs text-gray-400 mt-1">Lu et approuvé</p>
+                <p className="text-xs text-[#828282] mt-1">Lu et approuvé</p>
               </div>
             )}
           </div>
 
           {/* Footer */}
-          <div className="bg-[#003366] text-white px-8 py-4 text-center text-sm">
-            <p className="font-medium">Lighthouse France SAS</p>
+          <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+            <p className="font-bold">Lighthouse France SAS</p>
             <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
           </div>
         </div>
@@ -570,52 +571,52 @@ function QuoteDocumentView({
 
 const PDF_CALIBRATION_DATA = {
   particle_counter: {
-    title: "Etalonnage Compteur de Particules Aeroportees",
+    title: "Étalonnage Compteur de Particules Aéroportées",
     prestations: [
-      "Verification des fonctionnalites du compteur",
-      "Verification et reglage du debit",
-      "Verification de la cellule de mesure",
-      "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
-      "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+      "Vérification des fonctionnalités du compteur",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule de mesure",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
       "Fourniture d'un rapport de test et de calibration"
     ]
   },
   bio_collector: {
-    title: "Etalonnage Bio Collecteur",
+    title: "Étalonnage Bio Collecteur",
     prestations: [
-      "Verification des fonctionnalites de l'appareil",
-      "Verification et reglage du debit",
-      "Verification de la cellule d'impaction",
-      "Controle des parametres de collecte",
+      "Vérification des fonctionnalités de l'appareil",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule d'impaction",
+      "Contrôle des paramètres de collecte",
       "Fourniture d'un rapport de test et de calibration"
     ]
   },
   liquid_counter: {
-    title: "Etalonnage Compteur de Particules en Milieu Liquide",
+    title: "Étalonnage Compteur de Particules en Milieu Liquide",
     prestations: [
-      "Verification des fonctionnalites du compteur",
-      "Verification et reglage du debit",
-      "Verification de la cellule de mesure optique",
-      "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
-      "Verification en nombre par comparaison a un etalon",
+      "Vérification des fonctionnalités du compteur",
+      "Vérification et réglage du débit",
+      "Vérification de la cellule de mesure optique",
+      "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+      "Vérification en nombre par comparaison à un étalon",
       "Fourniture d'un rapport de test et de calibration"
     ]
   },
   temp_humidity: {
-    title: "Etalonnage Capteur Temperature/Humidite",
+    title: "Étalonnage Capteur Température/Humidité",
     prestations: [
-      "Verification des fonctionnalites du capteur",
-      "Etalonnage temperature sur points de reference certifies",
-      "Etalonnage humidite relative",
-      "Verification de la stabilite des mesures",
-      "Fourniture d'un certificat d'etalonnage"
+      "Vérification des fonctionnalités du capteur",
+      "Étalonnage température sur points de référence certifiés",
+      "Étalonnage humidité relative",
+      "Vérification de la stabilité des mesures",
+      "Fourniture d'un certificat d'étalonnage"
     ]
   },
   other: {
-    title: "Etalonnage Equipement",
+    title: "Étalonnage Equipement",
     prestations: [
-      "Verification des fonctionnalites de l'appareil",
-      "Etalonnage selon les specifications du fabricant",
+      "Vérification des fonctionnalités de l'appareil",
+      "Étalonnage selon les specifications du fabricant",
       "Tests de fonctionnement",
       "Fourniture d'un rapport de test"
     ]
@@ -623,21 +624,21 @@ const PDF_CALIBRATION_DATA = {
 };
 
 const PDF_REPAIR_DATA = {
-  title: "Reparation",
+  title: "Réparation",
   prestations: [
     "Diagnostic complet de l'appareil",
     "Identification des composants defectueux",
-    "Remplacement des pieces defectueuses (pieces facturees en sus)",
+    "Remplacement des pièces défectueuses (pièces facturées en sus)",
     "Tests de fonctionnement complets",
-    "Verification d'etalonnage post-reparation si applicable"
+    "Vérification d'étalonnage post-réparation si applicable"
   ]
 };
 
 const PDF_DISCLAIMERS = [
-  "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
-  "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
-  "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
-  "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+  "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+  "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
+  "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+  "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
 ];
 
 function getQuoteDataFromRequest(request) {
@@ -867,52 +868,52 @@ async function generateQuotePDF(options) {
 
   const CAL_DATA = {
     particle_counter: {
-      title: "Etalonnage Compteur de Particules Aeroportees",
+      title: "Étalonnage Compteur de Particules Aéroportées",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure",
-        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
-        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure",
+        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+        "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     bio_collector: {
-      title: "Etalonnage Bio Collecteur",
+      title: "Étalonnage Bio Collecteur",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Verification et reglage du debit",
-        "Verification de la cellule d'impaction",
-        "Controle des parametres de collecte",
+        "Vérification des fonctionnalités de l'appareil",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule d'impaction",
+        "Contrôle des paramètres de collecte",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     liquid_counter: {
-      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      title: "Étalonnage Compteur de Particules en Milieu Liquide",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure optique",
-        "Controle et reglage des seuils de mesures granulometrique",
-        "Verification en nombre par comparaison a un etalon",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure optique",
+        "Contrôle et réglage des seuils de mesures granulométrique",
+        "Vérification en nombre par comparaison à un étalon",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     temp_humidity: {
-      title: "Etalonnage Capteur Temperature/Humidite",
+      title: "Étalonnage Capteur Température/Humidité",
       prestations: [
-        "Verification des fonctionnalites du capteur",
-        "Etalonnage temperature sur points de reference certifies",
-        "Etalonnage humidite relative",
-        "Verification de la stabilite des mesures",
-        "Fourniture d'un certificat d'etalonnage"
+        "Vérification des fonctionnalités du capteur",
+        "Étalonnage température sur points de référence certifiés",
+        "Étalonnage humidité relative",
+        "Vérification de la stabilité des mesures",
+        "Fourniture d'un certificat d'étalonnage"
       ]
     },
     other: {
-      title: "Etalonnage Equipement",
+      title: "Étalonnage Equipement",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Etalonnage selon les specifications du fabricant",
+        "Vérification des fonctionnalités de l'appareil",
+        "Étalonnage selon les specifications du fabricant",
         "Tests de fonctionnement",
         "Fourniture d'un rapport de test"
       ]
@@ -920,21 +921,21 @@ async function generateQuotePDF(options) {
   };
 
   const REPAIR_DATA = {
-    title: "Reparation",
+    title: "Réparation",
     prestations: [
       "Diagnostic complet de l'appareil",
       "Identification des composants defectueux",
-      "Remplacement des pieces defectueuses (pieces facturees en sus)",
+      "Remplacement des pièces défectueuses (pièces facturées en sus)",
       "Tests de fonctionnement complets",
-      "Verification d'etalonnage post-reparation si applicable"
+      "Vérification d'étalonnage post-réparation si applicable"
     ]
   };
 
   const DISCLAIMERS = [
-    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables.",
-    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses et necessitent un remplacement.",
-    "Les mesures stockees dans les appareils seront eventuellement perdues lors des operations de maintenance.",
-    "Les equipements envoyes devront etre decontamines de toutes substances chimiques, bacteriennes ou radioactives."
+    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+    "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses et nécessitent un remplacement.",
+    "Les mesures stockées dans les appareils seront éventuellement perdues lors des opérations de maintenance.",
+    "Les équipements envoyés devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives."
   ];
 
   // Draw service blocks - page-break aware per line
@@ -1009,7 +1010,7 @@ async function generateQuotePDF(options) {
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...white);
     pdf.text('Qte', colQty + 3, y + 6);
-    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Désignation', colDesc, y + 6);
     pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
     pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
     y += 9;
@@ -1062,7 +1063,7 @@ async function generateQuotePDF(options) {
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Recapitulatif des Prix', margin, y);
+  pdf.text('Récapitulatif des Prix', margin, y);
   y += 7;
   drawTableHeader();
 
@@ -1075,7 +1076,7 @@ async function generateQuotePDF(options) {
       const unitPrice = parseFloat(device.calibrationPrice) || 0;
       const lineTotal = qty * unitPrice;
       const isContract = device.isContractCovered;
-      const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
+      const calDesc = `Étalonnage ${device.model || ''} (SN: ${device.serial || ''})${isContract ? ' [CONTRAT]' : ''}`;
       drawTableRow(qty, calDesc, isContract ? 'Contrat' : unitPrice.toFixed(2) + ' EUR', isContract ? 'Contrat' : lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
@@ -1091,7 +1092,7 @@ async function generateQuotePDF(options) {
       const qty = device.repairQty || 1;
       const unitPrice = parseFloat(device.repairPrice) || 0;
       const lineTotal = qty * unitPrice;
-      const repDesc = `Reparation ${device.model || ''} (SN: ${device.serial || ''})`;
+      const repDesc = `Réparation ${device.model || ''} (SN: ${device.serial || ''})`;
       drawTableRow(qty, repDesc, unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
       rowIndex++;
     }
@@ -1421,7 +1422,7 @@ async function generatePartsQuotePDF(options) {
   pdf.setTextColor(...white);
   pdf.text('Qte', colQty + 2, y + 5.5);
   pdf.text('Reference', colRef, y + 5.5);
-  pdf.text('Designation', colDesc, y + 5.5);
+  pdf.text('Désignation', colDesc, y + 5.5);
   pdf.text('Prix Unit.', colUnit, y + 5.5, { align: 'right' });
   pdf.text('Total HT', colTotal, y + 5.5, { align: 'right' });
   y += 10;
@@ -1760,52 +1761,52 @@ async function generateContractQuotePDF(options) {
   // ===== SERVICE DESCRIPTION BLOCKS (like RMA) =====
   const CAL_DATA = {
     particle_counter: {
-      title: "Etalonnage Compteur de Particules Aeroportees",
+      title: "Étalonnage Compteur de Particules Aéroportées",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure",
-        "Controle et reglage des seuils de mesures granulometrique a l'aide de spheres de latex calibrees et certifiees",
-        "Verification en nombre par comparaison a un etalon etalonne selon la norme ISO 17025, conformement a la norme ISO 21501-4",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure",
+        "Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées",
+        "Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     bio_collector: {
-      title: "Etalonnage Bio Collecteur",
+      title: "Étalonnage Bio Collecteur",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Verification et reglage du debit",
-        "Verification de la cellule d'impaction",
-        "Controle des parametres de collecte",
+        "Vérification des fonctionnalités de l'appareil",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule d'impaction",
+        "Contrôle des paramètres de collecte",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     liquid_counter: {
-      title: "Etalonnage Compteur de Particules en Milieu Liquide",
+      title: "Étalonnage Compteur de Particules en Milieu Liquide",
       prestations: [
-        "Verification des fonctionnalites du compteur",
-        "Verification et reglage du debit",
-        "Verification de la cellule de mesure optique",
-        "Controle et reglage des seuils de mesures granulometrique",
-        "Verification en nombre par comparaison a un etalon",
+        "Vérification des fonctionnalités du compteur",
+        "Vérification et réglage du débit",
+        "Vérification de la cellule de mesure optique",
+        "Contrôle et réglage des seuils de mesures granulométrique",
+        "Vérification en nombre par comparaison à un étalon",
         "Fourniture d'un rapport de test et de calibration"
       ]
     },
     temp_humidity: {
-      title: "Etalonnage Capteur Temperature/Humidite",
+      title: "Étalonnage Capteur Température/Humidité",
       prestations: [
-        "Verification des fonctionnalites du capteur",
-        "Etalonnage temperature sur points de reference certifies",
-        "Etalonnage humidite relative",
-        "Verification de la stabilite des mesures",
-        "Fourniture d'un certificat d'etalonnage"
+        "Vérification des fonctionnalités du capteur",
+        "Étalonnage température sur points de référence certifiés",
+        "Étalonnage humidité relative",
+        "Vérification de la stabilité des mesures",
+        "Fourniture d'un certificat d'étalonnage"
       ]
     },
     other: {
-      title: "Etalonnage Equipement",
+      title: "Étalonnage Equipement",
       prestations: [
-        "Verification des fonctionnalites de l'appareil",
-        "Etalonnage selon les specifications du fabricant",
+        "Vérification des fonctionnalités de l'appareil",
+        "Étalonnage selon les specifications du fabricant",
         "Tests de fonctionnement",
         "Fourniture d'un rapport de test"
       ]
@@ -1896,10 +1897,10 @@ async function generateContractQuotePDF(options) {
   
   const conditions = [
     `Periode du contrat: ${formatDate(contractDates.start_date)} au ${formatDate(contractDates.end_date)}`,
-    `${totalTokensDisplay} etalonnage(s) inclus pendant la periode contractuelle`,
-    "Etalonnages supplementaires factures au tarif standard",
-    "Cette offre n'inclut pas la reparation ou l'echange de pieces non consommables",
-    "Un devis complementaire sera etabli si des pieces sont trouvees defectueuses",
+    `${totalTokensDisplay} étalonnage(s) inclus pendant la période contractuelle`,
+    "Étalonnages supplementaires factures au tarif standard",
+    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables",
+    "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses",
     "Paiement a 30 jours date de facture"
   ];
   
@@ -1936,7 +1937,7 @@ async function generateContractQuotePDF(options) {
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Recapitulatif des Prix', margin, y);
+  pdf.text('Récapitulatif des Prix', margin, y);
   y += 7;
 
   // Header row
@@ -1946,7 +1947,7 @@ async function generateContractQuotePDF(options) {
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
   pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Désignation', colDesc, y + 6);
   pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
   pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
   y += 9;
@@ -1969,7 +1970,7 @@ async function generateContractQuotePDF(options) {
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(...darkBlue);
       pdf.text(String(qty), colQty + 3, y + 5);
-      const calDesc = `Etalonnage ${device.model || ''} (SN: ${device.serial || ''})`;
+      const calDesc = `Étalonnage ${device.model || ''} (SN: ${device.serial || ''})`;
       pdf.text(calDesc.substring(0, 65), colDesc, y + 5);
       pdf.text(unitPrice.toFixed(2) + ' €', colUnit, y + 5, { align: 'right' });
       pdf.setFont('helvetica', 'bold');
@@ -2310,7 +2311,7 @@ async function generateSignedAvenantPDF(options) {
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...white);
   pdf.text('Qte', colQty + 3, y + 6);
-  pdf.text('Designation', colDesc, y + 6);
+  pdf.text('Désignation', colDesc, y + 6);
   pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
   pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
   y += 9;
@@ -2389,7 +2390,7 @@ async function generateSignedAvenantPDF(options) {
   pdf.setTextColor(...lightGray);
   pdf.text('CONDITIONS:', margin, y);
   y += 4;
-  pdf.text("• Ce devis complementaire est valable 30 jours a compter de sa date d'emission.", margin + 3, y);
+  pdf.text("• Ce devis complémentaire est valable 30 jours à compter de sa date d'émission.", margin + 3, y);
   y += 4;
   pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit.', margin + 3, y);
   y += 4;
@@ -2652,7 +2653,7 @@ async function generateRentalQuotePDF(options) {
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...white);
     pdf.text('Qte', colQty + 3, y + 6);
-    pdf.text('Designation', colDesc, y + 6);
+    pdf.text('Désignation', colDesc, y + 6);
     pdf.text('Tarif', colRate, y + 6, { align: 'right' });
     pdf.text('Duree', colDuration, y + 6, { align: 'right' });
     pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
@@ -2667,7 +2668,7 @@ async function generateRentalQuotePDF(options) {
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Recapitulatif des Prix', margin, y);
+  pdf.text('Récapitulatif des Prix', margin, y);
   y += 6;
   drawTableHeader();
 
@@ -11120,10 +11121,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
             {/* Pricing Table */}
             <div className="px-8 py-6">
-              <h3 className="font-bold text-lg text-[#003366] mb-4">Travaux Supplémentaires</h3>
+              <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Travaux Supplémentaires</h3>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-[#003366] text-white">
+                  <tr className="bg-[#1a1a2e] text-white">
                     <th className="px-3 py-2.5 text-center w-12">Qté</th>
                     <th className="px-3 py-2.5 text-left">Désignation</th>
                     <th className="px-3 py-2.5 text-right w-24">Prix Unit.</th>
@@ -11134,7 +11135,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   {devices.map((device, i) => (
                     <Fragment key={i}>
                       <tr className="bg-gray-100 border-t">
-                        <td colSpan={4} className="px-3 py-2 font-bold text-[#003366]">
+                        <td colSpan={4} className="px-3 py-2 font-bold text-[#1a1a2e]">
                           {device.model_name} (SN: {device.serial_number})
                         </td>
                       </tr>
@@ -11157,7 +11158,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-[#003366] text-white">
+                  <tr className="bg-[#2D5A7B] text-white">
                     <td colSpan={2} className="px-3 py-3"></td>
                     <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                     <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{total.toFixed(2)} €</td>
@@ -11216,10 +11217,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 bcData={bcInfo}
               >
                 <div className="px-8 py-6">
-                  <h3 className="font-bold text-[#003366] mb-3">Pièces Commandées</h3>
+                  <h3 className="font-bold text-[#1a1a2e] mb-3">Pièces Commandées</h3>
                   <table className="w-full border-collapse mb-4 text-sm">
                     <thead>
-                      <tr className="bg-[#003366] text-white">
+                      <tr className="bg-[#1a1a2e] text-white">
                         <th className="px-3 py-2.5 text-center w-12">Qté</th>
                         <th className="px-3 py-2.5 text-left w-24">Réf.</th>
                         <th className="px-3 py-2.5 text-left">Désignation</th>
@@ -11248,7 +11249,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       )}
                     </tbody>
                     <tfoot>
-                      <tr className="bg-[#003366] text-white">
+                      <tr className="bg-[#2D5A7B] text-white">
                         <td colSpan={4} className="px-3 py-3 text-right font-bold whitespace-nowrap">TOTAL HT</td>
                         <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
                       </tr>
@@ -11294,13 +11295,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
                 return (
                   <div key={type} className="border-l-4 border-blue-500 pl-4">
-                    <h3 className="font-bold text-lg text-[#003366] mb-3 flex items-center gap-2">
+                    <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
                       <span>{template.icon}</span> {template.title}
                     </h3>
                     <ul className="space-y-1">
                       {template.prestations.map((p, i) => (
                         <li key={i} className="text-gray-700 flex items-start gap-2">
-                          <span className="text-[#003366] mt-1">▸</span><span>{p}</span>
+                          <span className="text-[#1a1a2e] mt-1">▸</span><span>{p}</span>
                         </li>
                       ))}
                     </ul>
@@ -11309,7 +11310,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               })}
               {hasRepair && (
                 <div className="border-l-4 border-orange-500 pl-4">
-                  <h3 className="font-bold text-lg text-[#003366] mb-3 flex items-center gap-2">
+                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
                     <span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}
                   </h3>
                   <ul className="space-y-1">
@@ -11325,10 +11326,10 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
 
             {/* Pricing Table */}
             <div className="px-8 py-6 bg-gray-50">
-              <h3 className="font-bold text-lg text-[#003366] mb-4">Récapitulatif des Prix</h3>
+              <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-[#003366] text-white">
+                  <tr className="bg-[#1a1a2e] text-white">
                     <th className="px-3 py-2.5 text-center w-12">Qté</th>
                     <th className="px-3 py-2.5 text-left">Désignation</th>
                     <th className="px-3 py-2.5 text-right w-24">Prix Unit.</th>
@@ -11388,7 +11389,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   )}
                 </tbody>
                 <tfoot>
-                  <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#003366] text-white"}>
+                  <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
                     <td colSpan={2} className="px-3 py-3"></td>
                     <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                     <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}</td>
@@ -13818,9 +13819,9 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
             "Paiement à 30 jours date de facture."
           ];
           const contractInfoBar = (<>
-            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Début</p><p className="font-bold text-[#003366]">{formatDateWrittenFR(contractDates.start_date)}</p></div>
-            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Fin</p><p className="font-bold text-[#003366]">{formatDateWrittenFR(contractDates.end_date)}</p></div>
-            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Validité</p><p className="font-bold text-[#003366]">30 jours</p></div>
+            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Début</p><p className="font-bold text-[#1a1a2e]">{formatDateWrittenFR(contractDates.start_date)}</p></div>
+            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Fin</p><p className="font-bold text-[#1a1a2e]">{formatDateWrittenFR(contractDates.end_date)}</p></div>
+            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Validité</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
           </>);
           return (<>
           <QuoteDocumentView
@@ -13838,15 +13839,15 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
               {deviceTypes.map(type => {
                 const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
                 return (<div key={type} className="border-l-4 border-blue-500 pl-4">
-                  <h3 className="font-bold text-[#003366] mb-2 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
-                  <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 text-sm flex items-start gap-2"><span className="text-[#003366] mt-0.5">▸</span><span>{p}</span></li>))}</ul>
+                  <h3 className="font-bold text-[#1a1a2e] mb-2 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
+                  <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 text-sm flex items-start gap-2"><span className="text-[#1a1a2e] mt-0.5">▸</span><span>{p}</span></li>))}</ul>
                 </div>);
               })}
             </div>
             <div className="px-8 py-6 bg-gray-50">
-              <h3 className="font-bold text-lg text-[#003366] mb-4">Récapitulatif des Prix</h3>
+              <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
               <table className="w-full text-sm">
-                <thead><tr className="bg-[#003366] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-20">Prix Unit.</th><th className="px-3 py-2.5 text-right w-20">Total HT</th></tr></thead>
+                <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-20">Prix Unit.</th><th className="px-3 py-2.5 text-right w-20">Total HT</th></tr></thead>
                 <tbody>
                   {pricingDevices.map((device, idx) => (<Fragment key={idx}>
                     {device.needsCalibration !== false && (<tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
@@ -13869,7 +13870,7 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
                     <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
                   </tr>)}
                 </tbody>
-                <tfoot><tr className="bg-[#003366] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotalFromQuote.toFixed(2)} €</td></tr></tfoot>
+                <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotalFromQuote.toFixed(2)} €</td></tr></tfoot>
               </table>
               {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
             </div>
@@ -15418,17 +15419,17 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           >
             <div className="px-8 py-3">
               <div className="border-l-4 border-purple-500 pl-4">
-                <h3 className="font-bold text-[#003366] mb-2">Location de Matériel</h3>
+                <h3 className="font-bold text-[#1a1a2e] mb-2">Location de Matériel</h3>
                 <p className="text-sm text-gray-600">- Période : du {formatDateWrittenFR(period.start || rental.start_date)} au {formatDateWrittenFR(period.end || rental.end_date)} ({period.days || rentalDaysDisplay} jours)</p>
                 {qd.deliveryTerms && <p className="text-sm text-gray-600">- Délai de livraison : {qd.deliveryTerms}</p>}
                 <p className="text-sm text-gray-600">- Assurance « Bien Confié » obligatoire (vol, incendie, dégâts des eaux, bris accidentel)</p>
               </div>
             </div>
             <div className="px-8 py-6 bg-gray-50">
-              <h3 className="font-bold text-lg text-[#003366] mb-4">Récapitulatif des Prix</h3>
+              <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-[#003366] text-white">
+                  <tr className="bg-[#1a1a2e] text-white">
                     <th className="px-3 py-2.5 text-center w-10">Qté</th>
                     <th className="px-3 py-2.5 text-left">Désignation</th>
                     <th className="px-3 py-2.5 text-right w-20">Tarif</th>
@@ -15485,7 +15486,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   )}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-[#003366] text-white">
+                  <tr className="bg-[#2D5A7B] text-white">
                     <td colSpan={3} className="px-3 py-3"></td>
                     <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                     <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</td>
@@ -16375,7 +16376,7 @@ function HomePage({ t, setPage, setShowLegalPage }) {
                   <span className="text-[#00A651]">Service</span> & Pieces
                 </h1>
                 <p className="text-lg md:text-xl text-white/70 mb-8 max-w-lg leading-relaxed">
-                  Gerez vos demandes de calibration et reparation d'equipements de mesure de contamination en temps reel.
+                  Gérez vos demandes de calibration et réparation d'équipements de mesure de contamination en temps réel.
                 </p>
                 <div className="flex flex-wrap gap-4">
                   <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
@@ -16423,7 +16424,7 @@ function HomePage({ t, setPage, setShowLegalPage }) {
                         />
                       </div>
                       <p className="text-white font-bold text-sm">Compteurs de Particules</p>
-                      <p className="text-white/60 text-xs">Aeroportees</p>
+                      <p className="text-white/60 text-xs">Aéroportées</p>
                     </div>
                     
                     {/* Bio Collector */}
@@ -16452,17 +16453,17 @@ function HomePage({ t, setPage, setShowLegalPage }) {
                       <p className="text-white/60 text-xs">Liquides</p>
                     </div>
                     
-                    {/* Temperature & Humidity Probe */}
+                    {/* Température & Humidity Probe */}
                     <div className="bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-sm rounded-2xl p-4 text-center hover:scale-105 transition-all duration-300 hover:from-white/15 hover:to-white/10 border border-white/10 group cursor-pointer">
                       <div className="w-full h-36 mb-3 flex items-center justify-center rounded-xl">
                         <img 
                           src="/images/products/temp-probe.png" 
-                          alt="Temperature & Humidity Probe" 
+                          alt="Température & Humidity Probe" 
                           className="max-w-full max-h-full object-contain group-hover:scale-110 transition-transform duration-300"
                         />
                       </div>
-                      <p className="text-white font-bold text-sm">Sondes Temperature</p>
-                      <p className="text-white/60 text-xs">& Humidite</p>
+                      <p className="text-white font-bold text-sm">Sondes Température</p>
+                      <p className="text-white/60 text-xs">& Humidité</p>
                     </div>
                   </div>
                   
@@ -16498,7 +16499,7 @@ function HomePage({ t, setPage, setShowLegalPage }) {
                 
                 {[
                   { num: '1', title: 'Creer un compte', desc: 'Enregistrez votre societe et vos coordonnees en quelques minutes' },
-                  { num: '2', title: 'Soumettre une demande', desc: 'Detaillez vos equipements et besoins de service' },
+                  { num: '2', title: 'Soumettre une demande', desc: 'Détaillez vos équipements et besoins de service' },
                   { num: '3', title: 'Recevoir le devis', desc: 'Obtenez votre devis et numero RMA rapidement' },
                   { num: '4', title: 'Suivre le progres', desc: 'Surveillez l\'etat de vos demandes en temps reel' }
                 ].map((step, i) => (
@@ -16528,18 +16529,18 @@ function HomePage({ t, setPage, setShowLegalPage }) {
                   { 
                     icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
                     icon2: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-                    title: 'Reparation', 
-                    desc: 'Reparation experte de compteurs de particules, echantillonneurs microbiens et equipements de monitoring environnemental.'
+                    title: 'Réparation', 
+                    desc: 'Réparation experte de compteurs de particules, échantillonneurs microbiens et équipements de monitoring environnemental.'
                   },
                   { 
                     icon: 'M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3',
-                    title: 'Etalonnage', 
+                    title: 'Étalonnage', 
                     desc: 'Calibration selon ISO 21501-4 avec certificats traceables pour garantir precision et conformite reglementaire.'
                   },
                   { 
                     icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
                     title: 'Maintenance', 
-                    desc: 'Programmes de maintenance preventive pour optimiser la duree de vie et les performances de vos equipements.'
+                    desc: 'Programmes de maintenance préventive pour optimiser la durée de vie et les performances de vos équipements.'
                   }
                 ].map((svc, i) => (
                   <div key={i} className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-all hover:-translate-y-1 group">
@@ -16566,7 +16567,7 @@ function HomePage({ t, setPage, setShowLegalPage }) {
                 Pret a demarrer ?
               </h2>
               <p className="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
-                Rejoignez les entreprises qui font confiance a Lighthouse France pour la maintenance de leurs equipements critiques.
+                Rejoignez les entreprises qui font confiance à Lighthouse France pour la maintenance de leurs équipements critiques.
               </p>
               <div className="flex flex-wrap gap-4 justify-center">
                 <button onClick={() => setPage('register')} className="px-8 py-4 bg-[#00A651] text-white rounded-xl font-bold text-lg hover:bg-[#008f45] transition-all hover:scale-105 shadow-lg shadow-[#00A651]/25">
