@@ -15340,21 +15340,31 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     const available = isDeviceAvailable(device.id);
                     const selected = selectedItems.find(s => s.type === 'device' && s.id === device.id);
                     const pricing = calculatePrice(device.price_per_day, device.price_per_week, device.price_per_month, rentalDays);
+                    const typeLabels = { particle_counter: '🔬 Compteur de particules', bio_collector: '🧫 Bio collecteur', liquid_counter: '💧 Compteur liquide', other: '📦 Autre' };
                     return (
                       <div key={device.id} onClick={() => available && toggleSelection('device', device)}
                         className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${!available ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' : selected ? 'bg-[#8B5CF6]/10 border-[#8B5CF6]' : 'bg-white border-gray-200 hover:border-[#8B5CF6]/50'}`}>
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">{getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-8 h-8 object-contain" />}<h4 className="font-bold text-gray-800">{device.model_name}</h4></div>
-                            <p className="text-sm text-gray-500 font-mono">SN: {device.serial_number}</p>
-                            {(device.description_fr || device.description) && (
-                              <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{device.description_fr || device.description}</p>
-                            )}
+                        <div className="flex items-start justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            {getDeviceImageUrl(device.model_name) && <img src={getDeviceImageUrl(device.model_name)} alt="" className="w-10 h-10 object-contain" />}
+                            <div>
+                              <h4 className="font-bold text-gray-800">{device.model_name}</h4>
+                              <p className="text-xs text-gray-400">{device.brand || 'Lighthouse'} • <span className="font-mono">SN: {device.serial_number}</span></p>
+                            </div>
                           </div>
                           {selected && <span className="text-[#8B5CF6] text-xl ml-2">✓</span>}
                         </div>
-                        <div className="flex items-end justify-between">
-                          <div><p className="text-2xl font-bold text-[#8B5CF6]">€{pricing.total.toFixed(2)}</p><p className="text-xs text-gray-500">€{device.price_per_day}/jour</p></div>
+                        {device.device_type && (
+                          <span className="inline-block text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full mt-1 mb-1.5">{typeLabels[device.device_type] || device.device_type}</span>
+                        )}
+                        {(device.description_fr || device.description) && (
+                          <p className="text-xs text-gray-600 leading-relaxed mb-1.5">{device.description_fr || device.description}</p>
+                        )}
+                        {device.specs && (
+                          <p className="text-xs text-gray-400 italic leading-relaxed mb-2">⚙️ {device.specs}</p>
+                        )}
+                        <div className="flex items-end justify-between pt-2 border-t border-gray-100">
+                          <div><p className="text-2xl font-bold text-[#8B5CF6]">€{pricing.total.toFixed(2)}</p><p className="text-xs text-gray-500">€{device.price_per_day}/jour{device.price_per_week ? ` • €${device.price_per_week}/sem` : ''}</p></div>
                           {!available && <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded-full">Indisponible</span>}
                         </div>
                       </div>
