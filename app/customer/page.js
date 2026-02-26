@@ -11961,6 +11961,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
               {[
                 { id: 'overview', label: 'Appareils', icon: '🔧', hide: isPartsOrder },
                 { id: 'overview', label: 'Commande', icon: '📦', hide: !isPartsOrder },
+                { id: 'documents', label: 'Documents', icon: '📁', hide: !isPartsOrder },
+                { id: 'history', label: 'Historique', icon: '📜', hide: !isPartsOrder },
                 { id: 'messages', label: 'Messages', icon: '💬', count: messages.filter(m => !m.is_read && m.sender_id !== profile?.id).length }
               ].filter(t => !t.hide).map(tab => (
                 <button
@@ -12071,33 +12073,40 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           const partsSteps = [
                             { id: 'submitted', label: 'Demande soumise', icon: '📝' },
                             { id: 'quote_sent', label: 'Devis envoyé', icon: '💰' },
-                            { id: 'bc_review', label: 'BC en vérification', icon: '📋' },
-                            { id: 'in_progress', label: 'En cours', icon: '📦' },
-                            { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '🚚' },
-                            { id: 'shipped', label: 'Expédié', icon: '✅' },
-                            { id: 'delivered', label: 'Livré', icon: '🏠' }
+                            { id: 'bc_approved', label: 'BC approuvé', icon: '✅' },
+                            { id: 'in_progress', label: 'Commande en traitement', icon: '⚙️' },
+                            { id: 'ready_to_ship', label: 'Prêt à expédier', icon: '📦' },
+                            { id: 'shipped', label: 'Expédié', icon: '🚚' }
                           ];
                           
-                          const statusOrder = ['submitted', 'quote_sent', 'bc_review', 'in_progress', 'ready_to_ship', 'shipped', 'delivered', 'completed'];
-                          const currentIdx = statusOrder.indexOf(request.status);
+                          // Map actual statuses to progress step positions
+                          const statusToStep = {
+                            'submitted': 0, 'pending': 0, 'pending_quote_review': 0,
+                            'quote_sent': 1, 'quote_revision_requested': 1, 'quote_revision_declined': 1,
+                            'waiting_bc': 1, 'waiting_po': 1, 'approved': 1,
+                            'bc_review': 2, 'bc_submitted': 2, 'bc_approved': 2, 'waiting_reception': 2,
+                            'in_progress': 3, 'received': 3, 'inspection': 3, 'repair': 3, 'repair_in_progress': 3,
+                            'ready_to_ship': 4, 'qc': 4, 'final_qc': 4,
+                            'shipped': 5, 'completed': 5, 'delivered': 5
+                          };
+                          const currentStepIdx = statusToStep[request.status] ?? -1;
                           
                           return (
                             <div className="flex items-center justify-between">
                               {partsSteps.map((step, idx) => {
-                                const stepIdx = statusOrder.indexOf(step.id);
-                                const isComplete = currentIdx >= stepIdx && currentIdx !== -1;
-                                const isCurrent = request.status === step.id;
+                                const isComplete = currentStepIdx > idx;
+                                const isCurrent = currentStepIdx === idx;
                                 
                                 return (
                                   <div key={step.id} className="flex flex-col items-center flex-1 relative">
                                     {idx > 0 && (
-                                      <div className={`absolute top-5 right-1/2 w-full h-1 -z-10 ${isComplete ? 'bg-green-500' : 'bg-gray-200'}`} />
+                                      <div className={`absolute top-5 right-1/2 w-full h-1 -z-10 ${isComplete || isCurrent ? 'bg-green-500' : 'bg-gray-200'}`} />
                                     )}
                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg z-10 ${
                                       isCurrent ? 'bg-amber-500 text-white ring-4 ring-amber-200' :
                                       isComplete ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
                                     }`}>
-                                      {isComplete && !isCurrent ? '✓' : step.icon}
+                                      {isComplete ? '✓' : step.icon}
                                     </div>
                                     <p className={`text-xs mt-2 text-center ${
                                       isCurrent ? 'font-bold text-amber-700' : isComplete ? 'text-green-700' : 'text-gray-400'
@@ -12131,54 +12140,124 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                           </div>
                         </div>
                       )}
-                      
-                      {/* Parts Documents */}
-                      {(request.quote_url || request.signed_quote_url || request.bc_file_url) && (
-                        <div className="mt-6">
-                          <h3 className="font-bold text-[#1E3A5F] mb-3">📁 Documents</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {request.quote_url && (
-                              <a href={request.quote_url} target="_blank" rel="noopener noreferrer"
-                                 className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 border-blue-200">
-                                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl">💰</div>
-                                <div>
-                                  <p className="font-medium text-gray-800">
-                                    Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} (actuel)
-                                  </p>
-                                  <p className="text-sm text-blue-600">N° {request.quote_number || request.request_number}</p>
-                                </div>
-                              </a>
-                            )}
-                            {request.signed_quote_url && (
-                              <a href={request.signed_quote_url} target="_blank" rel="noopener noreferrer"
-                                 className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 border-green-200">
-                                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl">✅</div>
-                                <div>
-                                  <p className="font-medium text-gray-800">
-                                    Devis Signé{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} / BC
-                                  </p>
-                                  <p className="text-sm text-green-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
-                                </div>
-                              </a>
-                            )}
-                            {request.bc_file_url && request.bc_file_url !== request.signed_quote_url && (
-                              <a href={request.bc_file_url} target="_blank" rel="noopener noreferrer"
-                                 className="flex items-center gap-4 p-4 border rounded-lg hover:bg-purple-50 border-purple-200">
-                                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl">📋</div>
-                                <div>
-                                  <p className="font-medium text-gray-800">Bon de Commande</p>
-                                  <p className="text-sm text-purple-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
-                                </div>
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
               )}
               
+              {/* === DOCUMENTS TAB (Parts Orders) === */}
+              {activeTab === 'documents' && isPartsOrder && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-[#1E3A5F] text-lg">📁 Documents</h3>
+                  {(request.quote_url || request.signed_quote_url || request.bc_file_url) ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {request.quote_url && (
+                        <a href={request.quote_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 p-4 border rounded-xl hover:bg-blue-50 border-blue-200 transition-colors">
+                          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">💰</div>
+                          <div>
+                            <p className="font-medium text-gray-800">
+                              Devis{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} (actuel)
+                            </p>
+                            <p className="text-sm text-blue-600">N° {request.quote_number || request.request_number}</p>
+                          </div>
+                        </a>
+                      )}
+                      {request.signed_quote_url && (
+                        <a href={request.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 p-4 border rounded-xl hover:bg-green-50 border-green-200 transition-colors">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">✅</div>
+                          <div>
+                            <p className="font-medium text-gray-800">
+                              Devis Signé{request.quote_revision_count > 0 ? ` Rev-${request.quote_revision_count}` : ''} / BC
+                            </p>
+                            <p className="text-sm text-green-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
+                          </div>
+                        </a>
+                      )}
+                      {request.bc_file_url && request.bc_file_url !== request.signed_quote_url && (
+                        <a href={request.bc_file_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 p-4 border rounded-xl hover:bg-purple-50 border-purple-200 transition-colors">
+                          <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">📋</div>
+                          <div>
+                            <p className="font-medium text-gray-800">Bon de Commande</p>
+                            <p className="text-sm text-purple-600">N° {request.bc_number || request.quote_number || request.request_number}</p>
+                          </div>
+                        </a>
+                      )}
+                      {request.bl_url && (
+                        <a href={request.bl_url} target="_blank" rel="noopener noreferrer"
+                           className="flex items-center gap-4 p-4 border rounded-xl hover:bg-cyan-50 border-cyan-200 transition-colors">
+                          <div className="w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">🚚</div>
+                          <div>
+                            <p className="font-medium text-gray-800">Bon de Livraison</p>
+                            <p className="text-sm text-cyan-600">N° {request.bl_number || '—'}</p>
+                          </div>
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-gray-400">
+                      <p className="text-4xl mb-2">📁</p>
+                      <p>Aucun document disponible</p>
+                      <p className="text-sm mt-1">Les documents apparaîtront ici au fur et à mesure du traitement</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* === HISTORY TAB (Parts Orders) === */}
+              {activeTab === 'history' && isPartsOrder && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-[#1E3A5F] text-lg">📜 Historique</h3>
+                  {(() => {
+                    const events = [
+                      request.created_at && { date: request.created_at, label: 'Demande soumise', detail: 'Commande de pièces créée', icon: '📝', color: 'gray' },
+                      request.request_number && request.quoted_at && { date: request.quoted_at, label: 'Devis envoyé', detail: `N° ${request.quote_number || request.request_number}${request.quote_total ? ' — ' + parseFloat(request.quote_total).toFixed(2) + ' € HT' : ''}`, icon: '💰', color: 'blue' },
+                      request.quote_approved_at && { date: request.quote_approved_at, label: 'Devis approuvé', detail: 'Le client a accepté le devis', icon: '👍', color: 'green' },
+                      request.bc_submitted_at && { date: request.bc_submitted_at, label: 'BC soumis', detail: request.bc_number ? `N° ${request.bc_number}` : 'Bon de commande soumis par le client', icon: '📋', color: 'blue' },
+                      request.bc_approved_at && { date: request.bc_approved_at, label: 'BC approuvé', detail: 'Bon de commande validé par Lighthouse', icon: '✅', color: 'green' },
+                      request.shipped_at && { date: request.shipped_at, label: 'Expédié', detail: request.ups_tracking_number ? `UPS: ${request.ups_tracking_number}` : 'Commande expédiée', icon: '🚚', color: 'green' },
+                      request.completed_at && { date: request.completed_at, label: 'Terminé', detail: 'Commande clôturée', icon: '🏁', color: 'green' }
+                    ].filter(Boolean).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                    if (events.length === 0) {
+                      return (
+                        <div className="text-center py-12 text-gray-400">
+                          <p className="text-4xl mb-2">📜</p>
+                          <p>Aucun événement</p>
+                        </div>
+                      );
+                    }
+
+                    const colorMap = { gray: 'border-gray-300', blue: 'border-blue-400', green: 'border-green-500', amber: 'border-amber-400' };
+                    const bgMap = { gray: 'bg-gray-100', blue: 'bg-blue-100', green: 'bg-green-100', amber: 'bg-amber-100' };
+
+                    return (
+                      <div className="relative">
+                        <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-gray-200"></div>
+                        <div className="space-y-4">
+                          {events.map((event, idx) => (
+                            <div key={idx} className="flex gap-4 items-start relative">
+                              <div className={`w-10 h-10 rounded-full ${bgMap[event.color] || 'bg-gray-100'} border-2 ${colorMap[event.color] || 'border-gray-300'} flex items-center justify-center text-lg z-10 flex-shrink-0`}>
+                                {event.icon}
+                              </div>
+                              <div className="flex-1 bg-gray-50 rounded-lg p-3 border">
+                                <div className="flex justify-between items-start gap-2">
+                                  <p className="font-bold text-gray-800 text-sm">{event.label}</p>
+                                  <p className="text-xs text-gray-400 whitespace-nowrap">{new Date(event.date).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                </div>
+                                {event.detail && <p className="text-sm text-gray-600 mt-1">{event.detail}</p>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* === MESSAGES TAB === */}
               {activeTab === 'messages' && (
                 <div>
