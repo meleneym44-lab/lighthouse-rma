@@ -5926,13 +5926,22 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
 // ============================================
 function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBack }) {
   const [parts, setParts] = useState([createNewPart(1)]);
+  const billingAddresses = addresses.filter(a => a.is_billing);
+  const shippingAddresses = addresses.filter(a => !a.is_billing);
+  const [billingAddressId, setBillingAddressId] = useState(billingAddresses[0]?.id || '');
+  const [showNewBillingForm, setShowNewBillingForm] = useState(false);
+  const [newBillingAddress, setNewBillingAddress] = useState({ label: '', company_name: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '', phone: '', siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: '' });
+  const [deliveryMethod, setDeliveryMethod] = useState('standard'); // 'standard', 'own_label', 'pickup'
   const [shipping, setShipping] = useState({ 
-    address_id: addresses.find(a => a.is_default && !a.is_billing)?.id || '',
+    address_id: shippingAddresses.find(a => a.is_default)?.id || '',
     showNewForm: false,
-    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '', country: 'France', phone: '' }
+    newAddress: { label: '', company_name: '', attention: '', address_line1: '', city: '', postal_code: '', country: 'France', phone: '' },
+    parcels: 1
   });
+  const [shippingSameAsBilling, setShippingSameAsBilling] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const selectedBillingAddr = billingAddresses.find(a => a.id === billingAddressId);
 
   function createNewPart(num) {
     return {
@@ -6024,44 +6033,56 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       }
     }
 
-    let addressId = shipping.address_id;
-    if (shipping.showNewForm) {
-      const addr = shipping.newAddress;
-      if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.phone || !addr.city || !addr.postal_code) {
-        notify('Veuillez remplir tous les champs obligatoires de l\'adresse', 'error');
+    // Handle billing address
+    let finalBillingAddressId = billingAddressId || null;
+    if (showNewBillingForm) {
+      const ba = newBillingAddress;
+      if (!ba.company_name || !ba.attention || !ba.address_line1 || !ba.postal_code || !ba.city) {
+        notify('Veuillez remplir les champs obligatoires de l\'adresse de facturation', 'error');
         return;
       }
-      
-      const { data, error } = await supabase.from('shipping_addresses').insert({
-        company_id: profile.company_id,
-        label: addr.label || addr.company_name,
-        company_name: addr.company_name,
-        attention: addr.attention,
-        phone: addr.phone,
-        address_line1: addr.address_line1,
-        city: addr.city,
-        postal_code: addr.postal_code,
-        country: addr.country || 'France',
-        is_default: false
+      const { data: baData, error: baErr } = await supabase.from('shipping_addresses').insert({
+        ...ba, company_id: profile.company_id, is_billing: true, is_default: false
       }).select().single();
-      
-      if (error) {
-        notify(`Erreur adresse: ${error.message}`, 'error');
+      if (baErr) { notify("Erreur lors de la création de l'adresse de facturation", 'error'); return; }
+      finalBillingAddressId = baData.id;
+    }
+
+    // Handle shipping address based on delivery method
+    let addressId = null;
+    if (deliveryMethod === 'standard') {
+      if (shippingSameAsBilling) {
+        addressId = finalBillingAddressId;
+      } else if (shipping.showNewForm) {
+        const addr = shipping.newAddress;
+        if (!addr.company_name || !addr.address_line1 || !addr.attention || !addr.phone || !addr.city || !addr.postal_code) {
+          notify('Veuillez remplir tous les champs obligatoires de l\'adresse de livraison', 'error');
+          return;
+        }
+        const { data, error } = await supabase.from('shipping_addresses').insert({
+          company_id: profile.company_id, label: addr.label || addr.company_name, company_name: addr.company_name,
+          attention: addr.attention, phone: addr.phone, address_line1: addr.address_line1,
+          city: addr.city, postal_code: addr.postal_code, country: addr.country || 'France', is_default: false
+        }).select().single();
+        if (error) { notify(`Erreur adresse: ${error.message}`, 'error'); return; }
+        addressId = data.id;
+        refresh();
+      } else {
+        addressId = shipping.address_id;
+      }
+      if (!addressId) {
+        notify('Veuillez sélectionner ou ajouter une adresse de livraison', 'error');
         return;
       }
-      addressId = data.id;
-      refresh();
+    } else {
+      addressId = finalBillingAddressId; // fallback
     }
-    
-    if (!addressId) {
-      notify('Veuillez sélectionner ou ajouter une adresse de livraison', 'error');
-      return;
-    }
+
+    const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === finalBillingAddressId);
 
     setSaving(true);
     
     try {
-      // Create initial request to get ID for photo uploads
       const partsDescription = parts.map(p => 
         `Pièce ${p.num}: ${p.description}${p.part_number ? ` (Réf: ${p.part_number})` : ''}${p.device_for ? ` - Pour: ${p.device_for}` : ''} - Qté: ${p.quantity}`
       ).join('\n');
@@ -6077,6 +6098,13 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           problem_description: partsDescription,
           urgency: 'normal',
           shipping_address_id: addressId,
+          billing_address_id: finalBillingAddressId,
+          billing_siret: billingAddr?.siret || null,
+          billing_tva: billingAddr?.tva_number || null,
+          parcels_count: deliveryMethod === 'standard' ? (shipping.parcels || 1) : 0,
+          return_shipping: deliveryMethod,
+          chorus_invoicing: billingAddr?.chorus_invoicing || false,
+          chorus_service_code: billingAddr?.chorus_invoicing ? (billingAddr?.chorus_service_code || null) : null,
           status: 'submitted',
           submitted_at: new Date().toISOString()
         })
@@ -6248,125 +6276,102 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
           + Ajouter une Pièce
         </button>
 
-        {/* Simplified Shipping Section for Parts Orders - No parcels needed */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-8">
-          <h2 className="text-xl font-bold text-[#1E3A5F] mb-4 pb-4 border-b-2 border-[#E8F2F8]">
-            📍 Adresse de Livraison
-          </h2>
-          <p className="text-sm text-gray-600 mb-4">
-            Les pièces seront expédiées à l'adresse sélectionnée.
-          </p>
-
-          {/* Existing Addresses */}
-          {addresses.filter(a => !a.is_billing).length > 0 ? (
-            <div className="space-y-2 mb-4">
-              {addresses.filter(a => !a.is_billing).map(addr => (
-                <label 
-                  key={addr.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    shipping.address_id === addr.id && !shipping.showNewForm
-                      ? 'border-[#3B7AB4] bg-[#E8F2F8]' 
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="shipping_address"
-                    checked={shipping.address_id === addr.id && !shipping.showNewForm}
-                    onChange={() => setShipping({ ...shipping, address_id: addr.id, showNewForm: false })}
-                    className="mt-1"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-[#1E3A5F]">
-                      {addr.company_name || addr.label}
-                      {addr.is_default && (
-                        <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                          Par défaut
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-sm text-gray-600">{addr.address_line1}</div>
-                    {addr.attention && <div className="text-sm text-gray-500">À l'attention de: {addr.attention}</div>}
-                    <div className="text-sm text-gray-600">{addr.postal_code} {addr.city}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 mb-4">Aucune adresse enregistrée</p>
-          )}
-
-          {/* Add New Address Toggle */}
-          <button
-            type="button"
-            onClick={() => setShipping({ ...shipping, showNewForm: !shipping.showNewForm, address_id: shipping.showNewForm ? (addresses.find(a => a.is_default && !a.is_billing)?.id || '') : '' })}
-            className="text-[#3B7AB4] font-medium hover:underline mb-4"
+        {/* ====== BILLING ADDRESS ====== */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">💳 Adresse de facturation</h2>
+          <select
+            value={showNewBillingForm ? '__new__' : billingAddressId}
+            onChange={e => {
+              if (e.target.value === '__new__') { setShowNewBillingForm(true); setBillingAddressId(''); }
+              else { setBillingAddressId(e.target.value); setShowNewBillingForm(false); }
+            }}
+            className={`w-full px-3 py-2.5 border rounded-lg text-sm ${!billingAddressId && !showNewBillingForm ? 'border-gray-300 text-gray-400' : 'border-gray-300'}`}
           >
-            {shipping.showNewForm ? '← Utiliser une adresse existante' : '+ Ajouter une nouvelle adresse'}
-          </button>
+            <option value="">Sélectionner une adresse de facturation...</option>
+            {billingAddresses.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.company_name || a.label} — {a.address_line1}, {a.postal_code} {a.city}
+                {a.siret ? ` (SIRET: ${a.siret})` : ''}
+              </option>
+            ))}
+            <option value="__new__">+ Nouvelle adresse de facturation...</option>
+          </select>
+          {selectedBillingAddr && !showNewBillingForm && (
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg border text-sm">
+              <p className="font-medium text-[#1E3A5F]">{selectedBillingAddr.company_name}</p>
+              <p className="text-gray-600">{selectedBillingAddr.address_line1}</p>
+              <p className="text-gray-600">{selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+              {selectedBillingAddr.siret && <p className="text-green-600 mt-1">SIRET: {selectedBillingAddr.siret} {selectedBillingAddr.tva_number ? ` TVA: ${selectedBillingAddr.tva_number}` : ''}</p>}
+              {selectedBillingAddr.chorus_invoicing && <p className="text-blue-600 mt-1">🏛️ Chorus Pro{selectedBillingAddr.chorus_service_code ? `: ${selectedBillingAddr.chorus_service_code}` : ''}</p>}
+            </div>
+          )}
+          {showNewBillingForm && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border space-y-3">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="md:col-span-2"><label className="block text-xs font-bold text-gray-600 mb-1">Société *</label><input type="text" value={newBillingAddress.company_name} onChange={e => setNewBillingAddress({...newBillingAddress, company_name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-600 mb-1">Contact / Attn *</label><input type="text" value={newBillingAddress.attention} onChange={e => setNewBillingAddress({...newBillingAddress, attention: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-600 mb-1">Téléphone</label><input type="tel" value={newBillingAddress.phone} onChange={e => setNewBillingAddress({...newBillingAddress, phone: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div className="md:col-span-2"><label className="block text-xs font-bold text-gray-600 mb-1">Adresse *</label><input type="text" value={newBillingAddress.address_line1} onChange={e => setNewBillingAddress({...newBillingAddress, address_line1: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-600 mb-1">Code Postal *</label><input type="text" value={newBillingAddress.postal_code} onChange={e => setNewBillingAddress({...newBillingAddress, postal_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-600 mb-1">Ville *</label><input type="text" value={newBillingAddress.city} onChange={e => setNewBillingAddress({...newBillingAddress, city: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-600 mb-1">SIRET</label><input type="text" value={newBillingAddress.siret} onChange={e => setNewBillingAddress({...newBillingAddress, siret: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div><label className="block text-xs font-bold text-gray-600 mb-1">N° TVA</label><input type="text" value={newBillingAddress.tva_number} onChange={e => setNewBillingAddress({...newBillingAddress, tva_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                <div className="md:col-span-2"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={newBillingAddress.chorus_invoicing} onChange={e => setNewBillingAddress({...newBillingAddress, chorus_invoicing: e.target.checked})} className="w-4 h-4" />Facturation via Chorus Pro</label>
+                  {newBillingAddress.chorus_invoicing && <input type="text" value={newBillingAddress.chorus_service_code || ''} onChange={e => setNewBillingAddress({...newBillingAddress, chorus_service_code: e.target.value})} placeholder="N° Service Chorus Pro" className="w-full mt-2 px-3 py-2 border rounded-lg text-sm" />}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
-          {/* New Address Form */}
-          {shipping.showNewForm && (
-            <div className="bg-gray-50 rounded-lg p-4 space-y-4 border">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Nom de l'entreprise *</label>
-                  <input
-                    type="text"
-                    value={shipping.newAddress.company_name}
-                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, company_name: e.target.value } })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">À l'attention de *</label>
-                  <input
-                    type="text"
-                    value={shipping.newAddress.attention}
-                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, attention: e.target.value } })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-              </div>
+        {/* ====== DELIVERY OPTIONS ====== */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6">
+          <h2 className="text-lg font-bold text-[#1E3A5F] mb-3 pb-3 border-b border-gray-100">🚚 Options de livraison</h2>
+          <div className="space-y-3">
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${deliveryMethod === 'standard' ? 'border-[#3B7AB4] bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+              <input type="radio" name="parts_delivery" checked={deliveryMethod === 'standard'} onChange={() => setDeliveryMethod('standard')} className="mt-1 w-4 h-4 text-[#3B7AB4]" />
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Téléphone *</label>
-                <input
-                  type="tel"
-                  value={shipping.newAddress.phone}
-                  onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, phone: e.target.value } })}
-                  placeholder="+33 1 23 45 67 89"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
+                <span className="font-medium text-[#1E3A5F]">🚚 Livraison standard par Lighthouse</span>
+                <p className="text-xs text-gray-500 mt-0.5">Nous expédions les pièces à votre adresse (frais de port inclus dans le devis)</p>
               </div>
+            </label>
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${deliveryMethod === 'own_label' ? 'border-amber-400 bg-amber-50' : 'border-gray-200 hover:border-gray-300'}`}>
+              <input type="radio" name="parts_delivery" checked={deliveryMethod === 'own_label'} onChange={() => setDeliveryMethod('own_label')} className="mt-1 w-4 h-4 text-amber-500" />
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Adresse *</label>
-                <input
-                  type="text"
-                  value={shipping.newAddress.address_line1}
-                  onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, address_line1: e.target.value } })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
+                <span className="font-medium text-[#1E3A5F]">🏷️ Mon propre transporteur</span>
+                <p className="text-xs text-gray-500 mt-0.5">Vous nous enverrez votre étiquette ou organiserez l'enlèvement</p>
               </div>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Code Postal *</label>
-                  <input
-                    type="text"
-                    value={shipping.newAddress.postal_code}
-                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, postal_code: e.target.value } })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Ville *</label>
-                  <input
-                    type="text"
-                    value={shipping.newAddress.city}
-                    onChange={e => setShipping({ ...shipping, newAddress: { ...shipping.newAddress, city: e.target.value } })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
+            </label>
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${deliveryMethod === 'pickup' ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
+              <input type="radio" name="parts_delivery" checked={deliveryMethod === 'pickup'} onChange={() => setDeliveryMethod('pickup')} className="mt-1 w-4 h-4 text-green-500" />
+              <div>
+                <span className="font-medium text-[#1E3A5F]">🏢 Je récupère sur place</span>
+                <p className="text-xs text-gray-500 mt-0.5">Vous viendrez récupérer les pièces à notre atelier à Créteil</p>
               </div>
+            </label>
+          </div>
+
+          {/* Shipping address - only for standard delivery */}
+          {deliveryMethod === 'standard' && (
+            <div className="mt-6 pt-4 border-t border-gray-100 space-y-4">
+              <div className="p-4 bg-[#E8F2F8] rounded-lg border border-[#3B7AB4]/30">
+                <label className="block text-sm font-bold text-[#1E3A5F] mb-2">📦 Nombre de colis estimé</label>
+                <select value={shipping.parcels} onChange={e => setShipping({...shipping, parcels: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-[#3B7AB4]/40 rounded-lg bg-white">
+                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n} colis</option>)}
+                </select>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={shippingSameAsBilling} onChange={e => setShippingSameAsBilling(e.target.checked)} className="w-5 h-5 rounded border-gray-300 text-[#3B7AB4]" />
+                <span className="text-sm font-medium text-gray-700">Même adresse que la facturation</span>
+              </label>
+              
+              {!shippingSameAsBilling && (
+                <div>
+                  <h3 className="text-sm font-bold text-[#1E3A5F] mb-3">📍 Adresse de livraison</h3>
+                  <ReturnAddressPicker shipping={shipping} setShipping={setShipping} addresses={addresses} profile={profile} notify={notify} refresh={refresh} />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -6401,6 +6406,13 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedEquipment, setSavedEquipment] = useState([]);
+  
+  // Billing address
+  const billingAddresses = addresses.filter(a => a.is_billing);
+  const [billingAddressId, setBillingAddressId] = useState(billingAddresses[0]?.id || '');
+  const [showNewBillingForm, setShowNewBillingForm] = useState(false);
+  const [newBillingAddress, setNewBillingAddress] = useState({ label: '', company_name: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '', phone: '', siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: '' });
+  const selectedBillingAddr = billingAddresses.find(a => a.id === billingAddressId);
 
   // Load saved equipment on mount
   useEffect(() => {
@@ -6519,6 +6531,23 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
     setSaving(true);
 
     try {
+      // Handle billing address
+      let finalBillingAddressId = billingAddressId || null;
+      if (showNewBillingForm) {
+        const ba = newBillingAddress;
+        if (!ba.company_name || !ba.attention || !ba.address_line1 || !ba.postal_code || !ba.city) {
+          notify('Veuillez remplir les champs obligatoires de l\'adresse de facturation', 'error');
+          setSaving(false);
+          return;
+        }
+        const { data: baData, error: baErr } = await supabase.from('shipping_addresses').insert({
+          ...ba, company_id: profile.company_id, is_billing: true, is_default: false
+        }).select().single();
+        if (baErr) { notify("Erreur lors de la création de l'adresse de facturation", 'error'); setSaving(false); return; }
+        finalBillingAddressId = baData.id;
+      }
+      const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === finalBillingAddressId);
+
       // Generate contract number manually (no RPC needed)
       const year = new Date().getFullYear();
       const timestamp = Date.now().toString().slice(-4);
@@ -6530,6 +6559,11 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
         .insert({
           company_id: profile.company_id,
           status: 'requested',
+          billing_address_id: finalBillingAddressId,
+          billing_siret: billingAddr?.siret || null,
+          billing_tva: billingAddr?.tva_number || null,
+          chorus_invoicing: billingAddr?.chorus_invoicing || false,
+          chorus_service_code: billingAddr?.chorus_invoicing ? (billingAddr?.chorus_service_code || null) : null,
           start_date: new Date().toISOString().split('T')[0],
           end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
         })
@@ -6728,6 +6762,37 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             />
+          </div>
+
+          {/* Billing Address */}
+          <div className="mb-6 p-4 bg-white rounded-lg border">
+            <h4 className="font-bold text-[#1E3A5F] mb-3">💳 Adresse de facturation</h4>
+            <select value={showNewBillingForm ? '__new__' : billingAddressId} onChange={e => { if (e.target.value === '__new__') { setShowNewBillingForm(true); setBillingAddressId(''); } else { setBillingAddressId(e.target.value); setShowNewBillingForm(false); } }} className="w-full px-3 py-2.5 border rounded-lg text-sm">
+              <option value="">Sélectionner une adresse de facturation...</option>
+              {billingAddresses.map(a => <option key={a.id} value={a.id}>{a.company_name || a.label} — {a.address_line1}, {a.postal_code} {a.city}{a.siret ? ` (SIRET: ${a.siret})` : ''}</option>)}
+              <option value="__new__">+ Nouvelle adresse de facturation...</option>
+            </select>
+            {selectedBillingAddr && !showNewBillingForm && (
+              <div className="mt-2 p-3 bg-gray-50 rounded-lg border text-sm">
+                <p className="font-medium">{selectedBillingAddr.company_name}</p>
+                <p className="text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+                {selectedBillingAddr.siret && <p className="text-green-600 mt-1">SIRET: {selectedBillingAddr.siret}{selectedBillingAddr.tva_number ? ` • TVA: ${selectedBillingAddr.tva_number}` : ''}</p>}
+                {selectedBillingAddr.chorus_invoicing && <p className="text-blue-600 mt-1">🏛️ Chorus Pro{selectedBillingAddr.chorus_service_code ? `: ${selectedBillingAddr.chorus_service_code}` : ''}</p>}
+              </div>
+            )}
+            {showNewBillingForm && (
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg border grid grid-cols-2 gap-2">
+                <div className="col-span-2"><input type="text" value={newBillingAddress.company_name} onChange={e => setNewBillingAddress({...newBillingAddress, company_name: e.target.value})} placeholder="Société *" className="w-full px-2 py-1.5 border rounded text-sm" /></div>
+                <input type="text" value={newBillingAddress.attention} onChange={e => setNewBillingAddress({...newBillingAddress, attention: e.target.value})} placeholder="Contact *" className="w-full px-2 py-1.5 border rounded text-sm" />
+                <input type="tel" value={newBillingAddress.phone} onChange={e => setNewBillingAddress({...newBillingAddress, phone: e.target.value})} placeholder="Téléphone" className="w-full px-2 py-1.5 border rounded text-sm" />
+                <div className="col-span-2"><input type="text" value={newBillingAddress.address_line1} onChange={e => setNewBillingAddress({...newBillingAddress, address_line1: e.target.value})} placeholder="Adresse *" className="w-full px-2 py-1.5 border rounded text-sm" /></div>
+                <input type="text" value={newBillingAddress.postal_code} onChange={e => setNewBillingAddress({...newBillingAddress, postal_code: e.target.value})} placeholder="Code postal *" className="w-full px-2 py-1.5 border rounded text-sm" />
+                <input type="text" value={newBillingAddress.city} onChange={e => setNewBillingAddress({...newBillingAddress, city: e.target.value})} placeholder="Ville *" className="w-full px-2 py-1.5 border rounded text-sm" />
+                <input type="text" value={newBillingAddress.siret} onChange={e => setNewBillingAddress({...newBillingAddress, siret: e.target.value})} placeholder="SIRET" className="w-full px-2 py-1.5 border rounded text-sm" />
+                <input type="text" value={newBillingAddress.tva_number} onChange={e => setNewBillingAddress({...newBillingAddress, tva_number: e.target.value})} placeholder="N° TVA" className="w-full px-2 py-1.5 border rounded text-sm" />
+                <div className="col-span-2"><label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={newBillingAddress.chorus_invoicing} onChange={e => setNewBillingAddress({...newBillingAddress, chorus_invoicing: e.target.checked})} className="w-4 h-4" />Facturation Chorus Pro</label></div>
+              </div>
+            )}
           </div>
 
           {/* Info Box */}
@@ -14617,6 +14682,14 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
   const [shippingAddressId, setShippingAddressId] = useState(addresses.find(a => a.is_default && !a.is_billing)?.id || '');
   const [customerNotes, setCustomerNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  
+  // Billing address state
+  const billingAddresses = addresses.filter(a => a.is_billing);
+  const [billingAddressId, setBillingAddressId] = useState(billingAddresses[0]?.id || '');
+  const [showNewBillingForm, setShowNewBillingForm] = useState(false);
+  const [newBillingAddress, setNewBillingAddress] = useState({ label: '', company_name: '', address_line1: '', city: '', postal_code: '', country: 'France', attention: '', phone: '', siret: '', tva_number: '', chorus_invoicing: false, chorus_service_code: '' });
+  const [rentalDeliveryMethod, setRentalDeliveryMethod] = useState('standard');
+  const selectedBillingAddr = billingAddresses.find(a => a.id === billingAddressId);
 
   useEffect(() => {
     loadData();
@@ -14765,10 +14838,30 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
   };
 
   const handleSubmit = async () => {
-    if (!startDate || !endDate || selectedItems.length === 0 || !shippingAddressId) {
+    if (!startDate || !endDate || selectedItems.length === 0) {
       notify('Veuillez compléter tous les champs', 'error');
       return;
     }
+    if (rentalDeliveryMethod === 'standard' && !shippingAddressId) {
+      notify('Veuillez sélectionner une adresse de livraison', 'error');
+      return;
+    }
+    
+    // Handle billing address
+    let finalBillingAddressId = billingAddressId || null;
+    if (showNewBillingForm) {
+      const ba = newBillingAddress;
+      if (!ba.company_name || !ba.attention || !ba.address_line1 || !ba.postal_code || !ba.city) {
+        notify('Veuillez remplir les champs obligatoires de l\'adresse de facturation', 'error');
+        return;
+      }
+      const { data: baData, error: baErr } = await supabase.from('shipping_addresses').insert({
+        ...ba, company_id: profile.company_id, is_billing: true, is_default: false
+      }).select().single();
+      if (baErr) { notify("Erreur lors de la création de l'adresse de facturation", 'error'); return; }
+      finalBillingAddressId = baData.id;
+    }
+    const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === finalBillingAddressId);
     
     setSaving(true);
     try {
@@ -14810,7 +14903,13 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           submitted_by: profile.id,
           start_date: startDate.toISOString().split('T')[0],
           end_date: endDate.toISOString().split('T')[0],
-          shipping_address_id: shippingAddressId,
+          shipping_address_id: rentalDeliveryMethod === 'standard' ? shippingAddressId : null,
+          billing_address_id: finalBillingAddressId,
+          billing_siret: billingAddr?.siret || null,
+          billing_tva: billingAddr?.tva_number || null,
+          return_shipping: rentalDeliveryMethod,
+          chorus_invoicing: billingAddr?.chorus_invoicing || false,
+          chorus_service_code: billingAddr?.chorus_invoicing ? (billingAddr?.chorus_service_code || null) : null,
           status: 'requested',
           quote_subtotal: subtotal,
           customer_notes: customerNotes,
@@ -15166,20 +15265,67 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
               </div>
 
               <div className="p-6 border-b">
-                <h4 className="font-bold text-gray-700 mb-4">Adresse de livraison</h4>
-                <div className="space-y-2">
-                  {addresses.filter(a => !a.is_billing).map(addr => (
-                    <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer ${shippingAddressId === addr.id ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-gray-200'}`}>
-                      <input type="radio" checked={shippingAddressId === addr.id} onChange={() => setShippingAddressId(addr.id)} />
-                      <div>
-                        <p className="font-medium">{addr.company_name || addr.label}</p>
-                        {addr.attention && <p className="text-sm text-gray-500">Attn: {addr.attention}</p>}
-                        <p className="text-sm text-gray-600">{addr.address_line1}, {addr.postal_code} {addr.city}</p>
-                        {addr.phone && <p className="text-sm text-gray-400">📞 {addr.phone}</p>}
-                      </div>
-                    </label>
-                  ))}
+                <h4 className="font-bold text-gray-700 mb-4">💳 Adresse de facturation</h4>
+                <select value={showNewBillingForm ? '__new__' : billingAddressId} onChange={e => { if (e.target.value === '__new__') { setShowNewBillingForm(true); setBillingAddressId(''); } else { setBillingAddressId(e.target.value); setShowNewBillingForm(false); } }} className="w-full px-3 py-2.5 border rounded-lg text-sm">
+                  <option value="">Sélectionner...</option>
+                  {billingAddresses.map(a => <option key={a.id} value={a.id}>{a.company_name || a.label} — {a.address_line1}, {a.postal_code} {a.city}{a.siret ? ` (SIRET: ${a.siret})` : ''}</option>)}
+                  <option value="__new__">+ Nouvelle adresse de facturation...</option>
+                </select>
+                {selectedBillingAddr && !showNewBillingForm && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-lg border text-sm">
+                    <p className="font-medium">{selectedBillingAddr.company_name}</p>
+                    <p className="text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+                    {selectedBillingAddr.siret && <p className="text-green-600 mt-1">SIRET: {selectedBillingAddr.siret}</p>}
+                  </div>
+                )}
+                {showNewBillingForm && (
+                  <div className="mt-3 p-3 bg-gray-50 rounded-lg border grid grid-cols-2 gap-2">
+                    <div className="col-span-2"><input type="text" value={newBillingAddress.company_name} onChange={e => setNewBillingAddress({...newBillingAddress, company_name: e.target.value})} placeholder="Société *" className="w-full px-2 py-1.5 border rounded text-sm" /></div>
+                    <input type="text" value={newBillingAddress.attention} onChange={e => setNewBillingAddress({...newBillingAddress, attention: e.target.value})} placeholder="Contact *" className="w-full px-2 py-1.5 border rounded text-sm" />
+                    <input type="tel" value={newBillingAddress.phone} onChange={e => setNewBillingAddress({...newBillingAddress, phone: e.target.value})} placeholder="Téléphone" className="w-full px-2 py-1.5 border rounded text-sm" />
+                    <div className="col-span-2"><input type="text" value={newBillingAddress.address_line1} onChange={e => setNewBillingAddress({...newBillingAddress, address_line1: e.target.value})} placeholder="Adresse *" className="w-full px-2 py-1.5 border rounded text-sm" /></div>
+                    <input type="text" value={newBillingAddress.postal_code} onChange={e => setNewBillingAddress({...newBillingAddress, postal_code: e.target.value})} placeholder="Code postal *" className="w-full px-2 py-1.5 border rounded text-sm" />
+                    <input type="text" value={newBillingAddress.city} onChange={e => setNewBillingAddress({...newBillingAddress, city: e.target.value})} placeholder="Ville *" className="w-full px-2 py-1.5 border rounded text-sm" />
+                    <input type="text" value={newBillingAddress.siret} onChange={e => setNewBillingAddress({...newBillingAddress, siret: e.target.value})} placeholder="SIRET" className="w-full px-2 py-1.5 border rounded text-sm" />
+                    <input type="text" value={newBillingAddress.tva_number} onChange={e => setNewBillingAddress({...newBillingAddress, tva_number: e.target.value})} placeholder="N° TVA" className="w-full px-2 py-1.5 border rounded text-sm" />
+                  </div>
+                )}
+              </div>
+
+              <div className="p-6 border-b">
+                <h4 className="font-bold text-gray-700 mb-4">🚚 Livraison</h4>
+                <div className="space-y-2 mb-4">
+                  <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer ${rentalDeliveryMethod === 'standard' ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-gray-200'}`}>
+                    <input type="radio" name="rental_delivery" checked={rentalDeliveryMethod === 'standard'} onChange={() => setRentalDeliveryMethod('standard')} className="mt-0.5" />
+                    <div><p className="font-medium">🚚 Livraison standard</p><p className="text-xs text-gray-500">Livré à votre adresse par Lighthouse</p></div>
+                  </label>
+                  <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer ${rentalDeliveryMethod === 'own_label' ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="rental_delivery" checked={rentalDeliveryMethod === 'own_label'} onChange={() => setRentalDeliveryMethod('own_label')} className="mt-0.5" />
+                    <div><p className="font-medium">🏷️ Mon propre transporteur</p><p className="text-xs text-gray-500">Vous organisez l'enlèvement</p></div>
+                  </label>
+                  <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer ${rentalDeliveryMethod === 'pickup' ? 'border-green-400 bg-green-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="rental_delivery" checked={rentalDeliveryMethod === 'pickup'} onChange={() => setRentalDeliveryMethod('pickup')} className="mt-0.5" />
+                    <div><p className="font-medium">🏢 Récupération sur place</p><p className="text-xs text-gray-500">À notre atelier à Créteil</p></div>
+                  </label>
                 </div>
+                {rentalDeliveryMethod === 'standard' && (
+                  <div className="mt-4">
+                    <h5 className="text-sm font-bold text-gray-600 mb-3">📍 Adresse de livraison</h5>
+                    <div className="space-y-2">
+                      {addresses.filter(a => !a.is_billing).map(addr => (
+                        <label key={addr.id} className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer ${shippingAddressId === addr.id ? 'border-[#8B5CF6] bg-[#8B5CF6]/5' : 'border-gray-200'}`}>
+                          <input type="radio" checked={shippingAddressId === addr.id} onChange={() => setShippingAddressId(addr.id)} />
+                          <div>
+                            <p className="font-medium">{addr.company_name || addr.label}</p>
+                            {addr.attention && <p className="text-sm text-gray-500">Attn: {addr.attention}</p>}
+                            <p className="text-sm text-gray-600">{addr.address_line1}, {addr.postal_code} {addr.city}</p>
+                            {addr.phone && <p className="text-sm text-gray-400">📞 {addr.phone}</p>}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="p-6">
