@@ -15701,6 +15701,8 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
   const [searchQuery, setSearchQuery] = useState('');
   const [rentals, setRentals] = useState([]);
   const [loadingRentals, setLoadingRentals] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(5);
+  const [historyCount, setHistoryCount] = useState(5);
 
   // Fetch rentals
   useEffect(() => {
@@ -15717,11 +15719,10 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     fetchRentals();
   }, [profile?.company_id]);
 
-  // Separate RMAs and Parts orders
-  const rmas = (requests || []).filter(r => r.request_type !== 'parts');
-  const partsOrders = (requests || []).filter(r => r.request_type === 'parts');
+  // Reset pagination when filter/search changes
+  useEffect(() => { setVisibleCount(5); setHistoryCount(5); }, [filter, searchQuery]);
 
-  // Status helpers - use global STATUS_STYLES for consistent French labels
+  // Status helpers
   const getStatusColor = (status) => {
     const s = STATUS_STYLES[status];
     if (s) return `${s.bg} ${s.text}`;
@@ -15729,7 +15730,6 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
   };
 
   const getStatusLabel = (status) => {
-    // Extra labels for contract/rental statuses not in STATUS_STYLES
     const extras = {
       active: 'Actif', expired: 'Expiré', quote: 'Devis',
       confirmed: 'Confirmée', return_pending: 'Retour en attente', returned: 'Retournée',
@@ -15742,39 +15742,75 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
   const isActive = (status) => !['completed', 'invoiced', 'cancelled', 'expired', 'returned'].includes(status);
 
   // Search filter
-  const matchesSearch = (text) => {
+  const matchesSearch = (item, type) => {
     if (!searchQuery) return true;
-    return (text || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    if (type === 'rma' || type === 'parts') {
+      return (item.request_number || '').toLowerCase().includes(q) || 
+             (item.problem_description || '').toLowerCase().includes(q) ||
+             (item.requested_service || '').toLowerCase().includes(q) ||
+             item.request_devices?.some(d => (d.serial_number || '').toLowerCase().includes(q) || (d.model_name || '').toLowerCase().includes(q));
+    }
+    if (type === 'contract') {
+      return (item.contract_number || '').toLowerCase().includes(q) ||
+             item.contract_devices?.some(d => (d.serial_number || '').toLowerCase().includes(q) || (d.model_name || '').toLowerCase().includes(q));
+    }
+    if (type === 'rental') {
+      return (item.rental_number || '').toLowerCase().includes(q) ||
+             item.rental_request_items?.some(ri => (ri.equipment_name || '').toLowerCase().includes(q));
+    }
+    return true;
   };
 
-  // Navigate to detail views
-  const openRMA = (request) => {
-    setSelectedRequest(request);
-    setPreviousPage('my-orders');
-    setPage('request-detail');
+  // Navigate
+  const openRMA = (request) => { setSelectedRequest(request); setPreviousPage('my-orders'); setPage('request-detail'); };
+  const openContract = (contract) => { setPendingContractId(contract.id); setPage('contracts'); };
+  const openRental = (rental) => { setPendingRentalId(rental.id); setPage('rentals'); };
+
+  // Build unified items list with type tags
+  const buildUnifiedList = () => {
+    const items = [];
+    const rmas = (requests || []).filter(r => r.request_type !== 'parts');
+    const partsOrders = (requests || []).filter(r => r.request_type === 'parts');
+
+    if (filter === 'all' || filter === 'rma') {
+      rmas.forEach(r => { if (matchesSearch(r, 'rma')) items.push({ ...r, _type: 'rma', _date: r.created_at }); });
+    }
+    if (filter === 'all' || filter === 'parts') {
+      partsOrders.forEach(r => { if (matchesSearch(r, 'parts')) items.push({ ...r, _type: 'parts', _date: r.created_at }); });
+    }
+    if (filter === 'all' || filter === 'contracts') {
+      (contracts || []).forEach(c => { if (matchesSearch(c, 'contract')) items.push({ ...c, _type: 'contract', _date: c.created_at }); });
+    }
+    if (filter === 'all' || filter === 'rentals') {
+      rentals.forEach(r => { if (matchesSearch(r, 'rental')) items.push({ ...r, _type: 'rental', _date: r.created_at }); });
+    }
+
+    // Sort by date newest first
+    items.sort((a, b) => new Date(b._date || 0) - new Date(a._date || 0));
+    return items;
   };
 
-  const openContract = (contract) => {
-    setPendingContractId(contract.id);
-    setPage('contracts');
-  };
+  const allItems = buildUnifiedList();
+  const activeItems = allItems.filter(i => isActive(i.status));
+  const completedItems = allItems.filter(i => !isActive(i.status));
 
-  const openRental = (rental) => {
-    setPendingRentalId(rental.id);
-    setPage('rentals');
-  };
-
-  // Filter chips
+  // Filter chip counts
+  const rmaCount = (requests || []).filter(r => r.request_type !== 'parts').length;
+  const partsCount = (requests || []).filter(r => r.request_type === 'parts').length;
+  const contractCount = (contracts || []).length;
+  const rentalCount = rentals.length;
   const filters = [
-    { id: 'all', label: 'Tout', icon: '📊', count: rmas.length + partsOrders.length + (contracts || []).length + rentals.length },
-    { id: 'rma', label: 'Étalonnage / Réparation', icon: '🔧', count: rmas.length },
-    { id: 'parts', label: 'Commandes de Pièces', icon: '📦', count: partsOrders.length },
-    { id: 'contracts', label: 'Contrats', icon: '📋', count: (contracts || []).length },
-    { id: 'rentals', label: 'Locations', icon: '📅', count: rentals.length },
+    { id: 'all', label: 'Tout', icon: '📊', count: rmaCount + partsCount + contractCount + rentalCount },
+    { id: 'rma', label: 'Étalonnage / Réparation', icon: '🔧', count: rmaCount },
+    { id: 'parts', label: 'Commandes de Pièces', icon: '📦', count: partsCount },
+    { id: 'contracts', label: 'Contrats', icon: '📋', count: contractCount },
+    { id: 'rentals', label: 'Locations', icon: '📅', count: rentalCount },
   ];
 
-  // Render an order card
-  const OrderCard = ({ item, type, onClick }) => {
+  // OrderCard
+  const OrderCard = ({ item }) => {
+    const type = item._type;
     const typeConfig = {
       rma: { badge: '🔧 Étalonnage/Réparation', color: 'border-l-blue-500', bg: 'bg-blue-50' },
       parts: { badge: '📦 Commande de Pièces', color: 'border-l-amber-500', bg: 'bg-amber-50' },
@@ -15783,18 +15819,11 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     };
     const cfg = typeConfig[type];
 
-    let ref = '';
-    let date = '';
-    let status = '';
-    let summary = '';
-    let serials = [];
-    let active = false;
+    let ref = '', date = '', status = '', summary = '', serials = [], active = false;
 
     if (type === 'rma' || type === 'parts') {
       ref = item.request_number || 'En attente de numéro';
-      date = item.created_at;
-      status = item.status;
-      active = isActive(item.status);
+      date = item.created_at; status = item.status; active = isActive(item.status);
       if (type === 'rma') {
         const devices = item.request_devices || [];
         serials = devices.map(d => (d.model_name ? d.model_name + ' — ' : '') + (d.serial_number || '')).filter(s => s.length > 0);
@@ -15804,16 +15833,14 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
       }
     } else if (type === 'contract') {
       ref = item.contract_number || 'Contrat en cours de création';
-      date = item.created_at;
-      status = item.status;
+      date = item.created_at; status = item.status;
       active = !['expired', 'cancelled', 'completed'].includes(item.status);
       const devices = item.contract_devices || [];
       serials = devices.map(d => (d.model_name ? d.model_name + ' — ' : '') + (d.serial_number || '')).filter(s => s.length > 0);
       summary = `${devices.length} appareil${devices.length > 1 ? 's' : ''} — ${item.contract_type === 'token' ? 'Jetons' : 'Tarification'}`;
     } else if (type === 'rental') {
       ref = item.rental_number || 'Location en cours de création';
-      date = item.created_at;
-      status = item.status;
+      date = item.created_at; status = item.status;
       active = !['returned', 'cancelled', 'completed'].includes(item.status);
       const items2 = item.rental_request_items || [];
       serials = items2.map(ri => ri.equipment_name || ri.serial_number).filter(Boolean);
@@ -15822,12 +15849,10 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
 
     const displaySerials = serials.slice(0, 2);
     const extraCount = serials.length - 2;
+    const onClick = type === 'rma' || type === 'parts' ? () => openRMA(item) : type === 'contract' ? () => openContract(item) : () => openRental(item);
 
     return (
-      <button
-        onClick={onClick}
-        className={`w-full bg-white rounded-xl shadow-sm border-l-4 ${cfg.color} p-5 hover:shadow-md transition-all text-left group`}
-      >
+      <button onClick={onClick} className={`w-full bg-white rounded-xl shadow-sm border-l-4 ${cfg.color} p-5 hover:shadow-md transition-all text-left group`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-2">
@@ -15844,13 +15869,9 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
             {displaySerials.length > 0 && (
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                 {displaySerials.map((s, i) => (
-                  <span key={i} className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                    {s}
-                  </span>
+                  <span key={i} className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{s}</span>
                 ))}
-                {extraCount > 0 && (
-                  <span className="text-xs text-gray-400 font-medium">+{extraCount} autre{extraCount > 1 ? 's' : ''}</span>
-                )}
+                {extraCount > 0 && <span className="text-xs text-gray-400 font-medium">+{extraCount} autre{extraCount > 1 ? 's' : ''}</span>}
               </div>
             )}
           </div>
@@ -15863,97 +15884,13 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
     );
   };
 
-  const [showLimits, setShowLimits] = useState({ rma: 10, parts: 10, contract: 10, rental: 10 });
-  const [historyLimits, setHistoryLimits] = useState({ rma: 10, parts: 10, contract: 10, rental: 10 });
+  const visibleActive = activeItems.slice(0, visibleCount);
+  const hasMoreActive = activeItems.length > visibleCount;
+  const remainingActive = activeItems.length - visibleCount;
 
-  // Render a section
-  const renderSection = (title, icon, items, type) => {
-    if (items.length === 0) return null;
-    const filteredItems = items.filter(item => {
-      if (type === 'rma' || type === 'parts') {
-        return matchesSearch(item.request_number) || matchesSearch(item.problem_description) || 
-               matchesSearch(item.requested_service) || matchesSearch(item.serial_number) ||
-               item.request_devices?.some(d => matchesSearch(d.serial_number) || matchesSearch(d.model_name));
-      }
-      if (type === 'contract') {
-        return matchesSearch(item.contract_number) || matchesSearch(item.contract_type) ||
-               item.contract_devices?.some(d => matchesSearch(d.serial_number) || matchesSearch(d.model_name));
-      }
-      if (type === 'rental') {
-        return matchesSearch(item.rental_number) || 
-               item.rental_request_items?.some(ri => matchesSearch(ri.equipment_name));
-      }
-      return true;
-    });
-    if (filteredItems.length === 0) return null;
-
-    const activeItems = filteredItems.filter(i => isActive(i.status));
-    const completedItems = filteredItems.filter(i => !isActive(i.status));
-    const activeLimit = showLimits[type] || 10;
-    const historyLimit = historyLimits[type] || 10;
-    const visibleActive = activeItems.slice(0, activeLimit);
-    const visibleCompleted = completedItems.slice(0, historyLimit);
-    const hasMoreActive = activeItems.length > activeLimit;
-    const hasMoreCompleted = completedItems.length > historyLimit;
-
-    return (
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-2xl">{icon}</span>
-          <h2 className="text-lg font-bold text-[#1E3A5F]">{title}</h2>
-          <span className="text-sm text-gray-400">({filteredItems.length})</span>
-        </div>
-        
-        {activeItems.length > 0 && (
-          <div className="space-y-3 mb-4">
-            {visibleActive.map(item => (
-              <OrderCard 
-                key={item.id} 
-                item={item} 
-                type={type} 
-                onClick={() => type === 'rma' || type === 'parts' ? openRMA(item) : type === 'contract' ? openContract(item) : openRental(item)} 
-              />
-            ))}
-            {hasMoreActive && (
-              <button
-                onClick={() => setShowLimits(prev => ({ ...prev, [type]: activeLimit + 10 }))}
-                className="w-full py-3 text-sm font-medium text-[#3B7AB4] bg-white border border-gray-200 rounded-xl hover:bg-[#E8F2F8] transition-colors"
-              >
-                Voir plus ({activeItems.length - activeLimit} restant{activeItems.length - activeLimit > 1 ? 's' : ''})
-              </button>
-            )}
-          </div>
-        )}
-
-        {completedItems.length > 0 && (
-          <details className="group">
-            <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 mb-3 flex items-center gap-2">
-              <span className="group-open:rotate-90 transition-transform">▶</span>
-              Historique ({completedItems.length})
-            </summary>
-            <div className="space-y-3 opacity-75">
-              {visibleCompleted.map(item => (
-                <OrderCard 
-                  key={item.id} 
-                  item={item} 
-                  type={type} 
-                  onClick={() => type === 'rma' || type === 'parts' ? openRMA(item) : type === 'contract' ? openContract(item) : openRental(item)} 
-                />
-              ))}
-              {hasMoreCompleted && (
-                <button
-                  onClick={() => setHistoryLimits(prev => ({ ...prev, [type]: historyLimit + 10 }))}
-                  className="w-full py-3 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  Voir plus ({completedItems.length - historyLimit} restant{completedItems.length - historyLimit > 1 ? 's' : ''})
-                </button>
-              )}
-            </div>
-          </details>
-        )}
-      </div>
-    );
-  };
+  const visibleCompleted = completedItems.slice(0, historyCount);
+  const hasMoreCompleted = completedItems.length > historyCount;
+  const remainingCompleted = completedItems.length - historyCount;
 
   return (
     <div>
@@ -16008,25 +15945,60 @@ function MyOrdersPage({ profile, requests, contracts, t, lang, setPage, setSelec
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#3B7AB4] mx-auto mb-4" />
           <p className="text-gray-400">{lang === 'en' ? 'Loading...' : 'Chargement...'}</p>
         </div>
+      ) : allItems.length === 0 ? (
+        <div className="text-center py-16">
+          <div className="text-6xl mb-4">📋</div>
+          <h3 className="text-xl font-bold text-gray-400 mb-2">{searchQuery ? 'Aucun résultat' : (lang === 'en' ? 'No orders yet' : 'Aucune commande')}</h3>
+          <p className="text-gray-400 mb-6">{searchQuery ? 'Essayez avec d\'autres termes de recherche' : (lang === 'en' ? 'Submit your first request to get started' : 'Soumettez votre première demande pour commencer')}</p>
+          {!searchQuery && perms?.canRequest && (
+            <button onClick={() => setPage('new-request')} className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008C44]">
+              + {lang === 'en' ? 'New Request' : 'Nouvelle demande'}
+            </button>
+          )}
+        </div>
       ) : (
         <div>
-          {(filter === 'all' || filter === 'rma') && renderSection('Étalonnage / Réparation', '🔧', rmas, 'rma')}
-          {(filter === 'all' || filter === 'parts') && renderSection('Commandes de Pièces', '📦', partsOrders, 'parts')}
-          {(filter === 'all' || filter === 'contracts') && renderSection('Contrats', '📋', contracts || [], 'contract')}
-          {(filter === 'all' || filter === 'rentals') && renderSection('Locations', '📅', rentals, 'rental')}
-          
-          {/* Empty state */}
-          {rmas.length === 0 && partsOrders.length === 0 && (contracts || []).length === 0 && rentals.length === 0 && (
-            <div className="text-center py-16">
-              <div className="text-6xl mb-4">📋</div>
-              <h3 className="text-xl font-bold text-gray-400 mb-2">{lang === 'en' ? 'No orders yet' : 'Aucune commande'}</h3>
-              <p className="text-gray-400 mb-6">{lang === 'en' ? 'Submit your first request to get started' : 'Soumettez votre première demande pour commencer'}</p>
-              {perms?.canRequest && (
-                <button onClick={() => setPage('new-request')} className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008C44]">
-                  + {lang === 'en' ? 'New Request' : 'Nouvelle demande'}
-                </button>
-              )}
+          {/* Active orders - sorted by date */}
+          {activeItems.length > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-lg">📌</span>
+                <h2 className="text-lg font-bold text-[#1E3A5F]">En cours</h2>
+                <span className="text-sm text-gray-400">({activeItems.length})</span>
+              </div>
+              <div className="space-y-3">
+                {visibleActive.map(item => <OrderCard key={`${item._type}-${item.id}`} item={item} />)}
+                {hasMoreActive && (
+                  <button
+                    onClick={() => setVisibleCount(prev => prev + 5)}
+                    className="w-full py-3 text-sm font-medium text-[#3B7AB4] bg-white border border-gray-200 rounded-xl hover:bg-[#E8F2F8] transition-colors"
+                  >
+                    Afficher 5 de plus ({remainingActive} restant{remainingActive > 1 ? 's' : ''})
+                  </button>
+                )}
+              </div>
             </div>
+          )}
+
+          {/* Completed / History */}
+          {completedItems.length > 0 && (
+            <details className="group mb-8">
+              <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 mb-3 flex items-center gap-2 font-medium">
+                <span className="group-open:rotate-90 transition-transform">▶</span>
+                Historique ({completedItems.length})
+              </summary>
+              <div className="space-y-3 opacity-75">
+                {visibleCompleted.map(item => <OrderCard key={`${item._type}-${item.id}`} item={item} />)}
+                {hasMoreCompleted && (
+                  <button
+                    onClick={() => setHistoryCount(prev => prev + 5)}
+                    className="w-full py-3 text-sm font-medium text-gray-500 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                  >
+                    Afficher 5 de plus ({remainingCompleted} restant{remainingCompleted > 1 ? 's' : ''})
+                  </button>
+                )}
+              </div>
+            </details>
           )}
         </div>
       )}
