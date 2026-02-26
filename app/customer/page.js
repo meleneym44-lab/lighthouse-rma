@@ -5120,6 +5120,16 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
     }
   }, [isReturnNonMetro]);
 
+  // Detect if ANY device has a per-device return address → force standard shipping
+  const hasPerDeviceAddress = devices.some(d => d.shipping_address_id);
+  
+  // Auto-switch to standard if a per-device address is set (own_label/pickup don't make sense)
+  useEffect(() => {
+    if (hasPerDeviceAddress && shipping.return_shipping !== 'standard') {
+      setShipping(prev => ({ ...prev, return_shipping: 'standard' }));
+    }
+  }, [hasPerDeviceAddress]);
+
   // Load saved equipment on mount
   useEffect(() => {
     const loadEquipment = async () => {
@@ -5460,6 +5470,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               loadFromSaved={loadFromSaved}
               addresses={addresses}
               defaultAddressId={shipping.address_id}
+              returnShipping={shipping.return_shipping || 'standard'}
             />
           ))}
         </div>
@@ -5591,23 +5602,33 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
               </div>
             </label>
 
-            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-              shipping.return_shipping === 'own_label' ? 'border-amber-400 bg-amber-50' : 'border-gray-200 hover:border-gray-300'
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 transition-all ${
+              hasPerDeviceAddress ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed' :
+              shipping.return_shipping === 'own_label' ? 'border-amber-400 bg-amber-50 cursor-pointer' : 'border-gray-200 hover:border-gray-300 cursor-pointer'
             }`}>
-              <input type="radio" name="return_shipping_main" checked={shipping.return_shipping === 'own_label'} onChange={() => setShipping({ ...shipping, return_shipping: 'own_label' })} className="mt-1 w-4 h-4 text-amber-500" />
+              <input type="radio" name="return_shipping_main" disabled={hasPerDeviceAddress} checked={shipping.return_shipping === 'own_label'} onChange={() => setShipping({ ...shipping, return_shipping: 'own_label' })} className="mt-1 w-4 h-4 text-amber-500" />
               <div>
-                <span className="font-medium text-[#1E3A5F]">🏷️ Je fournis ma propre étiquette de retour</span>
-                <p className="text-xs text-gray-500 mt-0.5">Vous nous enverrez votre étiquette de transport pour le retour</p>
+                <span className={`font-medium ${hasPerDeviceAddress ? 'text-gray-400' : 'text-[#1E3A5F]'}`}>🏷️ Je fournis ma propre étiquette de retour</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {hasPerDeviceAddress
+                    ? 'Non disponible — vous avez défini une adresse de retour spécifique pour un appareil'
+                    : 'Vous nous enverrez votre étiquette de transport pour le retour'}
+                </p>
               </div>
             </label>
 
-            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-              shipping.return_shipping === 'pickup' ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-gray-300'
+            <label className={`flex items-start gap-3 p-3 rounded-lg border-2 transition-all ${
+              hasPerDeviceAddress ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed' :
+              shipping.return_shipping === 'pickup' ? 'border-green-400 bg-green-50 cursor-pointer' : 'border-gray-200 hover:border-gray-300 cursor-pointer'
             }`}>
-              <input type="radio" name="return_shipping_main" checked={shipping.return_shipping === 'pickup'} onChange={() => setShipping({ ...shipping, return_shipping: 'pickup' })} className="mt-1 w-4 h-4 text-green-500" />
+              <input type="radio" name="return_shipping_main" disabled={hasPerDeviceAddress} checked={shipping.return_shipping === 'pickup'} onChange={() => setShipping({ ...shipping, return_shipping: 'pickup' })} className="mt-1 w-4 h-4 text-green-500" />
               <div>
-                <span className="font-medium text-[#1E3A5F]">🏢 Je récupère les appareils moi-même</span>
-                <p className="text-xs text-gray-500 mt-0.5">Vous viendrez récupérer vos appareils à notre atelier à Créteil</p>
+                <span className={`font-medium ${hasPerDeviceAddress ? 'text-gray-400' : 'text-[#1E3A5F]'}`}>🏢 Je récupère les appareils moi-même</span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {hasPerDeviceAddress
+                    ? 'Non disponible — vous avez défini une adresse de retour spécifique pour un appareil'
+                    : 'Vous viendrez récupérer vos appareils à notre atelier à Créteil'}
+                </p>
               </div>
             </label>
           </div>
@@ -6883,9 +6904,10 @@ function ReturnAddressPicker({ shipping, setShipping, addresses, profile, notify
 // ============================================
 // DEVICE CARD COMPONENT (Updated)
 // ============================================
-function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId }) {
+function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessory, removeDevice, canRemove, savedEquipment, loadFromSaved, addresses, defaultAddressId, returnShipping = 'standard' }) {
   const [charCount, setCharCount] = useState(device.notes.length);
   const [showDifferentAddress, setShowDifferentAddress] = useState(!!device.shipping_address_id);
+  const isStandardReturn = returnShipping === 'standard' || !returnShipping;
   const maxChars = 500;
 
   const handleNotesChange = (e) => {
@@ -7191,7 +7213,8 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
           </div>
         )}
 
-        {/* Per-Device Shipping Address */}
+        {/* Per-Device Shipping Address — only for standard Lighthouse return */}
+        {isStandardReturn && (
         <div className="md:col-span-2 mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
           <label className="flex items-center gap-3 cursor-pointer mb-2">
             <input
@@ -7269,6 +7292,7 @@ function DeviceCard({ device, updateDevice, updateDeviceMultiple, toggleAccessor
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
