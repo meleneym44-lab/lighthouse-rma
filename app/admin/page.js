@@ -3959,7 +3959,7 @@ export default function AdminPortal() {
 
   const loadData = useCallback(async (refreshSelectedRMAId = null) => {
     const { data: reqs } = await supabase.from('service_requests')
-      .select('*, companies(*), request_devices(*)')
+      .select('*, companies(*), request_devices(*), submitter:profiles!submitted_by(full_name, email, phone)')
       .order('created_at', { ascending: false });
     if (reqs) setRequests(reqs);
 
@@ -3989,7 +3989,7 @@ export default function AdminPortal() {
     
     // Load rental requests
     const { data: rentalsData, error: rentalsError } = await supabase.from('rental_requests')
-      .select('*, companies(*), rental_request_items(*), shipping_address:shipping_addresses!shipping_address_id(*)')
+      .select('*, companies(*), rental_request_items(*), shipping_address:shipping_addresses!shipping_address_id(*), submitter:profiles!submitted_by(full_name, email, phone)')
       .order('created_at', { ascending: false });
     console.log('Main loadData - rental_requests:', { rentalsData, rentalsError });
     if (rentalsData) setRentalRequests(rentalsData);
@@ -9280,15 +9280,15 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide">{lang === 'en' ? 'Contact' : 'Contact'}</p>
-            <p className="font-medium text-gray-700">{company.contact_name || '—'}</p>
+            <p className="font-medium text-gray-700">{rma.submitter?.full_name || company.contact_name || '—'}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide">{t('phone')}</p>
-            <p className="font-medium text-gray-700">{company.phone || '—'}</p>
+            <p className="font-medium text-gray-700">{rma.submitter?.phone || company.phone || '—'}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wide">{t('email')}</p>
-            <p className="font-medium text-gray-700 truncate">{company.email || '—'}</p>
+            <p className="font-medium text-gray-700 truncate">{rma.submitter?.email || company.email || '—'}</p>
           </div>
         </div>
         <div className="mt-4 pt-4 border-t">
@@ -12023,7 +12023,7 @@ const STATUS_STYLES = {
         onClose={async () => { 
           setShowShipping(false); 
           // Refetch order to get updated shipping data
-          const { data: refreshed } = await supabase.from('service_requests').select('*, companies(*), request_devices(*)').eq('id', order.id).single();
+          const { data: refreshed } = await supabase.from('service_requests').select('*, companies(*), request_devices(*), submitter:profiles!submitted_by(full_name, email, phone)').eq('id', order.id).single();
           if (refreshed) setOrder(refreshed);
           reload(); 
         }}
@@ -12614,15 +12614,15 @@ const STATUS_STYLES = {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide">{lang === 'en' ? 'Contact' : 'Contact'}</p>
-                  <p className="font-medium text-gray-700">{company.contact_name || '—'}</p>
+                  <p className="font-medium text-gray-700">{order.submitter?.full_name || company.contact_name || '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide">{t('phone')}</p>
-                  <p className="font-medium text-gray-700">{company.phone || '—'}</p>
+                  <p className="font-medium text-gray-700">{order.submitter?.phone || company.phone || '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide">{t('email')}</p>
-                  <p className="font-medium text-gray-700 truncate">{company.email || '—'}</p>
+                  <p className="font-medium text-gray-700 truncate">{order.submitter?.email || company.email || '—'}</p>
                 </div>
                 <div className="pt-2 border-t">
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('address')}</p>
@@ -34642,15 +34642,15 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Contact</p>
-                  <p className="font-medium text-gray-700">{company.contact_name || '—'}</p>
+                  <p className="font-medium text-gray-700">{rental.submitter?.full_name || company.contact_name || '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</p>
-                  <p className="font-medium text-gray-700">{company.phone || '—'}</p>
+                  <p className="font-medium text-gray-700">{rental.submitter?.phone || company.phone || '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Email</p>
-                  <p className="font-medium text-gray-700 truncate">{company.email || '—'}</p>
+                  <p className="font-medium text-gray-700 truncate">{rental.submitter?.email || company.email || '—'}</p>
                 </div>
                 {address.address_line1 && (
                   <div className="pt-2 border-t">
