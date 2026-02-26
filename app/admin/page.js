@@ -818,22 +818,34 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const company = order.companies || {};
+  const biz = quoteData.businessSettings || {};
+  const qs = biz.quote_settings || {};
   
   const parts = quoteData.parts || [];
   const shipping = quoteData.shipping || { parcels: 1, unitPrice: 45, total: 45 };
   const grandTotal = quoteData.grandTotal || 0;
   const quoteRef = quoteData.quoteRef || order.request_number;
-  const createdBy = quoteData.createdBy || 'Lighthouse France';
+  const billingAddr = quoteData.billingAddress || null;
+  const shippingAddr = quoteData.shippingAddress || null;
+  const submitterName = quoteData.submitterName || null;
+  const returnShipping = quoteData.returnShipping || 'standard';
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
-  
   const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
-  let y = margin;
+  let y = margin - 8;
   
   let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
+
+  // French date formatter: "25 février 2026"
+  const formatDateFR = (d) => {
+    const date = new Date(d);
+    const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+  };
   
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -841,214 +853,357 @@ const generatePartsQuotePDF = async (order, quoteData) => {
     pdf.setTextColor(...white);
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(180, 180, 180);
     pdf.setFontSize(8);
-    pdf.text('16, rue Paul Séjourné - 94000 CRÉTEIL - Tél. 01 43 77 28 07', pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+  
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; return true; }
+    return false;
   };
 
-  // Header with logo
+  // ===== HEADER =====
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y, 80, 20);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
-      pdf.setFontSize(16);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...darkBlue);
+      pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
       pdf.text('LIGHTHOUSE', margin, y + 8);
     }
   } else {
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
+    pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
-  // Title
-  pdf.setFontSize(14);
+  pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text('DEVIS PIECES', pageWidth - margin, y + 3, { align: 'right' });
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
   
-  // Document number (DEV-0226-001)
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('N° ' + (quoteRef || '—'), pageWidth - margin, y + 9, { align: 'right' });
-  
-  // PO reference if exists
-  if (order.request_number) {
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...gray);
-    pdf.text('Réf: ' + order.request_number, pageWidth - margin, y + 14, { align: 'right' });
-  }
-  
-  y += 18;
-  
-  // Amber line
-  pdf.setFillColor(...navy);
-  pdf.rect(0, y, pageWidth, 1.5, 'F');
-  y += 6;
-  
-  // Date bar
-  pdf.setFillColor(249, 250, 251);
-  pdf.rect(margin, y, contentWidth, 8, 'F');
-  pdf.setFontSize(8);
-  pdf.setTextColor(...gray);
-  const quoteDate = quoteData.createdAt ? new Date(quoteData.createdAt).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-  pdf.text(`Date: ${quoteDate}`, margin + 3, y + 5);
-  pdf.text('Validité: 30 jours', pageWidth - margin - 3, y + 5, { align: 'right' });
-  y += 12;
-  
-  // Client info
-  pdf.setFontSize(7);
-  pdf.setTextColor(...lightGray);
-  pdf.text('CLIENT', margin, y);
-  y += 4;
+  // Document number
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(company.name || 'Client', margin, y);
-  y += 5;
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  if (company.billing_address) {
-    pdf.text(company.billing_address, margin, y);
-    y += 4;
-  }
-  if (company.billing_postal_code || company.billing_city) {
-    pdf.text(`${company.billing_postal_code || ''} ${company.billing_city || ''}`.trim(), margin, y);
-    y += 4;
-  }
-  y += 6;
+  pdf.text('N° ' + (quoteRef || '—'), pageWidth - margin, y + 11, { align: 'right' });
   
-  // Parts table header
+  // PO reference
+  if (order.request_number && order.request_number !== quoteRef) {
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    pdf.text('Réf: ' + order.request_number, pageWidth - margin, y + 16, { align: 'right' });
+  }
+  
+  y += 20;
+  pdf.setDrawColor(...navy);
+  pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 3;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFontSize(7);
+  pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 4);
+  pdf.text('VALIDITÉ', margin + 60, y + 4);
+  pdf.text('CONDITIONS', margin + 115, y + 4);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Pieces Commandees', margin, y);
-  y += 5;
-  
+  const qDate = formatDateFR(quoteData.createdAt ? new Date(quoteData.createdAt) : new Date());
+  pdf.text(qDate, margin + 5, y + 10);
+  pdf.text('30 jours', margin + 60, y + 10);
+  pdf.text('À réception de facture', margin + 115, y + 10);
+  y += 18;
+
+  // ===== ADDRESS BOXES: LIVRER À (left) | FACTURER À (right) =====
+  const boxGap = 6;
+  const leftBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxX = margin + leftBoxW + boxGap;
+  const boxPad = 4;
+
+  const shipLines = [];
+  if (returnShipping === 'pickup') {
+    shipLines.push({ text: 'Enlèvement client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client récupérera la commande', bold: false, size: 8.5 });
+    shipLines.push({ text: 'dans nos locaux.', bold: false, size: 8.5 });
+  } else if (returnShipping === 'own_label') {
+    shipLines.push({ text: 'Expédition client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client fournira son propre', bold: false, size: 8.5 });
+    shipLines.push({ text: 'transporteur.', bold: false, size: 8.5 });
+  } else {
+    const shipName = shippingAddr?.company_name || company.name || 'Client';
+    shipLines.push({ text: shipName, bold: true, size: 11 });
+    const shipAttn = shippingAddr?.attention || submitterName || company.contact_name || null;
+    if (shipAttn) shipLines.push({ text: 'Attn: ' + shipAttn, bold: false, size: 8.5 });
+    if (shippingAddr) {
+      if (shippingAddr.address_line1) shipLines.push({ text: shippingAddr.address_line1, bold: false, size: 8.5 });
+      const shipCity = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
+      const shipCityCountry = [shipCity, shippingAddr.country].filter(Boolean).join(', ');
+      if (shipCityCountry) shipLines.push({ text: shipCityCountry, bold: false, size: 8.5 });
+      if (shippingAddr.phone) shipLines.push({ text: 'Tél: ' + shippingAddr.phone, bold: false, size: 8.5 });
+    } else {
+      if (company.billing_address || company.address) shipLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
+      const fc = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+      const fcc = [fc, company.billing_country || company.country].filter(Boolean).join(', ');
+      if (fcc) shipLines.push({ text: fcc, bold: false, size: 8.5 });
+      if (company.phone) shipLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
+    }
+  }
+
+  const billLines = [];
+  const billName = billingAddr?.company_name || company.name || 'Client';
+  billLines.push({ text: billName, bold: true, size: 11 });
+  if (billingAddr) {
+    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
+    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
+    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
+    const billCityCountry = [billCity, billingAddr.country].filter(Boolean).join(', ');
+    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
+    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
+  } else {
+    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
+    const fbc = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+    const fbcc = [fbc, company.billing_country || company.country].filter(Boolean).join(', ');
+    if (fbcc) billLines.push({ text: fbcc, bold: false, size: 8.5 });
+    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
+  }
+
+  // Calculate box heights
+  const lineH = 4;
+  const bigLineH = 5.5;
+  const labelH = 4;
+  const getLineH = (line) => line.bold && line.size > 9 ? bigLineH : lineH;
+  const shipContentH = shipLines.reduce((h, l) => h + getLineH(l), 0);
+  const billContentH = billLines.reduce((h, l) => h + getLineH(l), 0);
+  const shipBoxH = labelH + boxPad + shipContentH + boxPad;
+  const billBoxH = labelH + boxPad + billContentH + boxPad;
+  const boxH = Math.max(shipBoxH, billBoxH);
+
+  pdf.setDrawColor(0, 51, 102);
+  pdf.setLineWidth(0.4);
+  pdf.rect(margin, y, leftBoxW, boxH);
+  pdf.rect(rightBoxX, y, rightBoxW, boxH);
+
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(0, 51, 102);
+  pdf.text(returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'TRANSPORT CLIENT' : 'LIVRER À', margin + boxPad, y + 4);
+  pdf.text('FACTURER À', rightBoxX + boxPad, y + 4);
+
+  let lineY = y + labelH + boxPad + 2;
+  for (const line of shipLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, margin + boxPad, lineY, { maxWidth: leftBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  lineY = y + labelH + boxPad + 2;
+  for (const line of billLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, rightBoxX + boxPad, lineY, { maxWidth: rightBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  y += boxH + 5;
+
+  // ===== PRICING TABLE =====
+  const rowH = 7;
   const colQty = margin;
   const colRef = margin + 12;
   const colDesc = margin + 45;
   const colUnit = pageWidth - margin - 35;
   const colTotal = pageWidth - margin - 3;
-  
-  // Table header
-  pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 7, 'F');
-  pdf.setFontSize(7);
+
+  const drawTableHeader = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(margin, y, contentWidth, 9, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...white);
+    pdf.text('Qté', colQty + 3, y + 6);
+    pdf.text('Référence', colRef, y + 6);
+    pdf.text('Désignation', colDesc, y + 6);
+    pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+    y += 9;
+  };
+
+  const checkTablePageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; drawTableHeader(); return true; }
+    return false;
+  };
+
+  pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...white);
-  pdf.text('Qté', colQty + 2, y + 5);
-  pdf.text('Référence', colRef, y + 5);
-  pdf.text('Désignation', colDesc, y + 5);
-  pdf.text('P.U. HT', colUnit, y + 5, { align: 'right' });
-  pdf.text('Total', colTotal, y + 5, { align: 'right' });
-  y += 8;
-  
-  // Table rows
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8);
-  
+  pdf.setTextColor(...darkBlue);
+  pdf.text('Récapitulatif des Prix', margin, y);
+  y += 7;
+
+  drawTableHeader();
+
   parts.forEach((part, idx) => {
-    const rowHeight = 7;
-    if (idx % 2 === 0) {
-      pdf.setFillColor(255, 255, 255);
-    } else {
-      pdf.setFillColor(249, 250, 251);
-    }
-    pdf.rect(margin, y, contentWidth, rowHeight, 'F');
-    
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...darkBlue);
-    pdf.text(String(part.quantity || 1), colQty + 4, y + 5);
-    pdf.setFontSize(7);
-    pdf.text(part.partNumber || '-', colRef, y + 5);
+    pdf.text(String(part.quantity || 1), colQty + 3, y + 5);
     pdf.setFontSize(8);
-    
+    pdf.text(part.partNumber || '-', colRef, y + 5);
+    pdf.setFontSize(9);
     let desc = part.description || '';
-    if (desc.length > 40) desc = desc.substring(0, 37) + '...';
+    if (desc.length > 42) desc = desc.substring(0, 39) + '...';
     pdf.text(desc, colDesc, y + 5);
-    
     pdf.text((part.unitPrice || 0).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
     pdf.setFont('helvetica', 'bold');
     pdf.text((part.lineTotal || 0).toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-    pdf.setFont('helvetica', 'normal');
-    
-    y += rowHeight;
+    y += rowH;
   });
-  
+
   // Shipping row
-  if (shipping.total > 0) {
-    pdf.setFillColor(239, 246, 255);
-    pdf.rect(margin, y, contentWidth, 7, 'F');
-    pdf.setTextColor(30, 64, 175);
-    pdf.text(String(shipping.parcels || 1), colQty + 4, y + 5);
-    pdf.setFontSize(7);
-    pdf.text('PORT', colRef, y + 5);
+  const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
+  if (!isClientReturn && shipping.total > 0) {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...darkBlue);
+    pdf.text(String(shipping.parcels || 1), colQty + 3, y + 5);
     pdf.setFontSize(8);
+    pdf.text('PORT', colRef, y + 5);
+    pdf.setFontSize(9);
     pdf.text(`Frais de port (${shipping.parcels || 1} colis)`, colDesc, y + 5);
     pdf.text((shipping.unitPrice || 45).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
     pdf.setFont('helvetica', 'bold');
     pdf.text((shipping.total || 0).toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
-    y += 7;
+    y += rowH;
   }
-  
+
+  // Discount row
+  const discountAmount = parseFloat(quoteData.discountAmount) || 0;
+  if (discountAmount > 0) {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(255, 251, 235);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 30, 30);
+    pdf.text('1', colQty + 3, y + 5);
+    pdf.text('', colRef, y + 5);
+    pdf.text(quoteData.discountType === 'percent' ? 'Remise (' + quoteData.discount + '%)' : 'Remise', colDesc, y + 5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('-' + discountAmount.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+    y += rowH;
+  }
+
   // Total row
   pdf.setFillColor(...navy);
-  pdf.rect(margin, y, contentWidth, 8, 'F');
+  pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(9);
-  pdf.text('TOTAL HT', colUnit - 15, y + 6, { align: 'right' });
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 6, { align: 'right' });
-  y += 14;
-  
-  // Conditions
-  pdf.setFillColor(249, 250, 251);
-  pdf.rect(margin, y, contentWidth, 22, 'F');
+  pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 15;
+
+  // ===== CONDITIONS =====
+  const PARTS_CONDITIONS = [
+    'Devis valable 30 jours à compter de la date d\'émission.',
+    'Paiement: 30 jours fin de mois.',
+    'Livraison: Sous réserve de disponibilité des pièces.'
+  ];
+  y += 3;
+  checkPageBreak(8 + PARTS_CONDITIONS.length * 4);
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text('Conditions:', margin + 3, y + 5);
+  pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('- Devis valable 30 jours', margin + 5, y + 10);
-  pdf.text('- Paiement: 30 jours fin de mois', margin + 5, y + 14);
-  pdf.text('- Livraison: Sous reserve de disponibilite', margin + 5, y + 18);
-  y += 28;
+  PARTS_CONDITIONS.forEach(d => {
+    checkPageBreak(5);
+    const wrapped = pdf.splitTextToSize('- ' + d, contentWidth);
+    wrapped.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
+  });
+  y += 1;
+
+  // ===== SIGNATURE SECTION =====
+  const signatureHeight = 38;
+  const signatoryName = qs.signatory_name || biz.quote_signatory || quoteData.createdBy || 'M. Meleney';
+  const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
+
+  const signatureLimit = pageHeight - footerHeight - 2;
+  if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
+
+  const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
   
-  // Signature section
-  pdf.setFontSize(7);
+  pdf.setDrawColor(200, 200, 200);
+  pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+  
+  pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
-  pdf.text('ETABLI PAR', margin, y);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(signatoryName, margin, sigY + 14);
   pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text(createdBy, margin, y + 5);
-  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, y + 9);
-  
-  // Signature box
-  const sigBoxX = pageWidth - margin - 55;
-  pdf.setFontSize(7);
+  pdf.text(signatoryCompany, margin, sigY + 20);
+
+  if (capcertLogo) {
+    try {
+      const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 30, 30);
+    } catch (e) {}
+  }
+
+  const sigBoxX = pageWidth - margin - 62;
+  pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
-  pdf.text('Bon pour accord', sigBoxX + 12, y);
+  pdf.text('Signature client', sigBoxX + 16, sigY + 7);
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth(0.3);
   pdf.setLineDashPattern([2, 2], 0);
-  pdf.roundedRect(sigBoxX + 3, y + 3, 48, 18, 2, 2, 'D');
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
   pdf.setLineDashPattern([], 0);
-  pdf.text('Signature et cachet', sigBoxX + 9, y + 26);
+  pdf.text('Lu et approuvé', sigBoxX + 18, sigY + 34);
 
   addFooter();
+  
+  const totalPages = pdf.internal.getNumberOfPages();
+  if (totalPages > 1) {
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      pdf.setFontSize(7);
+      pdf.setTextColor(180, 180, 180);
+      pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
+    }
+  }
+
   return pdf.output('blob');
 };
 
@@ -2619,12 +2774,17 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
   const biz = businessSettings || {};
+  const qs = biz.quote_settings || {};
   const qd = quoteData || {};
   const company = rental.companies || {};
   const items = qd.quoteItems || qd.items || [];
   const period = qd.rentalPeriod || { start: rental.start_date, end: rental.end_date, days: Math.ceil((new Date(rental.end_date) - new Date(rental.start_date)) / (1000*60*60*24)) + 1 };
+  const billingAddr = qd.billingAddress || null;
+  const shippingAddr = qd.shippingAddress || null;
+  const submitterName = qd.submitterName || null;
+  const returnShipping = qd.returnShipping || 'standard';
 
-  // French date formatter: "19 février 2026"
+  // French date formatter: "25 février 2026"
   const formatDateFR = (d) => {
     const date = new Date(d);
     const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
@@ -2636,7 +2796,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   const footerHeight = 16;
   const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
-  let y = 8;
+  let y = margin - 8;
 
   let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
@@ -2665,33 +2825,34 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   if (lighthouseLogo) {
     try {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(lighthouseLogo, format, margin, y - 5, 80, 20);
+      pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
-      pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+      pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
       pdf.text('LIGHTHOUSE', margin, y + 8);
     }
   } else {
-    pdf.setFontSize(24); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
 
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
-  pdf.text('DEVIS LOCATION', pageWidth - margin, y + 5, { align: 'right' });
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
 
+  // Document number
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('N\u00B0 ' + (rental.quote_number || rental.rental_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
   if (rental.quote_number && rental.rental_number) {
-    pdf.setFontSize(8);
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(...lightGray);
-    pdf.text('Réf: ' + rental.rental_number, pageWidth - margin, y + 15, { align: 'right' });
+    pdf.setTextColor(...gray);
+    pdf.text('Réf: ' + rental.rental_number, pageWidth - margin, y + 16, { align: 'right' });
   }
 
-  y += 17;
+  y += 20;
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
@@ -2699,40 +2860,121 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
 
   // ===== INFO BAR =====
   pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, y, contentWidth, 16, 'F');
+  pdf.rect(margin, y, contentWidth, 14, 'F');
   pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
   pdf.text('DATE', margin + 5, y + 4);
-  pdf.text('VALIDITÉ', margin + 65, y + 4);
-  pdf.text('CONDITIONS', margin + 120, y + 4);
+  pdf.text('VALIDITÉ', margin + 60, y + 4);
+  pdf.text('CONDITIONS', margin + 115, y + 4);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(formatDateFR(new Date()), margin + 5, y + 11);
-  pdf.text('30 jours', margin + 65, y + 11);
+  pdf.text(formatDateFR(new Date()), margin + 5, y + 10);
+  pdf.text('30 jours', margin + 60, y + 10);
   pdf.setFontSize(9);
-  pdf.text(qd.paymentTerms || 'À réception de facture', margin + 120, y + 11);
-  y += 20;
+  pdf.text(qd.paymentTerms || 'À réception de facture', margin + 115, y + 10);
+  y += 18;
 
-  // ===== CLIENT =====
+  // ===== ADDRESS BOXES: LIVRER À (left) | FACTURER À (right) =====
+  const boxGap = 6;
+  const leftBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxX = margin + leftBoxW + boxGap;
+  const boxPad = 4;
+
+  const shipLines = [];
+  if (returnShipping === 'pickup') {
+    shipLines.push({ text: 'Enlèvement client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client récupérera le matériel', bold: false, size: 8.5 });
+    shipLines.push({ text: 'dans nos locaux.', bold: false, size: 8.5 });
+  } else if (returnShipping === 'own_label') {
+    shipLines.push({ text: 'Expédition client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client fournira son propre', bold: false, size: 8.5 });
+    shipLines.push({ text: 'transporteur.', bold: false, size: 8.5 });
+  } else {
+    const shipName = shippingAddr?.company_name || qd.clientName || company.name || 'Client';
+    shipLines.push({ text: shipName, bold: true, size: 11 });
+    const shipAttn = shippingAddr?.attention || submitterName || company.contact_name || null;
+    if (shipAttn) shipLines.push({ text: 'Attn: ' + shipAttn, bold: false, size: 8.5 });
+    if (shippingAddr) {
+      if (shippingAddr.address_line1) shipLines.push({ text: shippingAddr.address_line1, bold: false, size: 8.5 });
+      const shipCity = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
+      const shipCityCountry = [shipCity, shippingAddr.country].filter(Boolean).join(', ');
+      if (shipCityCountry) shipLines.push({ text: shipCityCountry, bold: false, size: 8.5 });
+      if (shippingAddr.phone) shipLines.push({ text: 'Tél: ' + shippingAddr.phone, bold: false, size: 8.5 });
+    } else {
+      const addr = qd.clientAddress || company.billing_address || company.address || '';
+      if (addr) shipLines.push({ text: addr, bold: false, size: 8.5 });
+      const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
+      const cityCountry = [cityLine, qd.clientCountry || company.country].filter(Boolean).join(', ');
+      if (cityCountry) shipLines.push({ text: cityCountry, bold: false, size: 8.5 });
+      if (company.phone) shipLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
+    }
+  }
+
+  const billLines = [];
+  const billName = billingAddr?.company_name || qd.clientName || company.name || 'Client';
+  billLines.push({ text: billName, bold: true, size: 11 });
+  if (billingAddr) {
+    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
+    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
+    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
+    const billCityCountry = [billCity, billingAddr.country].filter(Boolean).join(', ');
+    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
+    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
+  } else {
+    const addr = qd.clientAddress || company.billing_address || company.address || '';
+    if (addr) billLines.push({ text: addr, bold: false, size: 8.5 });
+    const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
+    const cityCountry = [cityLine, qd.clientCountry || company.country].filter(Boolean).join(', ');
+    if (cityCountry) billLines.push({ text: cityCountry, bold: false, size: 8.5 });
+    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
+  }
+
+  // Calculate box heights
+  const lineH = 4;
+  const bigLineH = 5.5;
+  const labelH = 4;
+  const getLineH = (line) => line.bold && line.size > 9 ? bigLineH : lineH;
+  const shipContentH = shipLines.reduce((h, l) => h + getLineH(l), 0);
+  const billContentH = billLines.reduce((h, l) => h + getLineH(l), 0);
+  const shipBoxH = labelH + boxPad + shipContentH + boxPad;
+  const billBoxH = labelH + boxPad + billContentH + boxPad;
+  const boxH = Math.max(shipBoxH, billBoxH);
+
+  pdf.setDrawColor(0, 51, 102);
+  pdf.setLineWidth(0.4);
+  pdf.rect(margin, y, leftBoxW, boxH);
+  pdf.rect(rightBoxX, y, rightBoxW, boxH);
+
   pdf.setFontSize(7);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CLIENT', margin, y);
-  y += 5;
-  pdf.setFontSize(14);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text(qd.clientName || company.name || 'Client', margin, y);
-  y += 6;
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  const addr = qd.clientAddress || company.billing_address || company.address || '';
-  if (addr) { pdf.text(addr, margin, y); y += 5; }
-  const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
-  if (cityLine) { pdf.text(cityLine, margin, y); y += 5; }
-  y += 5;
+  pdf.setTextColor(0, 51, 102);
+  pdf.text(returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'TRANSPORT CLIENT' : 'LIVRER À', margin + boxPad, y + 4);
+  pdf.text('FACTURER À', rightBoxX + boxPad, y + 4);
+
+  let lineY = y + labelH + boxPad + 2;
+  for (const line of shipLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, margin + boxPad, lineY, { maxWidth: leftBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  lineY = y + labelH + boxPad + 2;
+  for (const line of billLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, rightBoxX + boxPad, lineY, { maxWidth: rightBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  y += boxH + 3;
 
   // ===== RENTAL PERIOD BLOCK =====
   checkPageBreak(16);
@@ -2743,20 +2985,19 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text('Location de Materiel', margin + 5, y + 4);
+  pdf.text('Location de Matériel', margin + 5, y + 4);
   y += 11;
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('- Periode: du ' + formatDateFR(period.start) + ' au ' + formatDateFR(period.end) + ' (' + period.days + ' jours)', margin + 9, y);
+  pdf.text('- Période: du ' + formatDateFR(period.start) + ' au ' + formatDateFR(period.end) + ' (' + period.days + ' jours)', margin + 9, y);
   y += 5;
   if (qd.deliveryTerms) {
-    pdf.text('- Delai de livraison: ' + qd.deliveryTerms, margin + 9, y);
+    pdf.text('- Délai de livraison: ' + qd.deliveryTerms, margin + 9, y);
     y += 5;
   }
-  pdf.text('- Assurance \u00AB Bien Confie \u00BB obligatoire (vol, incendie, degats des eaux, bris accidentel)', margin + 9, y);
+  pdf.text('- Assurance \u00AB Bien Confié \u00BB obligatoire (vol, incendie, dégâts des eaux, bris accidentel)', margin + 9, y);
   y += 3;
-  // Draw purple border line to match actual height
   pdf.line(margin, periodStartY, margin, y);
   y += 8;
 
@@ -2777,7 +3018,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     pdf.text('Qté', colQty + 3, y + 6);
     pdf.text('Désignation', colDesc, y + 6);
     pdf.text('Tarif', colRate, y + 6, { align: 'right' });
-    pdf.text('Duree', colDuration, y + 6, { align: 'right' });
+    pdf.text('Durée', colDuration, y + 6, { align: 'right' });
     pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
     y += 9;
   };
@@ -2805,17 +3046,14 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     const retailVal = parseFloat(item.retail_value) || 0;
     const daysDisplay = (item.rental_days || period.days) + 'j';
     
-    // Build device name - avoid duplicate serial
     const rawName = item.item_name || 'Equipement';
     const serial = item.serial_number || '';
     const nameHasSerial = serial && rawName.includes(serial);
     const deviceName = nameHasSerial ? rawName : (serial ? rawName + ' (SN: ' + serial + ')' : rawName);
     
-    // Specs/description
     const specs = item.specs || item.description || '';
     const hasSpecs = specs.length > 0;
     
-    // Calculate row height: main line + specs line + insurance line
     const mainLineH = 7;
     const specsLineH = hasSpecs ? 5 : 0;
     const insuranceLineH = retailVal > 0 ? 5 : 0;
@@ -2823,11 +3061,9 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     
     checkTablePageBreak(totalRowH);
     
-    // Row background
     pdf.setFillColor(rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248, rowIndex % 2 === 0 ? 255 : 248);
     pdf.rect(margin, y, contentWidth, totalRowH, 'F');
     
-    // Main line: Qty, Name, Rate, Duration, Total
     const textY = y + 5;
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
@@ -2846,7 +3082,6 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
     
     let subY = textY + mainLineH;
     
-    // Specs line (clean, spaced)
     if (hasSpecs) {
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8);
@@ -2855,7 +3090,6 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
       subY += specsLineH;
     }
     
-    // Insurance value per device
     if (retailVal > 0) {
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'italic');
@@ -2869,7 +3103,8 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
 
   // Shipping row
   const shippingVal = parseFloat(qd.shipping) || 0;
-  if (shippingVal > 0) {
+  const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
+  if (!isClientReturn && shippingVal > 0) {
     checkTablePageBreak(rowH);
     pdf.setFillColor(245, 245, 245);
     pdf.rect(margin, y, contentWidth, rowH, 'F');
@@ -2899,23 +3134,23 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   // ===== TOTAL ROW =====
   checkPageBreak(14);
   pdf.setFillColor(...navy);
-  pdf.rect(margin, y, contentWidth, 12, 'F');
+  pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL HT', colDuration - 20, y + 8);
+  pdf.text('TOTAL HT', colDuration - 20, y + 7.5);
   pdf.setFontSize(16);
   pdf.text((qd.totalHT || 0).toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
-  y += 16;
+  y += 15;
 
   // ===== CONDITIONS =====
   const RENTAL_CONDITIONS = [
-    'Le materiel reste la propriete de Lighthouse France. La garde est transferee au client des reception jusqu\'a restitution.',
-    'Utilisation conforme par personnel qualifie. Sous-location interdite sans accord ecrit. Tout incident doit etre signale sous 48h par ecrit.',
-    'Le client doit souscrire une assurance \u00AB Bien Confie \u00BB couvrant: vol, incendie, degats des eaux, bris accidentel.',
-    'Le materiel doit etre restitue en bon etat a la date convenue. Les dommages ou pieces manquantes seront factures au cout de remise en etat.',
-    'Les jours de retard seront factures au tarif journalier majore de 50%. Lighthouse France pourra recuperer le materiel a tout moment.',
-    'Le non-respect des conditions peut entrainer la resiliation immediate du contrat de location.'
+    'Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu\'à restitution.',
+    'Utilisation conforme par personnel qualifié. Sous-location interdite sans accord écrit. Tout incident doit être signalé sous 48h par écrit.',
+    'Le client doit souscrire une assurance \u00AB Bien Confié \u00BB couvrant: vol, incendie, dégâts des eaux, bris accidentel.',
+    'Le matériel doit être restitué en bon état à la date convenue. Les dommages ou pièces manquantes seront facturés au coût de remise en état.',
+    'Les jours de retard seront facturés au tarif journalier majoré de 50%. Lighthouse France pourra récupérer le matériel à tout moment.',
+    'Le non-respect des conditions peut entraîner la résiliation immédiate du contrat de location.'
   ];
 
   y += 5;
@@ -2923,7 +3158,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS GENERALES DE LOCATION', margin, y);
+  pdf.text('CONDITIONS GÉNÉRALES DE LOCATION', margin, y);
   y += 5;
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'normal');
@@ -2950,8 +3185,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   }
 
   // ===== SIGNATURE SECTION =====
-  const signatureHeight = 36;
-  const qs = biz.quote_settings || {};
+  const signatureHeight = 38;
   const signatoryName = qs.signatory_name || biz.quote_signatory || 'M. Meleney';
   const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
 
@@ -2964,35 +3198,35 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   pdf.setLineWidth(0.3);
   pdf.line(margin, sigY, pageWidth - margin, sigY);
 
-  pdf.setFontSize(7);
+  pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
-  pdf.text('ETABLI PAR', margin, sigY + 6);
-  pdf.setFontSize(11);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(signatoryName, margin, sigY + 12);
-  pdf.setFontSize(9);
+  pdf.text(signatoryName, margin, sigY + 14);
+  pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text(signatoryCompany, margin, sigY + 17);
+  pdf.text(signatoryCompany, margin, sigY + 20);
 
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 50, sigY + 2, 28, 28);
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 30, 30);
     } catch (e) {}
   }
 
-  const sigBoxX = pageWidth - margin - 60;
-  pdf.setFontSize(7);
+  const sigBoxX = pageWidth - margin - 62;
+  pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
-  pdf.text('Signature client', sigBoxX + 16, sigY + 6);
+  pdf.text('Signature client', sigBoxX + 16, sigY + 7);
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth(0.3);
   pdf.setLineDashPattern([2, 2], 0);
-  pdf.roundedRect(sigBoxX + 5, sigY + 9, 50, 18, 2, 2, 'D');
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
   pdf.setLineDashPattern([], 0);
-  pdf.text('Lu et approuve', sigBoxX + 17, sigY + 30);
+  pdf.text('Lu et approuvé', sigBoxX + 18, sigY + 34);
 
   addFooter();
 
@@ -13024,7 +13258,8 @@ function PartsOrdersSheet({ requests, notify, reload, profile, businessSettings,
           onClose={() => setQuoteOrder(null)} 
           notify={notify} 
           reload={reload} 
-          profile={profile} 
+          profile={profile}
+          businessSettings={businessSettings}
         />
       )}
       {bcReviewOrder && (
@@ -13823,7 +14058,7 @@ function PartsOrderDetailModal({ order, onClose, onCreateQuote, lang = 'fr' }) {
 // ============================================
 // PARTS QUOTE EDITOR - Build parts quote
 // ============================================
-function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr' }) {
+function PartsQuoteEditor({ order, onClose, notify, reload, profile, businessSettings = {}, lang = 'fr' }) {
   const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit Parts, 2=Preview, 3=Confirm
   const [quoteParts, setQuoteParts] = useState([]);
@@ -14040,6 +14275,29 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
       }
       
       // Build quote_data
+      // Fetch billing and shipping addresses if available
+      let billingAddrData = null;
+      let shippingAddrData = null;
+      let submitterName = null;
+      if (order.billing_address_id) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').eq('id', order.billing_address_id).single();
+          if (data) billingAddrData = data;
+        } catch (e) {}
+      }
+      if (order.shipping_address_id) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').eq('id', order.shipping_address_id).single();
+          if (data) shippingAddrData = data;
+        } catch (e) {}
+      }
+      if (order.submitted_by) {
+        try {
+          const { data } = await supabase.from('profiles').select('full_name').eq('id', order.submitted_by).single();
+          if (data?.full_name) submitterName = data.full_name;
+        } catch (e) {}
+      }
+
       const quoteData = {
         parts: quoteParts.map(p => ({
           partNumber: p.partNumber,
@@ -14053,7 +14311,32 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, lang = 'fr'
         grandTotal,
         quoteRef: quoteNumber || quoteRef,
         createdBy: signatory,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        businessSettings: businessSettings || {},
+        submitterName: submitterName || order.companies?.contact_name || null,
+        returnShipping: order.return_shipping || 'standard',
+        billingAddress: billingAddrData ? {
+          company_name: billingAddrData.company_name,
+          attention: billingAddrData.attention,
+          address_line1: billingAddrData.address_line1,
+          city: billingAddrData.city,
+          postal_code: billingAddrData.postal_code,
+          country: billingAddrData.country,
+          phone: billingAddrData.phone,
+          siret: billingAddrData.siret,
+          tva_number: billingAddrData.tva_number,
+          chorus_invoicing: billingAddrData.chorus_invoicing,
+          chorus_service_code: billingAddrData.chorus_service_code
+        } : null,
+        shippingAddress: shippingAddrData ? {
+          company_name: shippingAddrData.company_name,
+          attention: shippingAddrData.attention,
+          address_line1: shippingAddrData.address_line1,
+          city: shippingAddrData.city,
+          postal_code: shippingAddrData.postal_code,
+          country: shippingAddrData.country,
+          phone: shippingAddrData.phone
+        } : null
       };
       
       // === QUOTE REVIEW: Submit for review ===
@@ -32482,6 +32765,29 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
   const sendQuote = async () => {
     setSaving(true);
     try {
+      // Fetch billing and shipping addresses if available
+      let billingAddrData = null;
+      let shippingAddrData = null;
+      let submitterName = null;
+      if (rental.billing_address_id) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').eq('id', rental.billing_address_id).single();
+          if (data) billingAddrData = data;
+        } catch (e) {}
+      }
+      if (rental.shipping_address_id) {
+        try {
+          const { data } = await supabase.from('shipping_addresses').select('*').eq('id', rental.shipping_address_id).single();
+          if (data) shippingAddrData = data;
+        } catch (e) {}
+      }
+      if (rental.submitted_by) {
+        try {
+          const { data } = await supabase.from('profiles').select('full_name').eq('id', rental.submitted_by).single();
+          if (data?.full_name) submitterName = data.full_name;
+        } catch (e) {}
+      }
+
       const quoteData = {
         rentalId: rental.id, rentalNumber: rental.rental_number, quoteItems, items: quoteItems,
         shipping: parseFloat(quoteShipping) || 0, discount: parseFloat(discount) || 0, discountType, discountAmount,
@@ -32490,7 +32796,31 @@ function RentalQuoteEditor({ rental, inventory = [], profile, businessSettings, 
         deliveryTerms, paymentTerms, rentalPeriod: { start: rental.start_date, end: rental.end_date, days },
         clientName: company.name || 'Client', clientAddress: company.billing_address || company.address || '',
         clientCity: company.billing_city || company.city || '', clientPostalCode: company.billing_postal_code || company.postal_code || '',
-        clientCountry: company.country || 'France'
+        clientCountry: company.country || 'France',
+        submitterName: submitterName || company.contact_name || null,
+        returnShipping: rental.return_shipping || 'standard',
+        billingAddress: billingAddrData ? {
+          company_name: billingAddrData.company_name,
+          attention: billingAddrData.attention,
+          address_line1: billingAddrData.address_line1,
+          city: billingAddrData.city,
+          postal_code: billingAddrData.postal_code,
+          country: billingAddrData.country,
+          phone: billingAddrData.phone,
+          siret: billingAddrData.siret,
+          tva_number: billingAddrData.tva_number,
+          chorus_invoicing: billingAddrData.chorus_invoicing,
+          chorus_service_code: billingAddrData.chorus_service_code
+        } : null,
+        shippingAddress: shippingAddrData ? {
+          company_name: shippingAddrData.company_name,
+          attention: shippingAddrData.attention,
+          address_line1: shippingAddrData.address_line1,
+          city: shippingAddrData.city,
+          postal_code: shippingAddrData.postal_code,
+          country: shippingAddrData.country,
+          phone: shippingAddrData.phone
+        } : null
       };
       const mergedQuoteData = {
         ...(rental.quote_data || {}), ...quoteData,
