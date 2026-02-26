@@ -4751,9 +4751,36 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         // === SUPPLEMENT: Generate PDF and send ===
         try {
           notify(lang === 'en' ? '📄 Generating supplement PDF...' : '📄 Génération du PDF supplément...');
+          // Fetch RMA billing/shipping addresses (same as parent RMA quote)
+          let supBillingAddr = null, supShippingAddr = null, supSubmitterName = null;
+          if (sr.billing_address_id) {
+            try { const { data } = await supabase.from('shipping_addresses').select('*').eq('id', sr.billing_address_id).single(); if (data) supBillingAddr = data; } catch (e) {}
+          }
+          if (sr.shipping_address_id) {
+            try { const { data } = await supabase.from('shipping_addresses').select('*').eq('id', sr.shipping_address_id).single(); if (data) supShippingAddr = data; } catch (e) {}
+          }
+          if (sr.submitted_by) {
+            try { const { data } = await supabase.from('profiles').select('full_name').eq('id', sr.submitted_by).single(); if (data?.full_name) supSubmitterName = data.full_name; } catch (e) {}
+          }
           const { blob, total } = await generateAvenantPDF(sr, qd.devices, { 
             businessSettings: qd.businessSettings, 
-            supNumber: qd.supNumber 
+            supNumber: qd.supNumber,
+            billingAddress: supBillingAddr ? {
+              company_name: supBillingAddr.company_name, attention: supBillingAddr.attention,
+              address_line1: supBillingAddr.address_line1, city: supBillingAddr.city,
+              postal_code: supBillingAddr.postal_code, country: supBillingAddr.country,
+              phone: supBillingAddr.phone, siret: supBillingAddr.siret,
+              tva_number: supBillingAddr.tva_number, chorus_invoicing: supBillingAddr.chorus_invoicing,
+              chorus_service_code: supBillingAddr.chorus_service_code
+            } : null,
+            shippingAddress: supShippingAddr ? {
+              company_name: supShippingAddr.company_name, attention: supShippingAddr.attention,
+              address_line1: supShippingAddr.address_line1, city: supShippingAddr.city,
+              postal_code: supShippingAddr.postal_code, country: supShippingAddr.country,
+              phone: supShippingAddr.phone
+            } : null,
+            submitterName: supSubmitterName || sr.companies?.contact_name || null,
+            returnShipping: sr.return_shipping || 'standard'
           });
           
           const fileName = `supplement_${qd.supNumber || sr.request_number}_${Date.now()}.pdf`;
@@ -11068,18 +11095,27 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const pdf = new jsPDF('p', 'mm', 'a4');
   const company = rma.companies || {};
   const biz = options.businessSettings || {};
-  const supNumber = options.supNumber || null; // SUP-0226-001 format
+  const qs = biz.quote_settings || {};
+  const supNumber = options.supNumber || null;
+  const billingAddr = options.billingAddress || null;
+  const shippingAddr = options.shippingAddress || null;
+  const submitterName = options.submitterName || null;
+  const returnShipping = options.returnShipping || 'standard';
   
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
   const footerHeight = 16;
-  
-  // Colors - using navy blue theme to match quotes and invoices
   const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   
-  let y = margin;
+  let y = margin - 8;
+
+  // French date formatter: "25 février 2026"
+  const formatDateFR = (d) => {
+    const date = new Date(d);
+    const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+  };
   
-  // Load logos - use color logo for supplements
   let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
   let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
   
@@ -11099,12 +11135,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const getUsableHeight = () => pageHeight - footerHeight - margin;
   
   const checkPageBreak = (needed) => {
-    if (y + needed > getUsableHeight()) {
-      addFooter();
-      pdf.addPage();
-      y = margin;
-      return true;
-    }
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; return true; }
     return false;
   };
 
@@ -11114,35 +11145,30 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       const format = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(lighthouseLogo, format, margin, y - 2, 85, 22);
     } catch (e) {
-      pdf.setFontSize(26);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...darkBlue);
+      pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
       pdf.text('LIGHTHOUSE', margin, y + 8);
     }
   } else {
-    pdf.setFontSize(26);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
+    pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
     pdf.text('LIGHTHOUSE', margin, y + 8);
   }
   
-  // Title - SUPPLÉMENT in green
   pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...navy);
   pdf.text('SUPPLÉMENT AU DEVIS', pageWidth - margin, y + 5, { align: 'right' });
   
-  // Document number (SUP-0226-001) - primary
+  // Document number
   pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
   pdf.text('N° ' + (supNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
   
-  // RMA reference only (no Devis reference)
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
+  // RMA reference
   if (rma.request_number) {
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
     pdf.text('RMA: ' + rma.request_number, pageWidth - margin, y + 16, { align: 'right' });
   }
   
@@ -11150,60 +11176,135 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
-  y += 7;
+  y += 3;
 
   // ===== INFO BAR =====
-  pdf.setFillColor(245, 245, 245); // Light gray background
-  pdf.rect(margin, y, contentWidth, 16, 'F');
-  pdf.setFontSize(8);
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFontSize(7);
   pdf.setTextColor(...lightGray);
-  pdf.text('DATE', margin + 5, y + 5);
-  pdf.text('VALIDITÉ', margin + 60, y + 5);
-  pdf.text('CONDITIONS', margin + 115, y + 5);
-  pdf.setFontSize(11);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  const qDate = new Date().toLocaleDateString('fr-FR');
-  pdf.text(qDate, margin + 5, y + 12);
-  pdf.text('30 jours', margin + 60, y + 12);
-  pdf.text('À réception de facture', margin + 115, y + 12);
-  y += 20;
-
-  // ===== CLIENT =====
-  pdf.setFontSize(8);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...lightGray);
-  pdf.text('CLIENT', margin, y);
-  y += 5;
-  pdf.setFontSize(14);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...darkBlue);
-  pdf.text(company.name || 'Client', margin, y);
-  y += 6;
+  pdf.text('DATE', margin + 5, y + 4);
+  pdf.text('VALIDITÉ', margin + 60, y + 4);
+  pdf.text('CONDITIONS', margin + 115, y + 4);
   pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(...gray);
-  if (company.billing_address || company.address) {
-    pdf.text(company.billing_address || company.address, margin, y);
-    y += 5;
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(...darkBlue);
+  pdf.text(formatDateFR(new Date()), margin + 5, y + 10);
+  pdf.text('30 jours', margin + 60, y + 10);
+  pdf.text('À réception de facture', margin + 115, y + 10);
+  y += 18;
+
+  // ===== ADDRESS BOXES: LIVRER À (left) | FACTURER À (right) =====
+  const boxGap = 6;
+  const leftBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxW = (contentWidth - boxGap) / 2;
+  const rightBoxX = margin + leftBoxW + boxGap;
+  const boxPad = 4;
+
+  const shipLines = [];
+  if (returnShipping === 'pickup') {
+    shipLines.push({ text: 'Enlèvement client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client récupérera l\'appareil', bold: false, size: 8.5 });
+    shipLines.push({ text: 'dans nos locaux après intervention.', bold: false, size: 8.5 });
+  } else if (returnShipping === 'own_label') {
+    shipLines.push({ text: 'Expédition retour client', bold: true, size: 11 });
+    shipLines.push({ text: 'Le client fournira sa propre', bold: false, size: 8.5 });
+    shipLines.push({ text: 'étiquette de retour.', bold: false, size: 8.5 });
+  } else {
+    const shipName = shippingAddr?.company_name || company.name || 'Client';
+    shipLines.push({ text: shipName, bold: true, size: 11 });
+    const shipAttn = shippingAddr?.attention || submitterName || company.contact_name || null;
+    if (shipAttn) shipLines.push({ text: 'Attn: ' + shipAttn, bold: false, size: 8.5 });
+    if (shippingAddr) {
+      if (shippingAddr.address_line1) shipLines.push({ text: shippingAddr.address_line1, bold: false, size: 8.5 });
+      const shipCity = [shippingAddr.postal_code, shippingAddr.city].filter(Boolean).join(' ');
+      const shipCityCountry = [shipCity, shippingAddr.country].filter(Boolean).join(', ');
+      if (shipCityCountry) shipLines.push({ text: shipCityCountry, bold: false, size: 8.5 });
+      if (shippingAddr.phone) shipLines.push({ text: 'Tél: ' + shippingAddr.phone, bold: false, size: 8.5 });
+    } else {
+      if (company.billing_address || company.address) shipLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
+      const fc = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+      const fcc = [fc, company.billing_country || company.country].filter(Boolean).join(', ');
+      if (fcc) shipLines.push({ text: fcc, bold: false, size: 8.5 });
+      if (company.phone) shipLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
+    }
+    if (rma.request_devices?.some(d => d.shipping_address_id && d.shipping_address_id !== rma.shipping_address_id)) {
+      shipLines.push({ text: '* Adresses multiples — voir RMA', bold: false, size: 7, italic: true, color: [150, 150, 150] });
+    }
   }
-  const city = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-  if (city) {
-    pdf.text(city, margin, y);
-    y += 5;
+
+  const billLines = [];
+  const billName = billingAddr?.company_name || company.name || 'Client';
+  billLines.push({ text: billName, bold: true, size: 11 });
+  if (billingAddr) {
+    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
+    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
+    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
+    const billCityCountry = [billCity, billingAddr.country].filter(Boolean).join(', ');
+    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
+    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
+  } else {
+    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
+    const fbc = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+    const fbcc = [fbc, company.billing_country || company.country].filter(Boolean).join(', ');
+    if (fbcc) billLines.push({ text: fbcc, bold: false, size: 8.5 });
+    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
   }
-  y += 5;
+
+  // Calculate box heights
+  const lineH = 4;
+  const bigLineH = 5.5;
+  const labelH = 4;
+  const getLineH = (line) => line.bold && line.size > 9 ? bigLineH : lineH;
+  const shipContentH = shipLines.reduce((h, l) => h + getLineH(l), 0);
+  const billContentH = billLines.reduce((h, l) => h + getLineH(l), 0);
+  const shipBoxH = labelH + boxPad + shipContentH + boxPad;
+  const billBoxH = labelH + boxPad + billContentH + boxPad;
+  const boxH = Math.max(shipBoxH, billBoxH);
+
+  pdf.setDrawColor(0, 51, 102);
+  pdf.setLineWidth(0.4);
+  pdf.rect(margin, y, leftBoxW, boxH);
+  pdf.rect(rightBoxX, y, rightBoxW, boxH);
+
+  pdf.setFontSize(7);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(0, 51, 102);
+  pdf.text(returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'RETOUR CLIENT' : 'LIVRER À', margin + boxPad, y + 4);
+  pdf.text('FACTURER À', rightBoxX + boxPad, y + 4);
+
+  let lineY = y + labelH + boxPad + 2;
+  for (const line of shipLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, margin + boxPad, lineY, { maxWidth: leftBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  lineY = y + labelH + boxPad + 2;
+  for (const line of billLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : (line.italic ? 'italic' : 'normal'));
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, rightBoxX + boxPad, lineY, { maxWidth: rightBoxW - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+
+  y += boxH + 3;
 
   // ===== INTRODUCTION =====
-  pdf.setFillColor(240, 253, 244); // Light green background
+  pdf.setFillColor(240, 253, 244);
   pdf.setDrawColor(...navy);
   pdf.setLineWidth(0.5);
   pdf.rect(margin, y, contentWidth, 14, 'FD');
   pdf.setFontSize(9);
-  pdf.setTextColor(22, 101, 52); // Dark green text
-  const introText = "Suite a l'inspection de vos appareils, nous avons constate des travaux supplementaires necessaires.";
-  pdf.text(introText, margin + 5, y + 5);
-  pdf.text("Veuillez trouver ci-dessous le detail des interventions recommandees.", margin + 5, y + 10);
+  pdf.setTextColor(22, 101, 52);
+  pdf.text("Suite à l'inspection de vos appareils, nous avons constaté des travaux supplémentaires nécessaires.", margin + 5, y + 5);
+  pdf.text("Veuillez trouver ci-dessous le détail des interventions recommandées.", margin + 5, y + 10);
   y += 18;
 
   // ===== DETAILED PRICING TABLE =====
@@ -11212,6 +11313,24 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const colDesc = margin + 12;
   const colUnit = pageWidth - margin - 45;
   const colTotal = pageWidth - margin - 3;
+
+  const drawTableHeader = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(margin, y, contentWidth, 9, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...white);
+    pdf.text('Qté', colQty + 3, y + 6);
+    pdf.text('Désignation', colDesc, y + 6);
+    pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+    y += 9;
+  };
+
+  const checkTablePageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; drawTableHeader(); return true; }
+    return false;
+  };
   
   pdf.setFontSize(13);
   pdf.setFont('helvetica', 'bold');
@@ -11219,25 +11338,14 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.text('Travaux Supplémentaires', margin, y);
   y += 7;
 
-  // Header row
-  pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 9, 'F');
-  pdf.setFontSize(9);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(...white);
-  pdf.text('Qté', colQty + 3, y + 6);
-  pdf.text('Désignation', colDesc, y + 6);
-  pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
-  pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
-  y += 9;
+  drawTableHeader();
 
   let rowIndex = 0;
   let grandTotal = 0;
 
-  // Build line items from devices with additional work
   devicesWithWork.forEach((device) => {
     // Device header row
-    checkPageBreak(15);
+    checkTablePageBreak(15);
     pdf.setFillColor(245, 245, 245);
     pdf.rect(margin, y, contentWidth, 8, 'F');
     pdf.setFontSize(9);
@@ -11247,9 +11355,9 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
     pdf.text(deviceHeader, colDesc, y + 5.5);
     y += 8;
     
-    // Findings (if any)
+    // Findings
     if (device.service_findings) {
-      checkPageBreak(10);
+      checkTablePageBreak(10);
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'italic');
       pdf.setTextColor(...lightGray);
@@ -11258,9 +11366,9 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       y += 6;
     }
     
-    // Additional work items
+    // Work items
     (device.additional_work_items || []).forEach((item) => {
-      checkPageBreak(rowH + 2);
+      checkTablePageBreak(rowH + 2);
       const qty = parseInt(item.quantity) || 1;
       const unitPrice = parseFloat(item.price) || 0;
       const isWarranty = item.warranty;
@@ -11274,8 +11382,7 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       pdf.setTextColor(...darkBlue);
       pdf.text(String(qty), colQty + 3, y + 5);
       
-      // Description with part number if available
-      const desc = item.partNumber ? `[${item.partNumber}] ${item.description || 'Piece'}` : (item.description || 'Service');
+      const desc = item.partNumber ? `[${item.partNumber}] ${item.description || 'Pièce'}` : (item.description || 'Service');
       pdf.text(desc.substring(0, 55), colDesc, y + 5);
       
       if (isWarranty) {
@@ -11291,41 +11398,54 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
       rowIndex++;
     });
     
-    y += 3; // Space between devices
+    y += 3;
   });
 
-  // Add some space before total
-  y += 5;
-
-  // Total row - taller box with better spacing
-  checkPageBreak(20);
+  // Total row
+  y += 3;
+  checkPageBreak(15);
   pdf.setFillColor(...navy);
-  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white);
-  pdf.setFontSize(12);
+  pdf.setFontSize(11);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL SUPPLÉMENT HT', margin + 10, y + 9);
-  pdf.setFontSize(18);
-  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 10, { align: 'right' });
-  y += 18;
+  pdf.text('TOTAL SUPPLÉMENT HT', margin + 10, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
+  y += 15;
 
   // ===== CONDITIONS =====
-  checkPageBreak(25);
+  const SUP_CONDITIONS = [
+    "Ce devis complémentaire est valable 30 jours à compter de sa date d'émission.",
+    "Les travaux seront effectués après réception de votre accord écrit (signature ou bon de commande).",
+    "Conditions de règlement : 30 jours fin de mois."
+  ];
+  y += 3;
+  checkPageBreak(8 + SUP_CONDITIONS.length * 4);
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...lightGray);
-  pdf.text('CONDITIONS:', margin, y);
-  y += 5;
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
-  pdf.text('• Ce devis complémentaire est valable 30 jours à compter de sa date d\'émission.', margin + 3, y);
-  y += 4;
-  pdf.text('• Les travaux seront effectues apres reception de votre accord ecrit (signature ou bon de commande).', margin + 3, y);
-  y += 4;
-  pdf.text('• Conditions de reglement: 30 jours fin de mois.', margin + 3, y);
-  y += 8;
+  pdf.setTextColor(...gray);
+  SUP_CONDITIONS.forEach(d => {
+    checkPageBreak(5);
+    const wrapped = pdf.splitTextToSize('- ' + d, contentWidth);
+    wrapped.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
+  });
+  y += 1;
 
   // ===== SIGNATURE SECTION =====
-  const sigY = Math.max(y + 5, pageHeight - footerHeight - 45);
+  const signatureHeight = 38;
+  const signatoryName = qs.signatory_name || biz.quote_signatory || options.createdBy || 'M. Meleney';
+  const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
+
+  const signatureLimit = pageHeight - footerHeight - 2;
+  if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
+
+  const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
   
   pdf.setDrawColor(200, 200, 200);
   pdf.setLineWidth(0.3);
@@ -11337,21 +11457,19 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setFontSize(12);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(...darkBlue);
-  pdf.text(options.createdBy || 'Service Technique', margin, sigY + 14);
+  pdf.text(signatoryName, margin, sigY + 14);
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(...gray);
-  pdf.text('Lighthouse France', margin, sigY + 20);
+  pdf.text(signatoryCompany, margin, sigY + 20);
 
-  // Capcert logo
   if (capcertLogo) {
     try {
       const format = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 32, 32);
+      pdf.addImage(capcertLogo, format, margin + 52, sigY + 3, 30, 30);
     } catch (e) {}
   }
 
-  // Signature box
   const sigBoxX = pageWidth - margin - 62;
   pdf.setFontSize(8);
   pdf.setTextColor(...lightGray);
@@ -11359,11 +11477,22 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth(0.3);
   pdf.setLineDashPattern([2, 2], 0);
-  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 22, 2, 2, 'D');
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
   pdf.setLineDashPattern([], 0);
-  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 37);
+  pdf.text('Lu et approuvé', sigBoxX + 18, sigY + 34);
 
   addFooter();
+  
+  const totalPages = pdf.internal.getNumberOfPages();
+  if (totalPages > 1) {
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      pdf.setFontSize(7);
+      pdf.setTextColor(180, 180, 180);
+      pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
+    }
+  }
+
   return { blob: pdf.output('blob'), total: grandTotal };
 };
 function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySent, businessSettings, lang = 'fr' }) {
@@ -11402,12 +11531,50 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
     );
     return sum + deviceTotal;
   }, 0);
+
+  // Fetch RMA billing/shipping addresses for PDF
+  const [supAddrs, setSupAddrs] = useState({ billing: null, shipping: null, submitterName: null });
+  useEffect(() => {
+    (async () => {
+      let billing = null, shipping = null, submitterName = null;
+      if (rma.billing_address_id) {
+        try { const { data } = await supabase.from('shipping_addresses').select('*').eq('id', rma.billing_address_id).single(); if (data) billing = data; } catch (e) {}
+      }
+      if (rma.shipping_address_id) {
+        try { const { data } = await supabase.from('shipping_addresses').select('*').eq('id', rma.shipping_address_id).single(); if (data) shipping = data; } catch (e) {}
+      }
+      if (rma.submitted_by) {
+        try { const { data } = await supabase.from('profiles').select('full_name').eq('id', rma.submitted_by).single(); if (data?.full_name) submitterName = data.full_name; } catch (e) {}
+      }
+      setSupAddrs({ billing, shipping, submitterName });
+    })();
+  }, [rma.billing_address_id, rma.shipping_address_id, rma.submitted_by]);
+
+  const getAvenantPDFOptions = () => ({
+    businessSettings,
+    billingAddress: supAddrs.billing ? {
+      company_name: supAddrs.billing.company_name, attention: supAddrs.billing.attention,
+      address_line1: supAddrs.billing.address_line1, city: supAddrs.billing.city,
+      postal_code: supAddrs.billing.postal_code, country: supAddrs.billing.country,
+      phone: supAddrs.billing.phone, siret: supAddrs.billing.siret,
+      tva_number: supAddrs.billing.tva_number, chorus_invoicing: supAddrs.billing.chorus_invoicing,
+      chorus_service_code: supAddrs.billing.chorus_service_code
+    } : null,
+    shippingAddress: supAddrs.shipping ? {
+      company_name: supAddrs.shipping.company_name, attention: supAddrs.shipping.attention,
+      address_line1: supAddrs.shipping.address_line1, city: supAddrs.shipping.city,
+      postal_code: supAddrs.shipping.postal_code, country: supAddrs.shipping.country,
+      phone: supAddrs.shipping.phone
+    } : null,
+    submitterName: supAddrs.submitterName || rma.companies?.contact_name || null,
+    returnShipping: rma.return_shipping || 'standard'
+  });
   
   // Download PDF without sending
   const downloadPDF = async () => {
     setDownloading(true);
     try {
-      const { blob } = await generateAvenantPDF(rma, devicesWithWork, { businessSettings });
+      const { blob } = await generateAvenantPDF(rma, devicesWithWork, getAvenantPDFOptions());
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -22800,6 +22967,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     const jsPDF = await loadJsPDF();
     const pdf = new jsPDF('p', 'mm', 'a4');
     const biz = businessSettings || {};
+    const qs = biz.quote_settings || {};
     const clientName = resolvedClientName || (contractData.company_id 
       ? (clients.find(c => c.id === contractData.company_id)?.name || 'Client')
       : (contractData.company_name || 'Client'));
@@ -22807,40 +22975,40 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     
     const pageWidth = 210, pageHeight = 297, margin = 15;
     const contentWidth = pageWidth - (margin * 2);
+    const footerHeight = 16;
     const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
-    const accent = [0, 166, 81]; // Lighthouse green
-    let y = margin;
+    let y = margin - 8;
     const isPricing = contractType === 'pricing';
 
-    // Load logo
-    let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
-
-    const addFooter = (pageNum, totalPages) => {
-      // Footer line
-      pdf.setDrawColor(200, 200, 200);
-      pdf.setLineWidth(0.3);
-      pdf.line(margin, pageHeight - 20, pageWidth - margin, pageHeight - 20);
-      // Company info - left
-      pdf.setFontSize(7);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(140, 140, 140);
-      pdf.text(biz.company_name || 'Lighthouse France SAS', margin, pageHeight - 15);
-      pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'}`, margin, pageHeight - 11);
-      pdf.text(`Tel: ${biz.phone || '01 43 77 28 07'} - ${biz.email || 'service@golighthouse.com'}`, margin, pageHeight - 7);
-      // Right - SIRET + page
-      if (biz.siret) pdf.text(`SIRET: ${biz.siret}`, pageWidth - margin, pageHeight - 11, { align: 'right' });
-      if (biz.tva_number) pdf.text(`TVA: ${biz.tva_number}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`Page ${pageNum} / ${totalPages}`, pageWidth - margin, pageHeight - 15, { align: 'right' });
+    // French date formatter: "25 février 2026"
+    const formatDateFR = (d) => {
+      const date = new Date(d);
+      const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+      return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
     };
 
-    const footerZone = 30;
+    // Load logos
+    let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
+    let capcertLogo = null;
+    try { capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png'); } catch (e) {}
+
+    const addFooter = () => {
+      pdf.setFillColor(...darkBlue);
+      pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+      pdf.setTextColor(...white);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(180, 180, 180);
+      pdf.setFontSize(8);
+      pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+    };
+
+    const getUsableHeight = () => pageHeight - footerHeight - margin;
+
     const checkPageBreak = (needed) => {
-      if (y + needed > pageHeight - footerZone) {
-        pdf.addPage();
-        y = margin;
-        return true;
-      }
+      if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; return true; }
       return false;
     };
 
@@ -22848,126 +23016,120 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
     if (lighthouseLogo) {
       try {
         const fmt = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
-        pdf.addImage(lighthouseLogo, fmt, margin, y, 75, 20);
+        pdf.addImage(lighthouseLogo, fmt, margin, y - 2, 85, 22);
       } catch (e) {
-        pdf.setFontSize(20); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-        pdf.text('LIGHTHOUSE', margin, y + 10);
+        pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+        pdf.text('LIGHTHOUSE', margin, y + 8);
       }
+    } else {
+      pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
     }
-    
-    // Title block - right aligned
-    pdf.setFontSize(16);
+
+    pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...navy);
-    pdf.text(isPricing ? 'CONTRAT DE TARIFICATION' : "CONTRAT D'ETALONNAGE", pageWidth - margin, y + 6, { align: 'right' });
-    
+    pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
+
+    // Contract number
     pdf.setFontSize(11);
     pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...accent);
-    pdf.text(contractNumber || '', pageWidth - margin, y + 13, { align: 'right' });
-    
-    y += 24;
-    
-    // Navy accent bar
-    pdf.setFillColor(...navy);
-    pdf.rect(margin, y, contentWidth, 1.2, 'F');
-    y += 6;
+    pdf.setTextColor(...darkBlue);
+    pdf.text('N° ' + (contractNumber || '—'), pageWidth - margin, y + 11, { align: 'right' });
 
-    // ===== CONTRACT INFO + CLIENT - Side by side =====
-    const colLeft = margin;
-    const colRight = margin + contentWidth / 2 + 5;
-    const colW = contentWidth / 2 - 5;
-    
-    // Left column - Contract details
-    pdf.setFillColor(245, 247, 250);
-    pdf.roundedRect(colLeft, y, colW, 26, 2, 2, 'F');
-    
-    pdf.setFontSize(7);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...navy);
-    pdf.text('DETAILS DU CONTRAT', colLeft + 5, y + 5);
-    
-    pdf.setFontSize(8);
+    // Contract type subtitle
+    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
-    const infoY = y + 11;
-    pdf.text('Date :', colLeft + 5, infoY);
-    pdf.text('Debut :', colLeft + 5, infoY + 5);
-    pdf.text('Fin :', colLeft + 5, infoY + 10);
-    
+    pdf.text(isPricing ? 'Contrat de tarification' : "Contrat d'étalonnage", pageWidth - margin, y + 16, { align: 'right' });
+
+    y += 20;
+    pdf.setDrawColor(...navy);
+    pdf.setLineWidth(1);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 3;
+
+    // ===== INFO BAR =====
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, 14, 'F');
+    pdf.setFontSize(7);
+    pdf.setTextColor(...lightGray);
+    pdf.text('DATE', margin + 5, y + 4);
+    pdf.text('DÉBUT', margin + 50, y + 4);
+    pdf.text('FIN', margin + 100, y + 4);
+    pdf.text('VALIDITÉ', margin + 145, y + 4);
+    pdf.setFontSize(10);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(new Date().toLocaleDateString('fr-FR'), colLeft + 30, infoY);
-    pdf.text(new Date(contractData.start_date).toLocaleDateString('fr-FR'), colLeft + 30, infoY + 5);
-    pdf.text(new Date(contractData.end_date).toLocaleDateString('fr-FR'), colLeft + 30, infoY + 10);
-    
-    // Right column - Client
-    pdf.setFillColor(245, 247, 250);
-    pdf.roundedRect(colRight, y, colW, 26, 2, 2, 'F');
-    
+    pdf.text(formatDateFR(new Date()), margin + 5, y + 10);
+    pdf.text(formatDateFR(contractData.start_date), margin + 50, y + 10);
+    pdf.text(formatDateFR(contractData.end_date), margin + 100, y + 10);
+    pdf.text('30 jours', margin + 145, y + 10);
+    y += 18;
+
+    // ===== FACTURER À — Full width billing box =====
+    const boxPad = 4;
+    const billLines = [];
+    billLines.push({ text: clientName, bold: true, size: 11 });
+    if (clientObj) {
+      if (clientObj.contact_name) billLines.push({ text: 'Contact: ' + clientObj.contact_name, bold: false, size: 8.5 });
+      if (clientObj.billing_address || clientObj.address) billLines.push({ text: clientObj.billing_address || clientObj.address, bold: false, size: 8.5 });
+      const cityLine = [clientObj.billing_postal_code || clientObj.postal_code, clientObj.billing_city || clientObj.city].filter(Boolean).join(' ');
+      const cityCountry = [cityLine, clientObj.billing_country || clientObj.country].filter(Boolean).join(', ');
+      if (cityCountry) billLines.push({ text: cityCountry, bold: false, size: 8.5 });
+      if (clientObj.phone) billLines.push({ text: 'Tél: ' + clientObj.phone, bold: false, size: 8.5 });
+      if (clientObj.tva_number) billLines.push({ text: 'TVA: ' + clientObj.tva_number, bold: true, size: 8, color: [...darkBlue] });
+      if (clientObj.siret) billLines.push({ text: 'SIRET: ' + clientObj.siret, bold: true, size: 8, color: [...darkBlue] });
+    }
+
+    const lineH = 4;
+    const bigLineH = 5.5;
+    const labelH = 4;
+    const getLineH = (line) => line.bold && line.size > 9 ? bigLineH : lineH;
+    const billContentH = billLines.reduce((h, l) => h + getLineH(l), 0);
+    const boxH = labelH + boxPad + billContentH + boxPad;
+
+    pdf.setDrawColor(0, 51, 102);
+    pdf.setLineWidth(0.4);
+    pdf.rect(margin, y, contentWidth, boxH);
+
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...navy);
-    pdf.text('CLIENT', colRight + 5, y + 5);
-    
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(...darkBlue);
-    pdf.text(clientName, colRight + 5, y + 13);
-    
-    let clientY = y + 18;
-    if (clientObj) {
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...gray);
-      if (clientObj.billing_address || clientObj.address) { 
-        pdf.text(clientObj.billing_address || clientObj.address, colRight + 5, clientY); 
-        clientY += 4; 
-      }
-      const cityLine = [clientObj.billing_postal_code || clientObj.postal_code, clientObj.billing_city || clientObj.city].filter(Boolean).join(' ');
-      if (cityLine) { 
-        pdf.text(cityLine, colRight + 5, clientY); 
-        clientY += 4; 
-      }
-      if (clientObj.country) {
-        pdf.text(clientObj.country, colRight + 5, clientY);
-      }
+    pdf.setTextColor(0, 51, 102);
+    pdf.text('FACTURER À', margin + boxPad, y + 4);
+
+    let lineY = y + labelH + boxPad + 2;
+    for (const line of billLines) {
+      pdf.setFontSize(line.size);
+      pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');
+      pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+      pdf.text(line.text, margin + boxPad, lineY, { maxWidth: contentWidth - boxPad * 2 });
+      lineY += getLineH(line);
     }
-    
-    y += 30;
-    
-    // Offer validity + shipping price (below the boxes)
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'italic');
-    pdf.setTextColor(...gray);
-    pdf.text("Validité de l'offre : 30 jours à compter de la date d'émission.", margin, y);
-    y += 5;
-    
+
+    y += boxH + 5;
+
+    // Shipping price note (pricing contracts)
     if (isPricing && contractData.shipping_price !== null && contractData.shipping_price !== undefined) {
+      pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(...navy);
       pdf.text('Frais de port contractuels : ', margin, y);
       const labelW = pdf.getTextWidth('Frais de port contractuels : ');
-      pdf.setTextColor(...accent);
+      pdf.setTextColor(0, 166, 81);
       pdf.text(`${parseFloat(contractData.shipping_price).toFixed(2)} EUR / colis`, margin + labelW, y);
-      y += 5;
+      y += 8;
     }
-    
-    y += 4;
 
     if (isPricing) {
-      // ===== PRICING CONTRACT - Category + exceptions only =====
+      // ===== PRICING CONTRACT - Category + exceptions =====
       const enabledCats = pricingCategories.filter(c => c.enabled);
       
-      // Section title
-      pdf.setFontSize(12);
+      pdf.setFontSize(13);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...navy);
-      pdf.text('GRILLE TARIFAIRE - ETALONNAGE', margin, y);
-      y += 2;
-      pdf.setFillColor(...navy);
-      pdf.rect(margin, y, 50, 0.8, 'F');
-      y += 6;
+      pdf.setTextColor(...darkBlue);
+      pdf.text('Grille Tarifaire — Étalonnage', margin, y);
+      y += 7;
       
       for (let catIdx = 0; catIdx < enabledCats.length; catIdx++) {
         const cat = enabledCats[catIdx];
@@ -22977,22 +23139,22 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
         const exceptions = cat.models.filter(m => m.isOverride && m.price !== null);
         checkPageBreak(12 + (exceptions.length > 0 ? 8 + exceptions.length * 5 : 0));
         
-        // Category header bar with standard price
-        pdf.setFillColor(...navy);
-        pdf.roundedRect(margin, y, contentWidth, 9, 1, 1, 'F');
+        // Category header bar
+        pdf.setFillColor(...darkBlue);
+        pdf.rect(margin, y, contentWidth, 9, 'F');
         pdf.setTextColor(...white);
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'bold');
         pdf.text(catalog.name, margin + 4, y + 6.5);
         pdf.setFontSize(9);
-        pdf.text(`${cat.categoryPrice.toFixed(2)} EUR / etalonnage`, pageWidth - margin - 4, y + 6.5, { align: 'right' });
+        pdf.text(`${cat.categoryPrice.toFixed(2)} EUR / étalonnage`, pageWidth - margin - 4, y + 6.5, { align: 'right' });
         y += 11;
         
-        // Exceptions only
+        // Exceptions
         if (exceptions.length > 0) {
           pdf.setFillColor(248, 249, 250);
           const excBlockH = 6 + exceptions.length * 5.5;
-          pdf.roundedRect(margin, y, contentWidth, excBlockH, 0, 0, 'F');
+          pdf.rect(margin, y, contentWidth, excBlockH, 'F');
           pdf.setDrawColor(220, 220, 225);
           pdf.setLineWidth(0.2);
           pdf.rect(margin, y, contentWidth, excBlockH, 'S');
@@ -23000,7 +23162,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           pdf.setFontSize(8);
           pdf.setFont('helvetica', 'italic');
           pdf.setTextColor(...gray);
-          pdf.text('Sauf les modeles suivants :', margin + 5, y + 4.5);
+          pdf.text('Sauf les modèles suivants :', margin + 5, y + 4.5);
           y += 7;
           
           for (const ex of exceptions) {
@@ -23016,41 +23178,37 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           y += 1;
         }
         
-        // Model count
         pdf.setFontSize(7);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(170, 170, 175);
-        pdf.text(`${catalog.models.length} modeles inclus`, margin + 4, y + 2);
-        y += 10; // More generous spacing between categories
+        pdf.text(`${catalog.models.length} modèles inclus`, margin + 4, y + 2);
+        y += 10;
       }
       
     } else {
       // ===== TOKEN CONTRACT - Device table =====
       const validDevices = devices.filter(d => d.serial_number);
       
-      // Section title
-      pdf.setFontSize(12);
+      pdf.setFontSize(13);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...navy);
-      pdf.text('APPAREILS SOUS CONTRAT', margin, y);
-      y += 2;
-      pdf.setFillColor(...navy);
-      pdf.rect(margin, y, 50, 0.8, 'F');
-      y += 6;
+      pdf.setTextColor(...darkBlue);
+      pdf.text('Appareils sous Contrat', margin, y);
+      y += 7;
       
       // Table header
-      pdf.setFillColor(...navy);
-      pdf.roundedRect(margin, y, contentWidth, 9, 1, 1, 'F');
-      pdf.setTextColor(...white);
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'bold');
       const col1 = margin + 4;
       const col2 = margin + 55;
       const col3 = margin + 120;
       const col4 = pageWidth - margin - 4;
-      pdf.text('N. SERIE', col1, y + 6.5);
-      pdf.text('MODELE', col2, y + 6.5);
-      pdf.text('TOKENS / AN', col3, y + 6.5);
+
+      pdf.setFillColor(...darkBlue);
+      pdf.rect(margin, y, contentWidth, 9, 'F');
+      pdf.setTextColor(...white);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('N. SÉRIE', col1, y + 6.5);
+      pdf.text('MODÈLE', col2, y + 6.5);
+      pdf.text('ÉTAL. / AN', col3, y + 6.5);
       pdf.text('PRIX HT', col4, y + 6.5, { align: 'right' });
       y += 11;
       
@@ -23077,91 +23235,112 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
       // Total row
       y += 2;
       pdf.setFillColor(...navy);
-      pdf.rect(margin, y, contentWidth, 10, 'F');
+      pdf.rect(margin, y, contentWidth, 11, 'F');
       pdf.setTextColor(...white);
-      pdf.setFontSize(10);
+      pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('TOTAL HT', col3 - 20, y + 7);
-      pdf.text(`${totalPrice.toFixed(2)} EUR`, col4, y + 7, { align: 'right' });
-      y += 14;
+      pdf.text('TOTAL HT', col3 - 20, y + 7.5);
+      pdf.setFontSize(16);
+      pdf.text(`${totalPrice.toFixed(2)} EUR`, col4, y + 8, { align: 'right' });
+      y += 15;
     }
 
     // ===== NOTES =====
     if (contractData.internal_notes) {
       checkPageBreak(25);
-      y += 4;
-      pdf.setFontSize(9);
+      y += 3;
+      pdf.setFontSize(8);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(...navy);
+      pdf.setTextColor(...lightGray);
       pdf.text('NOTES', margin, y);
-      y += 1;
-      pdf.setFillColor(...navy);
-      pdf.rect(margin, y, 15, 0.5, 'F');
       y += 4;
-      pdf.setFontSize(8.5);
+      pdf.setFontSize(8);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(...gray);
       const noteLines = pdf.splitTextToSize(contractData.internal_notes, contentWidth);
-      pdf.text(noteLines, margin, y);
-      y += noteLines.length * 4 + 5;
+      noteLines.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
+      y += 3;
     }
 
-    // ===== SIGNATURE SECTION (quote style) =====
-    checkPageBreak(55);
-    y += 10;
-    
-    // Separator line
+    // ===== CONDITIONS =====
+    const CONTRACT_CONDITIONS = [
+      "Devis valable 30 jours à compter de la date d'émission.",
+      "Les étalonnages seront effectués conformément aux normes ISO en vigueur.",
+      "Le transport des appareils reste à la charge du client sauf accord contraire.",
+      "Paiement : 30 jours fin de mois."
+    ];
+    y += 3;
+    checkPageBreak(8 + CONTRACT_CONDITIONS.length * 4);
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(...lightGray);
+    pdf.text('CONDITIONS', margin, y);
+    y += 4;
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(...gray);
+    CONTRACT_CONDITIONS.forEach(d => {
+      checkPageBreak(5);
+      const wrapped = pdf.splitTextToSize('- ' + d, contentWidth);
+      wrapped.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
+    });
+    y += 1;
+
+    // ===== SIGNATURE SECTION =====
+    const signatureHeight = 38;
+    const signatoryName = qs.signatory_name || biz.quote_signatory || 'M. Meleney';
+    const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
+
+    const signatureLimit = pageHeight - footerHeight - 2;
+    if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
+
+    const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
+
     pdf.setDrawColor(200, 200, 200);
     pdf.setLineWidth(0.3);
-    pdf.line(margin, y, pageWidth - margin, y);
-    y += 8;
-    
-    // ETABLI PAR (left side)
+    pdf.line(margin, sigY, pageWidth - margin, sigY);
+
     pdf.setFontSize(8);
-    pdf.setTextColor(180, 180, 180);
-    pdf.text('ETABLI PAR', margin, y);
-    y += 6;
+    pdf.setTextColor(...lightGray);
+    pdf.text('ETABLI PAR', margin, sigY + 7);
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(...darkBlue);
-    pdf.text(biz.quote_signatory || 'M. Meleney', margin, y);
-    y += 5;
+    pdf.text(signatoryName, margin, sigY + 14);
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...gray);
-    pdf.text(biz.company_name || 'Lighthouse France', margin, y);
-    
-    // CapCert logo (next to name)
-    let capcertLogo = null;
-    try {
-      capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
-    } catch (e) {}
+    pdf.text(signatoryCompany, margin, sigY + 20);
+
     if (capcertLogo) {
       try {
         const fmt = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG';
-        pdf.addImage(capcertLogo, fmt, margin + 55, y - 14, 30, 30);
+        pdf.addImage(capcertLogo, fmt, margin + 52, sigY + 3, 30, 30);
       } catch (e) {}
     }
-    
-    // Signature box (right side)
+
     const sigBoxX = pageWidth - margin - 62;
-    const sigBoxY = y - 14;
     pdf.setFontSize(8);
-    pdf.setTextColor(180, 180, 180);
-    pdf.text('Signature client', sigBoxX + 16, sigBoxY);
+    pdf.setTextColor(...lightGray);
+    pdf.text('Signature client', sigBoxX + 16, sigY + 7);
     pdf.setDrawColor(180, 180, 180);
     pdf.setLineWidth(0.3);
     pdf.setLineDashPattern([2, 2], 0);
-    pdf.roundedRect(sigBoxX + 5, sigBoxY + 3, 52, 22, 2, 2, 'D');
+    pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
     pdf.setLineDashPattern([], 0);
-    pdf.setFontSize(7);
-    pdf.text('Lu et approuve', sigBoxX + 18, sigBoxY + 28);
+    pdf.text('Lu et approuvé', sigBoxX + 18, sigY + 34);
 
-    // Add footers to all pages
+    addFooter();
+
+    // Add page numbers to all pages
     const pageCount = pdf.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      pdf.setPage(i);
-      addFooter(i, pageCount);
+    if (pageCount > 1) {
+      for (let i = 1; i <= pageCount; i++) {
+        pdf.setPage(i);
+        pdf.setFontSize(7);
+        pdf.setTextColor(180, 180, 180);
+        pdf.text(`Page ${i} / ${pageCount}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
+      }
     }
     
     return pdf;
