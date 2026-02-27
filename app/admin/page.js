@@ -5311,19 +5311,8 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           }).eq('id', contractId);
           if (updateErr) console.error('❌ Contract update error:', updateErr);
 
-          // Save PDF as attachment (same pattern as rental)
-          if (quoteUrl) {
-            await supabase.from('request_attachments').insert({
-              contract_id: contractId,
-              file_name: `${contractNumber}_Devis_Contrat.pdf`,
-              file_url: quoteUrl,
-              file_type: 'application/pdf',
-              uploaded_by: profile?.id,
-              category: 'devis'
-            }).then(({ error: attErr }) => {
-              if (attErr) console.error('Attachment insert error (non-fatal):', attErr);
-            });
-          }
+          // Note: request_attachments doesn't have contract_id column
+          // PDF URL is saved in contracts.quote_data.quote_url which is sufficient
         }
       } else if (review.quote_type === 'rental') {
         // === RENTAL QUOTE: Generate PDF and set status to quote_sent ===
