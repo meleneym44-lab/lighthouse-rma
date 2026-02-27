@@ -6622,8 +6622,11 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
                       {billingAddr.attention && <p className="text-gray-600">Contact : {billingAddr.attention}</p>}
                       {billingAddr.phone && <p className="text-gray-500">📞 {billingAddr.phone}</p>}
                       <p className="text-gray-600">{billingAddr.address_line1}, {billingAddr.postal_code} {billingAddr.city}</p>
-                      {(billingAddr.siret || billingAddr.tva_number) && <p className="text-gray-500 text-xs mt-1">{billingAddr.siret ? `SIRET: ${billingAddr.siret}` : ''}{billingAddr.siret && billingAddr.tva_number ? ' • ' : ''}{billingAddr.tva_number ? `TVA: ${billingAddr.tva_number}` : ''}</p>}
-                      {billingAddr.chorus_invoicing && <span className="inline-flex items-center mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">🏛️ Chorus Pro</span>}
+                      <div className="mt-1 pt-1 border-t border-gray-200 flex flex-wrap gap-2">
+                        <span className={billingAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>SIRET: {billingAddr.siret || 'Non renseigné'}</span>
+                        <span className={billingAddr.tva_number ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>TVA: {billingAddr.tva_number || 'Non renseigné'}</span>
+                      </div>
+                      {billingAddr.chorus_invoicing && <span className="inline-flex items-center mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">📋 Chorus Pro</span>}
                     </div>
                   )}
                 </div>
@@ -7162,8 +7165,11 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
                         {billingAddr.attention && <p className="text-gray-600">Contact : {billingAddr.attention}</p>}
                         {billingAddr.phone && <p className="text-gray-500">📞 {billingAddr.phone}</p>}
                         <p className="text-gray-600">{billingAddr.address_line1}, {billingAddr.postal_code} {billingAddr.city}</p>
-                        {billingAddr.siret && <p className="text-gray-500 text-xs mt-1">SIRET: {billingAddr.siret}{billingAddr.tva_number ? ` • TVA: ${billingAddr.tva_number}` : ''}</p>}
-                        {billingAddr.chorus_invoicing && <span className="inline-flex items-center mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">🏛️ Chorus Pro</span>}
+                        <div className="mt-1 pt-1 border-t border-gray-200 flex flex-wrap gap-2">
+                          <span className={billingAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>SIRET: {billingAddr.siret || 'Non renseigné'}</span>
+                          <span className={billingAddr.tva_number ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>TVA: {billingAddr.tva_number || 'Non renseigné'}</span>
+                        </div>
+                        {billingAddr.chorus_invoicing && <span className="inline-flex items-center mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">📋 Chorus Pro</span>}
                       </div>
                     ) : <p className="text-gray-400 text-sm italic">Non sélectionnée</p>}
                   </div>
@@ -14661,6 +14667,11 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                             {bilAddr.attention && <p className="text-xs text-gray-600">Contact : {bilAddr.attention}</p>}
                             {bilAddr.phone && <p className="text-xs text-gray-500">📞 {bilAddr.phone}</p>}
                             <p className="text-xs text-gray-600">{bilAddr.address_line1}, {bilAddr.postal_code} {bilAddr.city}</p>
+                            <div className="mt-1 pt-1 border-t border-gray-200 flex flex-wrap gap-2">
+                              <span className={bilAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>SIRET: {bilAddr.siret || 'Non renseigné'}</span>
+                              <span className={bilAddr.tva_number ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>TVA: {bilAddr.tva_number || 'Non renseigné'}</span>
+                            </div>
+                            {bilAddr.chorus_invoicing && <span className="inline-flex items-center mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">📋 Chorus Pro</span>}
                           </>)}
                         </div>
                         <div className="bg-gray-50 rounded-lg p-3">
