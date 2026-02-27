@@ -5103,156 +5103,174 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   // ========================
   // QUOTE PREVIEW RENDERER
   // ========================
-const renderQuotePreview = (review) => {
-    const qd = review.quote_data || {};
-    const qDate = new Date(qd.createdAt || review.submitted_at || Date.now()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-    const signName = qd.signatory || qd.createdBy || review.submitted_by_name || 'Lighthouse France';
-    const bs = qd.businessSettings || {};
-    const qs = bs.quote_settings || {};
+// ReviewQuoteDoc — non-modal version of customer QuoteDocumentView
+  // Renders just the document content (no modal overlay, no action buttons)
+  const ReviewQuoteDoc = ({ title = 'OFFRE DE PRIX', docNumber, reference, refLabel = 'RMA', date, quoteData = {}, conditions = [], addressMode = 'both', accentColor, extraInfoBar = null, children }) => {
+    const billingAddr = quoteData.billingAddress || null;
+    const shippingAddr = quoteData.shippingAddress || null;
+    const submitterName = quoteData.submitterName || null;
+    const returnShipping = quoteData.returnShipping || 'standard';
+    const accent = accentColor || '#2D5A7B';
+    const qDate = date ? (() => { try { return new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); } catch { return date; } })() : new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const returnShipping = qd.returnShipping || 'standard';
-    const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
-    const shipLabel = returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'TRANSPORT CLIENT' : 'LIVRER À';
-
-    // ========================================
-    // A4 PAGINATION ENGINE
-    // ========================================
-    // Heights in mm. A4 = 210 × 297mm
-    const PAGE_H = 297;
-    const HEADER_H = 38;     // logo + title
-    const INFO_BAR_H = 16;   // date/validity
-    const ADDR_H = 40;       // address boxes
-    const FOOTER_H = 14;     // footer + page number
-    const SLIM_HEADER_H = 18; // continuation header
-    const PAGE1_CONTENT = PAGE_H - HEADER_H - INFO_BAR_H - ADDR_H - FOOTER_H; // ~189mm
-    const PAGEN_CONTENT = PAGE_H - SLIM_HEADER_H - FOOTER_H; // ~265mm
-
-    const paginate = (blocks) => {
-      const pages = [];
-      let currentBlocks = [];
-      let remaining = PAGE1_CONTENT; // first page has less room
-      blocks.forEach((block, i) => {
-        if (block.h <= remaining) {
-          currentBlocks.push(block);
-          remaining -= block.h;
-        } else {
-          pages.push([...currentBlocks]);
-          currentBlocks = [block];
-          remaining = PAGEN_CONTENT - block.h;
-        }
-      });
-      if (currentBlocks.length > 0) pages.push(currentBlocks);
-      if (pages.length === 0) pages.push([]);
-      return pages;
-    };
-
-    // Shared renderers
-    const renderAddr = (addr, fallbackName) => {
-      const name = addr?.company_name || fallbackName || review.client_name || 'Client';
+    const renderShipTo = () => {
+      if (returnShipping === 'pickup') return (<><p className="font-bold text-[#1a1a2e]">Enlèvement client</p><p className="text-sm text-gray-600">Le client récupérera la commande dans nos locaux.</p></>);
+      if (returnShipping === 'own_label') return (<><p className="font-bold text-[#1a1a2e]">Expédition client</p><p className="text-sm text-gray-600">Le client fournira son propre transporteur.</p></>);
+      const addr = shippingAddr;
+      const name = addr?.company_name || quoteData.clientName || 'Client';
+      const attn = addr?.attention || submitterName;
       return (<>
-        <p className="font-bold text-[#1a1a2e]" style={{fontSize:'9pt'}}>{name}</p>
+        <p className="font-bold text-[#1a1a2e]">{name}</p>
+        {attn && <p className="text-sm text-gray-600">Attn: {attn}</p>}
         {addr ? (<>
-          {addr.attention && <p style={{fontSize:'8pt'}} className="text-gray-600">Contact: {addr.attention}</p>}
-          {addr.address_line1 && <p style={{fontSize:'8pt'}} className="text-gray-600">{addr.address_line1}</p>}
-          {(addr.postal_code || addr.city) && <p style={{fontSize:'8pt'}} className="text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
-          {addr.phone && <p style={{fontSize:'7.5pt'}} className="text-gray-500">Tél: {addr.phone}</p>}
-          {addr.siret && <p style={{fontSize:'7.5pt'}} className="font-bold text-[#1a1a2e]">SIRET: {addr.siret}</p>}
-          {addr.tva_number && <p style={{fontSize:'7.5pt'}} className="font-bold text-[#1a1a2e]">TVA: {addr.tva_number}</p>}
-          {addr.chorus_invoicing && <p style={{fontSize:'6.5pt'}} className="text-blue-600">Chorus Pro{addr.chorus_service_code ? ` — Service: ${addr.chorus_service_code}` : ''}</p>}
-        </>) : (<p style={{fontSize:'8pt'}} className="text-gray-400 italic">Adresse non renseignée</p>)}
+          {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
+          {(addr.postal_code || addr.city) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
+          {addr.phone && <p className="text-sm text-gray-500">Tél: {addr.phone}</p>}
+        </>) : <p className="text-sm text-gray-400 italic">Adresse non renseignée</p>}
       </>);
     };
 
-    const shipContent = () => {
-      if (returnShipping === 'pickup') return (<><p className="font-bold text-[#1a1a2e]" style={{fontSize:'9pt'}}>Enlèvement client</p><p style={{fontSize:'8pt'}} className="text-gray-600">Le client récupérera la commande dans nos locaux.</p></>);
-      if (returnShipping === 'own_label') return (<><p className="font-bold text-[#1a1a2e]" style={{fontSize:'9pt'}}>Expédition retour client</p><p style={{fontSize:'8pt'}} className="text-gray-600">Le client fournira sa propre étiquette de retour.</p></>);
-      return renderAddr(qd.shippingAddress, null);
+    const renderBillTo = () => {
+      const addr = billingAddr;
+      const name = addr?.company_name || quoteData.clientName || 'Client';
+      return (<>
+        <p className="font-bold text-[#1a1a2e]">{name}</p>
+        {addr ? (<>
+          {addr.attention && <p className="text-sm text-gray-600">Contact: {addr.attention}</p>}
+          {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
+          {(addr.postal_code || addr.city) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
+          {addr.phone && <p className="text-sm text-gray-500">Tél: {addr.phone}</p>}
+          {addr.siret && <p className="text-sm font-bold text-[#1a1a2e]">SIRET: {addr.siret}</p>}
+          {addr.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {addr.tva_number}</p>}
+          {addr.chorus_invoicing && <p className="text-xs text-blue-600">Chorus Pro{addr.chorus_service_code ? ` — Service: ${addr.chorus_service_code}` : ''}</p>}
+        </>) : (<>
+          {quoteData.clientAddress && <p className="text-sm text-gray-600">{quoteData.clientAddress}</p>}
+          {(quoteData.clientPostalCode || quoteData.clientCity) && <p className="text-sm text-gray-600">{[quoteData.clientPostalCode, quoteData.clientCity].filter(Boolean).join(' ')}</p>}
+        </>)}
+      </>);
     };
-    const billContent = () => renderAddr(qd.billingAddress, null);
 
-    // Page shell
-    const A4Page = ({ children, pageNum, totalPages, accent = '#2D5A7B', title, number, subtitle, showHeader = true, isFirst = false, isLastPage = false, signatureName = null, infoItems = [], showAddresses = false }) => (
-      <div className="bg-white shadow-xl mx-auto" style={{ width: '210mm', height: '297mm', minHeight: '297mm', flexShrink: 0, position: 'relative', overflow: 'hidden', boxSizing: 'border-box', marginBottom: '8mm' }}>
+    const shipLabel = returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'TRANSPORT CLIENT' : 'LIVRER À';
+
+    return (
+      <div className="bg-white w-full max-w-4xl mx-auto shadow-lg">
         {/* Header */}
-        {isFirst ? (
-          <>
-            <div style={{ padding: '12mm 15mm 6mm 15mm', borderBottom: `0.8mm solid ${accent}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{ height: '20mm', width: 'auto' }} onError={e => { e.target.style.display='none'; }} />
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontSize: '16pt', fontWeight: 'bold', color: accent, margin: 0 }}>{title}</p>
-                  <p style={{ fontSize: '10pt', fontWeight: 'bold', color: '#1a1a2e', margin: '1mm 0 0 0' }}>N° {number || <span style={{color:'#d97706',fontStyle:'italic',fontSize:'8pt'}}>(attribué à l'approbation)</span>}</p>
-                  {subtitle && <p style={{ fontSize: '7.5pt', color: '#888', margin: '1mm 0 0 0' }}>{subtitle}</p>}
-                </div>
-              </div>
-            </div>
-            {infoItems.length > 0 && (
-              <div style={{ background: '#f5f5f5', padding: '3mm 15mm', display: 'flex', justifyContent: 'space-between', borderBottom: '0.3mm solid #e0e0e0' }}>
-                {infoItems.map((item, i) => (
-                  <div key={i}>
-                    <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 }}>{item.label}</p>
-                    <p style={{ fontSize: '8.5pt', fontWeight: 'bold', color: '#1a1a2e', margin: '0.5mm 0 0 0' }}>{item.value}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {showAddresses && (
-              <div style={{ padding: '4mm 15mm', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4mm', borderBottom: '0.3mm solid #e0e0e0' }}>
-                <div style={{ border: `0.4mm solid ${accent}80`, borderRadius: '1.5mm', padding: '3mm' }}>
-                  <p style={{ fontSize: '6pt', fontWeight: 'bold', color: accent, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2mm' }}>{shipLabel}</p>
-                  {shipContent()}
-                </div>
-                <div style={{ border: `0.4mm solid ${accent}80`, borderRadius: '1.5mm', padding: '3mm' }}>
-                  <p style={{ fontSize: '6pt', fontWeight: 'bold', color: accent, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2mm' }}>FACTURER À</p>
-                  {billContent()}
-                </div>
-              </div>
-            )}
-          </>
-        ) : showHeader ? (
-          <div style={{ padding: '4mm 15mm 3mm 15mm', borderBottom: `0.5mm solid ${accent}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" style={{ height: '10mm' }} onError={e => { e.target.style.display='none'; }} />
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: '9pt', fontWeight: 'bold', color: accent }}>{title}</span>
-              <span style={{ fontSize: '8pt', color: '#666', marginLeft: '3mm' }}>N° {number || '—'}</span>
+        <div className="px-8 pt-8 pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
+          <div className="flex justify-between items-start">
+            <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+            <div className="text-right">
+              <p className="text-2xl font-bold" style={{ color: accent }}>{title}</p>
+              <p className="font-bold text-[#1a1a2e]">N° {docNumber || <span className="text-amber-500 italic text-sm">(attribué à l'approbation)</span>}</p>
+              {reference && docNumber !== reference && <p className="text-xs text-gray-400">{refLabel}: {reference}</p>}
             </div>
           </div>
-        ) : null}
-
-        {/* Content area — between header and footer */}
-        <div style={{ padding: '0 15mm', paddingBottom: isLastPage ? '55mm' : '12mm' }}>
-          {children}
         </div>
 
-        {/* Signature block — pinned to bottom of last page, above footer */}
-        {isLastPage && signatureName && (
-          <div style={{ position: 'absolute', bottom: '18mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '0.3mm solid #e0e0e0', paddingTop: '3mm' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
-              <div>
-                <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
-                <p style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1a1a2e', margin: 0 }}>{signatureName}</p>
-                <p style={{ fontSize: '8pt', color: '#505050', margin: '0.5mm 0 0 0' }}>Lighthouse France SAS</p>
-              </div>
-              <img src="/images/logos/capcert-logo.png" alt="Capcert" style={{ height: '18mm', width: 'auto' }} onError={e => { e.target.style.display='none'; }} />
+        {/* Info Bar */}
+        <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
+          <div>
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p>
+            <p className="font-bold text-[#1a1a2e]">{qDate}</p>
+          </div>
+          {extraInfoBar || (<>
+            <div>
+              <p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p>
+              <p className="font-bold text-[#1a1a2e]">30 jours</p>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: '6.5pt', color: '#828282', margin: '0 0 1mm 0' }}>Bon pour accord</p>
-              <div style={{ width: '45mm', height: '18mm', border: '0.4mm dashed #ccc', borderRadius: '1.5mm' }}></div>
-              <p style={{ fontSize: '6pt', color: '#aaa', margin: '1mm 0 0 0' }}>Signature et cachet</p>
+            <div>
+              <p className="text-[10px] text-[#828282] uppercase tracking-wider">CONDITIONS</p>
+              <p className="font-bold text-[#1a1a2e]">À réception de facture</p>
+            </div>
+          </>)}
+        </div>
+
+        {/* Address Boxes */}
+        {addressMode === 'both' ? (
+          <div className="px-8 py-4 grid grid-cols-2 gap-4 border-b">
+            <div className="border-2 rounded p-3" style={{ borderColor: `${accent}80` }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>{shipLabel}</p>
+              {renderShipTo()}
+            </div>
+            <div className="border-2 rounded p-3" style={{ borderColor: `${accent}80` }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>FACTURER À</p>
+              {renderBillTo()}
+            </div>
+          </div>
+        ) : (
+          <div className="px-8 py-4 border-b">
+            <div className="border-2 rounded p-3" style={{ borderColor: `${accent}80` }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>FACTURER À</p>
+              {renderBillTo()}
             </div>
           </div>
         )}
 
-        {/* Footer — absolutely positioned at bottom */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#1a1a2e', color: 'white', padding: '2mm 15mm 2.5mm 15mm' }}>
-          <p style={{ fontSize: '7.5pt', fontWeight: 'bold', margin: 0, textAlign: 'center' }}>Lighthouse France SAS</p>
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', marginTop: '0.5mm' }}>
-            <span style={{ fontSize: '6pt', color: '#999' }}>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</span>
-            <span style={{ position: 'absolute', right: 0, fontSize: '7pt', color: '#ccc', fontWeight: 'bold' }}>Page {pageNum}/{totalPages}</span>
+        {/* Content (children) */}
+        {children}
+
+        {/* Conditions */}
+        {conditions.length > 0 && (
+          <div className="px-8 py-4 border-t bg-[#f9fafb]">
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+            <ul className="text-xs text-[#505050] space-y-1">
+              {conditions.map((d, i) => <li key={i}>– {d}</li>)}
+            </ul>
           </div>
+        )}
+
+        {/* Signature */}
+        <div className="px-8 py-6 border-t flex justify-between items-end">
+          <div className="flex items-end gap-6">
+            <div>
+              <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+              <p className="font-bold text-lg text-[#1a1a2e]">{quoteData.createdBy || quoteData.signatory || 'Lighthouse France'}</p>
+              <p className="text-[#505050]">Lighthouse France SAS</p>
+            </div>
+            <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-[#828282] mb-1">Bon pour accord</p>
+            <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+            <p className="text-xs text-[#828282] mt-1">Signature et cachet</p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-[#1a1a2e] text-white px-8 py-3 flex items-end justify-between">
+          <div className="text-center flex-1">
+            <p className="font-bold text-sm">Lighthouse France SAS</p>
+            <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+          </div>
+          <p className="text-xs text-gray-400 font-bold ml-4">Page 1/1</p>
         </div>
       </div>
     );
+  };
+
+  // ============================================
+  // renderQuotePreview — uses ReviewQuoteDoc (identical to customer QuoteDocumentView)
+  // ============================================
+  const renderQuotePreview = (review) => {
+    const qd = review.quote_data || {};
+    const signName = qd.signatory || qd.createdBy || review.submitted_by_name || 'Lighthouse France';
+    const bs = qd.businessSettings || {};
+    const qs = bs.quote_settings || {};
+    const returnShipping = qd.returnShipping || 'standard';
+    const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
+    
+    // Common quoteData shape for ReviewQuoteDoc
+    const docData = {
+      billingAddress: qd.billingAddress || null,
+      shippingAddress: qd.shippingAddress || null,
+      submitterName: qd.submitterName || null,
+      returnShipping: returnShipping,
+      createdBy: signName,
+      signatory: signName,
+      clientName: qd.clientName || review.client_name || 'Client',
+      clientAddress: qd.clientAddress || '',
+      clientPostalCode: qd.clientPostalCode || '',
+      clientCity: qd.clientCity || ''
+    };
 
     // ============================================
     // INITIAL / REVISION QUOTE
@@ -5260,130 +5278,117 @@ const renderQuotePreview = (review) => {
     if (review.quote_type === 'initial' || review.quote_type === 'revision') {
       const devices = qd.devices || [];
       const deviceTypes = [...new Set(devices.map(d => d.deviceType).filter(Boolean))];
+      if (deviceTypes.length === 0) deviceTypes.push('particle_counter');
+      const hasRepair = devices.some(d => d.needsRepair);
+      const isFullyContractCovered = devices.length > 0 && devices.every(d => d.isContractCovered);
+      const conditions = qs.conditions || ['Devis valable 30 jours.', 'Paiement : 30 jours fin de mois.', "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.", 'Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.', 'Les mesures stockées dans les appareils seront éventuellement perdues.', 'Les équipements devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives.'];
 
-      const blocks = [];
-
-      // Service description blocks
-      deviceTypes.forEach(type => {
-        const tmpl = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '📦', title: `Étalonnage ${type}`, prestations: ['Vérification des fonctionnalités', 'Fourniture d\'un rapport de test'] };
-        blocks.push({ h: 8 + tmpl.prestations.length * 4.5, render: () => (
-          <div style={{ borderLeft: '1.2mm solid #3B82F6', paddingLeft: '4mm', margin: '3mm 0' }}>
-            <p style={{ fontWeight: 'bold', fontSize: '9pt', color: '#1a1a2e', margin: '0 0 2mm 0' }}>{tmpl.icon} {tmpl.title}</p>
-            {tmpl.prestations.map((p, i) => <p key={i} style={{ fontSize: '7.5pt', color: '#555', margin: '0.5mm 0', lineHeight: '1.4' }}>▸ {p}</p>)}
+      return (
+        <ReviewQuoteDoc
+          title={review.quote_type === 'revision' ? `OFFRE DE PRIX Rev-${qd.newRevisionCount || 1}` : 'OFFRE DE PRIX'}
+          docNumber={qd.quoteNumber || review.quote_number}
+          reference={qd.rmaNumber || review.rma_number} refLabel="RMA"
+          date={qd.createdAt || review.submitted_at}
+          quoteData={docData} conditions={conditions}
+        >
+          {/* Service Descriptions */}
+          <div className="px-8 py-6 space-y-6">
+            {deviceTypes.map(type => {
+              const template = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '🔬', title: `Étalonnage ${type}`, prestations: ['Vérification des fonctionnalités', 'Fourniture d\'un rapport de test'] };
+              return (
+                <div key={type} className="border-l-4 border-blue-500 pl-4">
+                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
+                  <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 flex items-start gap-2"><span className="text-[#1a1a2e] mt-1">▸</span><span>{p}</span></li>))}</ul>
+                </div>
+              );
+            })}
+            {hasRepair && typeof REPAIR_TEMPLATE !== 'undefined' && (
+              <div className="border-l-4 border-orange-500 pl-4">
+                <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2"><span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}</h3>
+                <ul className="space-y-1">{REPAIR_TEMPLATE.prestations.map((p, i) => (<li key={i} className="text-gray-700 flex items-start gap-2"><span className="text-orange-500 mt-1">▸</span><span>{p}</span></li>))}</ul>
+              </div>
+            )}
           </div>
-        )});
-      });
 
-      if (devices.some(d => d.needsRepair) && typeof REPAIR_TEMPLATE !== 'undefined') {
-        blocks.push({ h: 8 + REPAIR_TEMPLATE.prestations.length * 4.5, render: () => (
-          <div style={{ borderLeft: '1.2mm solid #F97316', paddingLeft: '4mm', margin: '3mm 0' }}>
-            <p style={{ fontWeight: 'bold', fontSize: '9pt', color: '#1a1a2e', margin: '0 0 2mm 0' }}>{REPAIR_TEMPLATE.icon} {REPAIR_TEMPLATE.title}</p>
-            {REPAIR_TEMPLATE.prestations.map((p, i) => <p key={i} style={{ fontSize: '7.5pt', color: '#555', margin: '0.5mm 0', lineHeight: '1.4' }}>▸ {p}</p>)}
+          {/* Pricing Table */}
+          <div className="px-8 py-6 bg-gray-50">
+            <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+            <table className="w-full text-sm">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-3 py-2.5 text-center w-12">Qté</th>
+                <th className="px-3 py-2.5 text-left">Désignation</th>
+                <th className="px-3 py-2.5 text-right w-24">Prix Unit.</th>
+                <th className="px-3 py-2.5 text-right w-24">Total HT</th>
+              </tr></thead>
+              <tbody>
+                {devices.map((d, i) => {
+                  const rows = [];
+                  if (d.needsCalibration) {
+                    const qty = d.calibrationQty || 1; const up = parseFloat(d.calibrationPrice) || 0;
+                    rows.push(<tr key={`${i}-cal`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 text-center">{qty}</td>
+                      <td className="px-3 py-2">Étalonnage {d.model} (SN: {d.serial}){d.isContractCovered && <span className="ml-2 px-2 py-0.5 bg-emerald-500 text-white text-xs rounded">CONTRAT</span>}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{d.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${up.toFixed(2)} €`}</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{d.isContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(qty * up).toFixed(2)} €`}</td>
+                    </tr>);
+                  }
+                  if (d.needsNettoyage && !d.isContractCovered && (d.nettoyagePrice || 0) > 0) {
+                    const qty = d.nettoyageQty || 1; const up = parseFloat(d.nettoyagePrice) || 0;
+                    rows.push(<tr key={`${i}-nett`} className="bg-amber-50">
+                      <td className="px-3 py-2 text-center">{qty}</td>
+                      <td className="px-3 py-2"><span className="text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis</span></td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{up.toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(qty * up).toFixed(2)} €</td>
+                    </tr>);
+                  }
+                  if (d.needsRepair) {
+                    const up = parseFloat(d.repairPrice) || 0;
+                    rows.push(<tr key={`${i}-rep`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 text-center">1</td>
+                      <td className="px-3 py-2">Réparation {d.model} (SN: {d.serial})</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{up.toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{up.toFixed(2)} €</td>
+                    </tr>);
+                  }
+                  (d.additionalParts || []).forEach((p, pi) => {
+                    const qty = parseInt(p.quantity) || 1; const up = parseFloat(p.unitPrice || p.price) || 0;
+                    rows.push(<tr key={`${i}-p-${pi}`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 text-center">{qty}</td>
+                      <td className="px-3 py-2">{p.partNumber && <span className="text-gray-500 mr-1">[{p.partNumber}]</span>}{p.description || 'Pièce'}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{up.toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(qty * up).toFixed(2)} €</td>
+                    </tr>);
+                  });
+                  return rows;
+                })}
+                {!isClientReturn && (
+                  <tr className={isFullyContractCovered ? "bg-emerald-50" : "bg-blue-50"}>
+                    <td className="px-3 py-2 text-center">{qd.shipping?.parcels || 1}</td>
+                    <td className="px-3 py-2">Frais de port ({qd.shipping?.parcels || 1} colis)</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(qd.shipping?.unitPrice || 45).toFixed(2)} €`}</td>
+                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(qd.shippingTotal || qd.shipping?.total || 0).toFixed(2)} €`}</td>
+                  </tr>
+                )}
+                {qd.discount?.enabled && (
+                  <tr className="bg-green-50">
+                    <td colSpan={2} className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-right text-green-700 whitespace-nowrap">Remise{qd.discount.type === 'percentage' ? ` (${qd.discount.value}%)` : ''}</td>
+                    <td className="px-3 py-2 text-right font-medium text-green-700 whitespace-nowrap">-{(qd.discountAmount || qd.discount.amount || 0).toFixed(2)} €</td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot><tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
+                <td colSpan={2} className="px-3 py-3"></td>
+                <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{isFullyContractCovered ? 'Contrat' : `${(qd.grandTotal || review.total_amount || 0).toFixed(2)} €`}</td>
+              </tr></tfoot>
+            </table>
+            {devices.some(d => d.needsNettoyage && !d.isContractCovered) && (
+              <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>
+            )}
           </div>
-        )});
-      }
-
-      // Table header
-      blocks.push({ h: 10, render: () => (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3mm' }}>
-          <thead><tr style={{ background: '#1a1a2e', color: 'white' }}>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'center', width: '8mm' }}>Qté</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'left', width: '18mm' }}>Réf.</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'left' }}>Désignation</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '18mm' }}>P.U. HT</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '18mm' }}>Total HT</th>
-          </tr></thead>
-        </table>
-      )});
-
-      // Device rows
-      devices.forEach((d, di) => {
-        const rows = [];
-        if (d.needsCalibration) rows.push({ desc: `Étalonnage ${d.model}`, sn: d.serial, pn: d.calPartNumber, qty: d.calibrationQty || 1, price: d.calibrationPrice || 0, contract: d.isContractCovered });
-        if (d.needsRepair) rows.push({ desc: `Réparation ${d.model}`, sn: d.serial, pn: d.repairPartNumber, qty: 1, price: d.repairPrice || 0 });
-        if (d.needsNettoyage && (d.nettoyagePrice || 0) > 0) rows.push({ desc: `Nettoyage cellule ${d.model}`, sn: d.serial, pn: d.nettoyagePartNumber, qty: d.nettoyageQty || 1, price: d.nettoyagePrice || 0 });
-        if (d.additionalParts) (Array.isArray(d.additionalParts) ? d.additionalParts : []).forEach(p => rows.push({ desc: p.description || p.partNumber, sn: d.serial, pn: p.partNumber, qty: p.quantity || 1, price: p.unitPrice || p.price || 0 }));
-
-        if (rows.length > 0) blocks.push({ h: rows.length * 7, render: () => (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            {rows.map((r, ri) => (
-              <tr key={ri} style={{ background: r.contract ? '#ecfdf5' : di % 2 === 0 ? '#fff' : '#fafafa', borderBottom: '0.2mm solid #eee' }}>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{r.qty}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '7pt', fontFamily: 'monospace', color: '#888', width: '18mm' }}>{r.pn || '—'}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt' }}>{r.desc} <span style={{fontSize:'6.5pt',color:'#999'}}>(SN: {r.sn})</span>{r.contract && <span style={{fontSize:'6pt',color:'#059669',marginLeft:'2mm'}}>📄 Contrat</span>}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '18mm' }}>{(r.price || 0).toFixed(2)} €</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{((r.price || 0) * (r.qty || 1)).toFixed(2)} €</td>
-              </tr>
-            ))}
-          </tbody></table>
-        )});
-      });
-
-      // Shipping row
-      if (!isClientReturn && qd.shipping && (qd.shippingTotal || qd.shipping?.total || 0) > 0) {
-        blocks.push({ h: 7, render: () => (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            <tr style={{ background: '#eff6ff', borderBottom: '0.2mm solid #bfdbfe' }}>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{qd.shipping?.parcels || 1}</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '7pt', fontFamily: 'monospace', color: '#888', width: '18mm' }}>{qd.shipping?.partNumber || 'PORT'}</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', color: '#1e40af' }}>Frais de port ({qd.shipping?.parcels || 1} colis)</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '18mm' }}>{(qd.shipping?.unitPrice || 0).toFixed(2)} €</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{(qd.shippingTotal || qd.shipping?.total || 0).toFixed(2)} €</td>
-            </tr>
-          </tbody></table>
-        )});
-      }
-      // Discount
-      if (qd.discount?.enabled) {
-        blocks.push({ h: 7, render: () => (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            <tr style={{ background: '#f0fdf4', borderBottom: '0.2mm solid #bbf7d0' }}>
-              <td colSpan={4} style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', color: '#16a34a' }}>Remise{qd.discount.type === 'percentage' ? ` (${qd.discount.value}%)` : ''}{qd.discount.note ? ` — ${qd.discount.note}` : ''}</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', color: '#16a34a', width: '18mm' }}>-{(qd.discountAmount || qd.discount.amount || 0).toFixed(2)} €</td>
-            </tr>
-          </tbody></table>
-        )});
-      }
-
-      // Total
-      blocks.push({ h: 10, render: () => (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-          <tr style={{ background: '#2D5A7B', color: 'white' }}>
-            <td colSpan={4} style={{ padding: '2.5mm 2mm', fontSize: '9pt', textAlign: 'right', fontWeight: 'bold' }}>TOTAL HT</td>
-            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap', width: '25mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
-          </tr>
-        </tbody></table>
-      )});
-
-      // Conditions
-      const conditions = qs.conditions || ['Devis valable 30 jours.','Paiement : 30 jours fin de mois.','Cette offre n\'inclut pas la réparation ou l\'échange de pièces non consommables.','Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.','Les mesures stockées dans les appareils seront éventuellement perdues.','Les équipements devront être décontaminés de toutes substances chimiques, bactériennes ou radioactives.'];
-      blocks.push({ h: 6 + conditions.length * 3.5, render: () => (
-        <div style={{ background: '#fafafa', padding: '3mm 0', marginTop: '2mm', borderTop: '0.3mm solid #eee' }}>
-          <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1.5mm 0' }}>CONDITIONS</p>
-          {conditions.map((c, i) => <p key={i} style={{ fontSize: '7pt', color: '#505050', margin: '0.5mm 0', lineHeight: '1.3' }}>– {c}</p>)}
-        </div>
-      )});
-
-      // Signature
-
-      const pages = paginate(blocks);
-      const totalPages = pages.length;
-      const accent = '#2D5A7B';
-      const titleText = review.quote_type === 'revision' ? 'DEVIS RÉVISÉ' : 'OFFRE DE PRIX';
-      const numberText = qd.quoteNumber || review.quote_number;
-      const subtitleText = `RMA: ${qd.rmaNumber || review.rma_number}${qd.newRevisionCount > 0 ? ` • Rév. ${qd.newRevisionCount}` : ''}`;
-
-      return (<div>
-        {pages.map((pageBlocks, pi) => (
-          <A4Page key={pi} pageNum={pi + 1} totalPages={totalPages} accent={accent}
-            title={titleText} number={numberText} subtitle={subtitleText}
-            isFirst={pi === 0} isLastPage={pi === totalPages - 1} signatureName={signName} showHeader={true}
-            infoItems={[{ label: 'DATE', value: qDate }, { label: 'VALIDITÉ', value: '30 jours' }, { label: 'CONDITIONS', value: qs.payment_terms || 'À réception de facture' }]}
-            showAddresses={true}>
-            {pageBlocks.map((block, bi) => <div key={bi}>{block.render()}</div>)}
-          </A4Page>
-        ))}
-      </div>);
+        </ReviewQuoteDoc>
+      );
     }
 
     // ============================================
@@ -5391,84 +5396,54 @@ const renderQuotePreview = (review) => {
     // ============================================
     if (review.quote_type === 'parts') {
       const parts = qd.parts || [];
-      const blocks = [];
+      const shipping = qd.shipping || { parcels: 1, unitPrice: 45, total: 45 };
+      const grandTotal = qd.grandTotal || review.total_amount || 0;
 
-      blocks.push({ h: 10, render: () => (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3mm' }}>
-          <thead><tr style={{ background: '#1a1a2e', color: 'white' }}>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'center', width: '8mm' }}>Qté</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'left', width: '20mm' }}>Réf.</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'left' }}>Désignation</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '18mm' }}>P.U. HT</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '18mm' }}>Total HT</th>
-          </tr></thead>
-        </table>
-      )});
-
-      // Parts in groups of 8 per block
-      for (let i = 0; i < parts.length; i += 8) {
-        const chunk = parts.slice(i, i + 8);
-        blocks.push({ h: chunk.length * 7, render: () => (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            {chunk.map((p, pi) => (
-              <tr key={pi} style={{ background: (i + pi) % 2 === 0 ? '#fff' : '#fafafa', borderBottom: '0.2mm solid #eee' }}>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{p.quantity}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '7pt', fontFamily: 'monospace', color: '#888', width: '20mm' }}>{p.partNumber || '—'}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt' }}>{p.description}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '18mm' }}>{(p.unitPrice || 0).toFixed(2)} €</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{((p.quantity || 1) * (p.unitPrice || 0)).toFixed(2)} €</td>
-              </tr>
-            ))}
-          </tbody></table>
-        )});
-      }
-
-      if (!isClientReturn && qd.shipping && (qd.shipping.total || 0) > 0) {
-        blocks.push({ h: 7, render: () => (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            <tr style={{ background: '#eff6ff', borderBottom: '0.2mm solid #bfdbfe' }}>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{qd.shipping.parcels || 1}</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '7pt', fontFamily: 'monospace', color: '#888', width: '20mm' }}>PORT</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', color: '#1e40af' }}>Frais de port</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '18mm' }}>{(qd.shipping.unitPrice || 0).toFixed(2)} €</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{(qd.shipping.total || 0).toFixed(2)} €</td>
-            </tr>
-          </tbody></table>
-        )});
-      }
-
-      blocks.push({ h: 10, render: () => (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-          <tr style={{ background: '#2D5A7B', color: 'white' }}>
-            <td colSpan={4} style={{ padding: '2.5mm 2mm', fontSize: '9pt', textAlign: 'right', fontWeight: 'bold' }}>TOTAL HT</td>
-            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap', width: '25mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
-          </tr>
-        </tbody></table>
-      )});
-
-      blocks.push({ h: 18, render: () => (
-        <div style={{ background: '#fafafa', padding: '3mm 0', marginTop: '2mm', borderTop: '0.3mm solid #eee' }}>
-          <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1.5mm 0' }}>CONDITIONS</p>
-          <p style={{ fontSize: '7pt', color: '#505050', margin: '0.5mm 0' }}>– Devis valable 30 jours.</p>
-          <p style={{ fontSize: '7pt', color: '#505050', margin: '0.5mm 0' }}>– Paiement : 30 jours fin de mois.</p>
-          <p style={{ fontSize: '7pt', color: '#505050', margin: '0.5mm 0' }}>– Livraison : sous réserve de disponibilité.</p>
-        </div>
-      )});
-
-
-      const pages = paginate(blocks);
-      return (<div>
-        {pages.map((pb, pi) => (
-          <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#2D5A7B"
-            title="OFFRE DE PRIX" number={qd.quoteNumber || qd.quoteRef || review.quote_number}
-            subtitle={`Réf: ${qd.poNumber || review.rma_number}`}
-            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
-            infoItems={[{ label: 'DATE', value: qDate }, { label: 'VALIDITÉ', value: '30 jours' }, { label: 'CONDITIONS', value: 'À réception de facture' }]}
-            showAddresses={true}>
-            {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
-          </A4Page>
-        ))}
-      </div>);
+      return (
+        <ReviewQuoteDoc
+          title="OFFRE DE PRIX" docNumber={qd.quoteNumber || qd.quoteRef || review.quote_number}
+          reference={qd.poNumber || review.rma_number} refLabel="Réf"
+          date={qd.createdAt || review.submitted_at}
+          quoteData={docData} conditions={["Devis valable 30 jours.", "Paiement : 30 jours fin de mois.", "Livraison : sous réserve de disponibilité."]}
+        >
+          <div className="px-8 py-6">
+            <h3 className="font-bold text-[#1a1a2e] mb-3">Pièces Commandées</h3>
+            <table className="w-full border-collapse mb-4 text-sm">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-3 py-2.5 text-center w-12">Qté</th>
+                <th className="px-3 py-2.5 text-left w-24">Réf.</th>
+                <th className="px-3 py-2.5 text-left">Désignation</th>
+                <th className="px-3 py-2.5 text-right w-20">P.U.</th>
+                <th className="px-3 py-2.5 text-right w-20">Total HT</th>
+              </tr></thead>
+              <tbody>
+                {parts.map((p, i) => (
+                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 border-b border-gray-100 text-center">{p.quantity}</td>
+                    <td className="px-3 py-2 border-b border-gray-100 font-mono text-xs">{p.partNumber || '—'}</td>
+                    <td className="px-3 py-2 border-b border-gray-100">{p.description}</td>
+                    <td className="px-3 py-2 border-b border-gray-100 text-right whitespace-nowrap">{(p.unitPrice || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 border-b border-gray-100 text-right font-medium whitespace-nowrap">{(p.lineTotal || (p.quantity * p.unitPrice) || 0).toFixed(2)} €</td>
+                  </tr>
+                ))}
+                {!isClientReturn && (shipping.total || 0) > 0 && (
+                  <tr className="bg-blue-50">
+                    <td className="px-3 py-2 border-b border-blue-100 text-center">{shipping.parcels || 1}</td>
+                    <td className="px-3 py-2 border-b border-blue-100 font-mono text-xs">PORT</td>
+                    <td className="px-3 py-2 border-b border-blue-100 text-blue-800">Frais de port ({shipping.parcels || 1} colis)</td>
+                    <td className="px-3 py-2 border-b border-blue-100 text-right whitespace-nowrap">{(shipping.unitPrice || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 border-b border-blue-100 text-right font-medium whitespace-nowrap">{(shipping.total || 0).toFixed(2)} €</td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot><tr className="bg-[#2D5A7B] text-white">
+                <td colSpan={4} className="px-3 py-3 text-right font-bold whitespace-nowrap">TOTAL HT</td>
+                <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </ReviewQuoteDoc>
+      );
     }
 
     // ============================================
@@ -5476,82 +5451,75 @@ const renderQuotePreview = (review) => {
     // ============================================
     if (review.quote_type === 'supplement') {
       const devices = qd.devices || [];
-      const blocks = [];
+      const total = qd.avenantTotal || review.total_amount || 0;
 
-      blocks.push({ h: 6, render: () => (
-        <div style={{ background: '#fef3c7', padding: '2mm 0', marginTop: '2mm', borderBottom: '0.2mm solid #fcd34d' }}>
-          <p style={{ fontSize: '8pt', color: '#92400e', fontWeight: '600', margin: 0 }}>⚠ Travaux supplémentaires identifiés lors de l'intervention</p>
-        </div>
-      )});
-
-      devices.forEach((d, i) => {
-        let items = (d.additional_work_items || []).filter(item => !item.warranty);
-        if (items.length === 0 && d.additional_work_pricing && typeof d.additional_work_pricing === 'object') {
-          items = Object.entries(d.additional_work_pricing).map(([key, val]) => ({ description: val.description || key, partNumber: val.partNumber || val.part_number || '', quantity: val.quantity || 1, price: val.price || 0 }));
-        }
-        const deviceTotal = items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
-        const warrantyItems = (d.additional_work_items || []).filter(item => item.warranty);
-        const deviceH = 10 + (d.service_findings ? 8 : 0) + items.length * 6.5 + (warrantyItems.length > 0 ? 5 + warrantyItems.length * 4 : 0);
-
-        blocks.push({ h: deviceH, render: () => (
-          <div style={{ border: '0.3mm solid #e5e7eb', borderRadius: '1.5mm', overflow: 'hidden', margin: '2mm 0' }}>
-            <div style={{ background: '#f9fafb', padding: '2mm 4mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '0.2mm solid #e5e7eb' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '2mm' }}>
-                {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" style={{ width: '5mm', height: '5mm', objectFit: 'contain' }} />}
-                <span style={{ fontWeight: 'bold', fontSize: '9pt', color: '#1a1a2e' }}>{d.model_name}</span>
-                <span style={{ fontFamily: 'monospace', fontSize: '7pt', color: '#888' }}>SN: {d.serial_number}</span>
-              </div>
-              <span style={{ fontWeight: 'bold', fontSize: '9pt', color: '#2D5A7B' }}>{deviceTotal.toFixed(2)} €</span>
-            </div>
-            {d.service_findings && (
-              <div style={{ background: '#eff6ff', padding: '2mm 4mm', borderBottom: '0.2mm solid #bfdbfe' }}>
-                <p style={{ fontSize: '6.5pt', color: '#888', textTransform: 'uppercase', fontWeight: 'bold', margin: 0 }}>Constatations:</p>
-                <p style={{ fontSize: '7.5pt', color: '#374151', fontStyle: 'italic', margin: '0.5mm 0 0 0' }}>{d.service_findings}</p>
-              </div>
-            )}
-            {items.length > 0 && (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-                {items.map((item, idx) => (
-                  <tr key={idx} style={{ borderBottom: '0.1mm solid #f3f4f6' }}>
-                    <td style={{ padding: '1.5mm 4mm', fontSize: '8pt' }}>{item.description || item.type || '—'}</td>
-                    <td style={{ padding: '1.5mm 2mm', fontSize: '7pt', fontFamily: 'monospace', color: '#888' }}>{item.partNumber || item.part_number || '—'}</td>
-                    <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{item.quantity || 1}</td>
-                    <td style={{ padding: '1.5mm 4mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €</td>
-                  </tr>
-                ))}
-              </tbody></table>
-            )}
-            {warrantyItems.length > 0 && (
-              <div style={{ background: '#f0fdf4', padding: '2mm 4mm', borderTop: '0.2mm solid #bbf7d0' }}>
-                <p style={{ fontSize: '6.5pt', color: '#15803d', fontWeight: 'bold', margin: '0 0 1mm 0' }}>Sous Garantie</p>
-                {warrantyItems.map((item, idx) => <p key={idx} style={{ fontSize: '7.5pt', color: '#16a34a', margin: '0.5mm 0' }}>✓ {item.description || item.type}</p>)}
-              </div>
-            )}
+      return (
+        <ReviewQuoteDoc
+          title="SUPPLÉMENT AU DEVIS" docNumber={qd.supNumber || review.quote_number}
+          reference={qd.rmaNumber || review.rma_number} refLabel="RMA"
+          date={qd.createdAt || review.submitted_at}
+          quoteData={docData} accentColor="#e67e22"
+          conditions={["Ce devis complémentaire doit être approuvé avant poursuite des travaux.", "Paiement : 30 jours fin de mois."]}
+        >
+          <div className="mx-8 mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+            <p className="text-green-800 font-medium text-sm">Suite à l'inspection de vos appareils, nous avons constaté des travaux supplémentaires nécessaires.</p>
+            <p className="text-green-700 text-sm">Veuillez trouver ci-dessous le détail des interventions recommandées.</p>
           </div>
-        )});
-      });
-
-      blocks.push({ h: 12, render: () => (
-        <div style={{ background: '#e67e22', padding: '3mm 4mm', marginTop: '2mm', borderRadius: '1mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
-          <span style={{ fontWeight: 'bold', fontSize: '10pt' }}>TOTAL SUPPLÉMENT HT</span>
-          <span style={{ fontWeight: 'bold', fontSize: '14pt' }}>{(qd.avenantTotal || review.total_amount || 0).toFixed(2)} €</span>
-        </div>
-      )});
-
-
-      const pages = paginate(blocks);
-      return (<div>
-        {pages.map((pb, pi) => (
-          <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#e67e22"
-            title="SUPPLÉMENT AU DEVIS" number={qd.supNumber || review.quote_number}
-            subtitle={`RMA: ${qd.rmaNumber || review.rma_number}`}
-            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
-            infoItems={[{ label: 'DATE', value: qDate }, { label: 'TYPE', value: 'Travaux supplémentaires' }, { label: 'VALIDITÉ', value: '30 jours' }]}
-            showAddresses={false}>
-            {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
-          </A4Page>
-        ))}
-      </div>);
+          <div className="px-8 py-6">
+            <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Travaux Supplémentaires</h3>
+            <table className="w-full text-sm">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-3 py-2.5 text-center w-12">Qté</th>
+                <th className="px-3 py-2.5 text-left">Désignation</th>
+                <th className="px-3 py-2.5 text-right w-24">Prix Unit.</th>
+                <th className="px-3 py-2.5 text-right w-24">Total HT</th>
+              </tr></thead>
+              <tbody>
+                {devices.map((d, i) => {
+                  let items = (d.additional_work_items || []).filter(item => !item.warranty);
+                  if (items.length === 0 && d.additional_work_pricing && typeof d.additional_work_pricing === 'object') {
+                    items = Object.entries(d.additional_work_pricing).map(([key, val]) => ({
+                      description: val.description || key, partNumber: val.partNumber || val.part_number || '',
+                      quantity: val.quantity || 1, price: val.price || 0
+                    }));
+                  }
+                  return (<Fragment key={i}>
+                    <tr className="bg-gray-100 border-t">
+                      <td colSpan={4} className="px-3 py-2 font-bold text-[#1a1a2e]">
+                        {d.model_name} (SN: {d.serial_number})
+                      </td>
+                    </tr>
+                    {d.service_findings && (
+                      <tr><td colSpan={4} className="px-3 py-1 text-xs text-gray-500 italic">Constat: {d.service_findings}</td></tr>
+                    )}
+                    {items.map((item, j) => (
+                      <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-2 text-center">{parseInt(item.quantity) || 1}</td>
+                        <td className="px-3 py-2">{item.partNumber ? `[${item.partNumber}] ` : ''}{item.description || item.type || '—'}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{parseFloat(item.price || 0).toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((parseInt(item.quantity) || 1) * parseFloat(item.price || 0)).toFixed(2)} €</td>
+                      </tr>
+                    ))}
+                    {(d.additional_work_items || []).filter(item => item.warranty).map((item, j) => (
+                      <tr key={`w-${j}`} className="bg-green-50">
+                        <td className="px-3 py-2 text-center">1</td>
+                        <td className="px-3 py-2 text-green-700">✓ {item.description || item.type} <span className="text-xs">(Sous garantie)</span></td>
+                        <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">0.00 €</td>
+                        <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">0.00 €</td>
+                      </tr>
+                    ))}
+                  </Fragment>);
+                })}
+              </tbody>
+              <tfoot><tr className="bg-[#e67e22] text-white">
+                <td colSpan={2} className="px-3 py-3"></td>
+                <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{total.toFixed(2)} €</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </ReviewQuoteDoc>
+      );
     }
 
     // ============================================
@@ -5560,113 +5528,68 @@ const renderQuotePreview = (review) => {
     if (review.quote_type === 'contract') {
       const devices = qd.devices || [];
       const deviceTypes = [...new Set(devices.map(d => d.deviceType).filter(Boolean))];
+      if (deviceTypes.length === 0) deviceTypes.push('particle_counter');
       const hasNettoyage = devices.some(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0);
       const startDate = qd.contractDates?.start_date ? new Date(qd.contractDates.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
       const endDate = qd.contractDates?.end_date ? new Date(qd.contractDates.end_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+      const shippingTotal = qd.shippingTotal || 0;
+      const grandTotal = qd.grandTotal || review.total_amount || 0;
+      const contractConditions = [`Période du contrat: ${startDate} au ${endDate}`, `${qd.totalTokens || 0} étalonnage(s) inclus pendant la période contractuelle`, 'Étalonnages supplémentaires facturés au tarif standard', "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables", 'Paiement à 30 jours date de facture'];
+      const contractInfoBar = (<>
+        <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">PÉRIODE</p><p className="font-bold text-[#1a1a2e]">{startDate} — {endDate}</p></div>
+        <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
+      </>);
 
-      const blocks = [];
-
-      // Billing address
-      blocks.push({ h: 25, render: () => (
-        <div style={{ border: '0.4mm solid rgba(0,166,81,0.5)', borderRadius: '1.5mm', padding: '3mm', margin: '3mm 0' }}>
-          <p style={{ fontSize: '6pt', fontWeight: 'bold', color: '#00A651', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2mm' }}>FACTURER À</p>
-          <p style={{ fontWeight: 'bold', fontSize: '9pt', color: '#1a1a2e', margin: 0 }}>{review.client_name || 'Client'}</p>
-          {qd.clientAddress && <p style={{ fontSize: '8pt', color: '#666', margin: '0.5mm 0' }}>{qd.clientAddress}</p>}
-          {(qd.clientPostalCode || qd.clientCity) && <p style={{ fontSize: '8pt', color: '#666', margin: '0.5mm 0' }}>{[qd.clientPostalCode, qd.clientCity].filter(Boolean).join(' ')}</p>}
-        </div>
-      )});
-
-      // Service descriptions
-      deviceTypes.forEach(type => {
-        const tmpl = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '📦', title: `Étalonnage ${type}`, prestations: [] };
-        blocks.push({ h: 8 + tmpl.prestations.length * 4.5, render: () => (
-          <div style={{ borderLeft: '1.2mm solid #3B82F6', paddingLeft: '4mm', margin: '3mm 0' }}>
-            <p style={{ fontWeight: 'bold', fontSize: '9pt', color: '#1a1a2e', margin: '0 0 2mm 0' }}>{tmpl.icon} {tmpl.title}</p>
-            {tmpl.prestations.map((p, i) => <p key={i} style={{ fontSize: '7.5pt', color: '#555', margin: '0.5mm 0', lineHeight: '1.4' }}>▸ {p}</p>)}
+      return (
+        <ReviewQuoteDoc
+          title="DEVIS CONTRAT" docNumber={qd.contractNumber || review.quote_number}
+          reference={qd.contractNumber || review.rma_number} refLabel="Contrat"
+          date={qd.createdAt || review.submitted_at}
+          quoteData={docData} conditions={contractConditions}
+          addressMode="billing_only" accentColor="#00A651" extraInfoBar={contractInfoBar}
+        >
+          <div className="px-8 py-2"><p className="text-sm text-gray-500 italic">Contrat de tarification / d'étalonnage</p></div>
+          <div className="px-8 py-4 space-y-5">
+            {deviceTypes.map(type => {
+              const template = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '🔬', title: `Étalonnage ${type}`, prestations: [] };
+              return (<div key={type} className="border-l-4 border-blue-500 pl-4">
+                <h3 className="font-bold text-[#1a1a2e] mb-2 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
+                <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 text-sm flex items-start gap-2"><span className="text-[#1a1a2e] mt-0.5">▸</span><span>{p}</span></li>))}</ul>
+              </div>);
+            })}
           </div>
-        )});
-      });
-
-      // Table header
-      blocks.push({ h: 10, render: () => (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3mm' }}>
-          <thead><tr style={{ background: '#1a1a2e', color: 'white' }}>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'center', width: '8mm' }}>Qté</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'left' }}>Désignation</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '18mm' }}>Prix Unit.</th>
-            <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '18mm' }}>Total HT</th>
-          </tr></thead>
-        </table>
-      )});
-
-      // Device rows
-      devices.forEach((d, di) => {
-        const rowH = 7 + (d.needsNettoyage && (d.nettoyagePrice || 0) > 0 ? 7 : 0);
-        blocks.push({ h: rowH, render: () => (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            {d.needsCalibration && (
-              <tr style={{ background: di % 2 === 0 ? '#fff' : '#fafafa', borderBottom: '0.2mm solid #eee' }}>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{d.tokens_total || 1}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt' }}>Étalonnage {d.model} <span style={{fontSize:'6.5pt',color:'#999'}}>(SN: {d.serial})</span></td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '18mm' }}>{(d.calibrationPrice || 0).toFixed(2)} €</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{((d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
-              </tr>
-            )}
-            {d.needsNettoyage && (d.nettoyagePrice || 0) > 0 && (
-              <tr style={{ background: '#fffbeb', borderBottom: '0.2mm solid #fef3c7' }}>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{d.nettoyageQty || 1}</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt' }}><span style={{color:'#92400e'}}>Nettoyage cellule</span> <span style={{fontSize:'6.5pt',color:'#b45309'}}>- si requis ({d.model})</span></td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '18mm' }}>{(d.nettoyagePrice || 0).toFixed(2)} €</td>
-                <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
-              </tr>
-            )}
-          </tbody></table>
-        )});
-      });
-
-      // Shipping + Total
-      blocks.push({ h: 7, render: () => (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-          <tr style={{ background: '#eff6ff', borderBottom: '0.2mm solid #bfdbfe' }}>
-            <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '8mm' }}>{qd.shipping?.parcels || 1}</td>
-            <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', color: '#1e40af' }}>Frais de port</td>
-            <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '18mm' }}>{(qd.shipping?.unitPrice || qd.shippingTotal || 0).toFixed(2)} €</td>
-            <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '18mm' }}>{(qd.shippingTotal || 0).toFixed(2)} €</td>
-          </tr>
-        </tbody></table>
-      )});
-      blocks.push({ h: 10, render: () => (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-          <tr style={{ background: '#00A651', color: 'white' }}>
-            <td colSpan={3} style={{ padding: '2.5mm 2mm', fontSize: '9pt', textAlign: 'right', fontWeight: 'bold' }}>TOTAL HT</td>
-            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap', width: '25mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
-          </tr>
-        </tbody></table>
-      )});
-      if (hasNettoyage) blocks.push({ h: 5, render: () => (<p style={{ fontSize: '6.5pt', color: '#888', fontStyle: 'italic', margin: '1mm 0' }}>* Le nettoyage sera facturé si nécessaire selon l'état du capteur.</p>) });
-
-      // Conditions
-      const condLines = [`Période du contrat: ${startDate} au ${endDate}`, `${qd.totalTokens || 0} étalonnage(s) inclus pendant la période`, 'Étalonnages supplémentaires facturés au tarif standard', "Cette offre n'inclut pas la réparation de pièces non consommables", 'Paiement à 30 jours date de facture'];
-      blocks.push({ h: 6 + condLines.length * 3.5, render: () => (
-        <div style={{ background: '#fafafa', padding: '3mm 0', marginTop: '2mm', borderTop: '0.3mm solid #eee' }}>
-          <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1.5mm 0' }}>CONDITIONS</p>
-          {condLines.map((c, i) => <p key={i} style={{ fontSize: '7pt', color: '#505050', margin: '0.5mm 0' }}>– {c}</p>)}
-        </div>
-      )});
-
-
-      const pages = paginate(blocks);
-      return (<div>
-        {pages.map((pb, pi) => (
-          <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#00A651"
-            title="DEVIS CONTRAT" number={qd.contractNumber || review.quote_number}
-            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
-            infoItems={[{ label: 'DATE', value: qDate }, { label: 'PÉRIODE', value: `${startDate} — ${endDate}` }, { label: 'VALIDITÉ', value: '30 jours' }]}
-            showAddresses={false}>
-            {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
-          </A4Page>
-        ))}
-      </div>);
+          <div className="px-8 py-6 bg-gray-50">
+            <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+            <table className="w-full text-sm">
+              <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-20">Prix Unit.</th><th className="px-3 py-2.5 text-right w-20">Total HT</th></tr></thead>
+              <tbody>
+                {devices.map((d, i) => (<Fragment key={i}>
+                  {d.needsCalibration !== false && (<tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 text-center">{d.tokens_total || 1}</td>
+                    <td className="px-3 py-2"><span className="font-medium">Étalonnage {d.model}</span> <span className="text-gray-500 text-xs">(SN: {d.serial})</span></td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{(d.calibrationPrice || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
+                  </tr>)}
+                  {d.needsNettoyage && (d.nettoyagePrice || 0) > 0 && (<tr className="bg-amber-50">
+                    <td className="px-3 py-2 text-center">{d.nettoyageQty || 1}</td>
+                    <td className="px-3 py-2"><span className="font-medium text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis ({d.model})</span></td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
+                  </tr>)}
+                </Fragment>))}
+                {shippingTotal > 0 && (<tr className="bg-blue-50">
+                  <td className="px-3 py-2 text-center">{qd.shipping?.parcels || 1}</td>
+                  <td className="px-3 py-2"><span className="font-medium text-blue-800">Frais de port</span></td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">{(qd.shipping?.unitPrice || shippingTotal).toFixed(2)} €</td>
+                  <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
+                </tr>)}
+              </tbody>
+              <tfoot><tr className="bg-[#00A651] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td></tr></tfoot>
+            </table>
+            {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
+          </div>
+        </ReviewQuoteDoc>
+      );
     }
 
     // ============================================
@@ -5678,105 +5601,73 @@ const renderQuotePreview = (review) => {
       const rentalDays = period.days || items[0]?.rental_days || '—';
       const startDate = period.start ? new Date(period.start).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
       const endDate = period.end ? new Date(period.end).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+      const totalHT = qd.totalHT || review.total_amount || 0;
+      const rentalInfoBar = (<>
+        <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">PÉRIODE</p><p className="font-bold text-[#1a1a2e]">{startDate} — {endDate} ({rentalDays}j)</p></div>
+        <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
+      </>);
+      const rentalConditions = ["Devis valable 30 jours.", `Livraison : ${qd.deliveryTerms || 'Standard'}`, `Paiement : ${qd.paymentTerms || 'À réception de facture'}`, "L'appareil reste la propriété de Lighthouse France pendant la durée de la location.", "Le client s'engage à souscrire une assurance prenant en compte le \"Bien Confié\".", "Tout incident doit être communiqué sous 48h."];
 
-      const blocks = [];
-
-      // Table header
-      blocks.push({ h: 12, render: () => (
-        <div>
-          <p style={{ fontWeight: 'bold', fontSize: '9pt', color: '#1a1a2e', margin: '3mm 0 2mm 0' }}>Équipements en Location</p>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr style={{ background: '#1a1a2e', color: 'white' }}>
-              <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'left' }}>Équipement</th>
-              <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'left', width: '22mm' }}>S/N</th>
-              <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'center', width: '10mm' }}>Jours</th>
-              <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '16mm' }}>Tarif/j</th>
-              <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '20mm' }}>Val. Neuf</th>
-              <th style={{ padding: '2mm', fontSize: '7pt', textAlign: 'right', width: '16mm' }}>Total</th>
-            </tr></thead>
-          </table>
-        </div>
-      )});
-
-      items.forEach((item, i) => {
-        blocks.push({ h: 7, render: () => (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
-            <tr style={{ background: i % 2 === 0 ? '#fff' : '#fafafa', borderBottom: '0.2mm solid #eee' }}>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', fontWeight: '600' }}>{item.item_name || '—'}</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '7pt', fontFamily: 'monospace', color: '#888', width: '22mm' }}>{item.serial_number || '—'}</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'center', width: '10mm' }}>{item.rental_days || rentalDays}</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', width: '16mm' }}>{(parseFloat(item.applied_rate) || 0).toFixed(2)} €</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '7.5pt', textAlign: 'right', color: '#888', width: '20mm' }}>{(parseFloat(item.retail_value) || 0).toFixed(2)} €</td>
-              <td style={{ padding: '1.5mm 2mm', fontSize: '8pt', textAlign: 'right', fontWeight: '600', width: '16mm' }}>{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
-            </tr>
-          </tbody></table>
-        )});
-      });
-
-      // Totals
-      const totalRows = [];
-      if ((qd.discount || 0) > 0) {
-        totalRows.push({ label: 'Sous-total', value: `${(qd.subtotalBeforeDiscount || 0).toFixed(2)} €` });
-        totalRows.push({ label: `Remise ${qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}`, value: `-${(qd.discountAmount || 0).toFixed(2)} €`, color: '#16a34a' });
-      }
-      if ((qd.shipping || 0) > 0) totalRows.push({ label: 'Transport', value: `${(qd.shipping || 0).toFixed(2)} €` });
-
-      blocks.push({ h: 10 + totalRows.length * 5, render: () => (
-        <div style={{ background: '#fafafa', padding: '3mm 0', marginTop: '2mm', borderTop: '0.3mm solid #eee' }}>
-          {totalRows.map((r, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8pt', color: r.color || '#555', padding: '0.5mm 0' }}>
-              <span>{r.label}</span><span>{r.value}</span>
-            </div>
-          ))}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12pt', paddingTop: '2mm', borderTop: '0.6mm solid #8B5CF6', marginTop: '1mm' }}>
-            <span>TOTAL HT</span><span style={{ color: '#00A651' }}>{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span>
+      return (
+        <ReviewQuoteDoc
+          title="DEVIS LOCATION" docNumber={qd.rentalNumber || review.quote_number}
+          reference={review.rma_number} refLabel="Location"
+          date={qd.quoted_at || review.submitted_at}
+          quoteData={docData} conditions={rentalConditions}
+          accentColor="#8B5CF6" extraInfoBar={rentalInfoBar}
+        >
+          <div className="px-8 py-6">
+            <h3 className="font-bold text-[#1a1a2e] mb-3">Équipements en Location</h3>
+            <table className="w-full text-sm">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-3 py-2.5 text-left">Équipement</th>
+                <th className="px-3 py-2.5 text-left w-24">S/N</th>
+                <th className="px-3 py-2.5 text-center w-12">Jours</th>
+                <th className="px-3 py-2.5 text-right w-20">Tarif/j</th>
+                <th className="px-3 py-2.5 text-right w-24">Val. Neuf</th>
+                <th className="px-3 py-2.5 text-right w-20">Total HT</th>
+              </tr></thead>
+              <tbody>
+                {items.map((item, i) => (
+                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-3 py-2 font-medium">{item.item_name || '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-gray-500">{item.serial_number || '—'}</td>
+                    <td className="px-3 py-2 text-center">{item.rental_days || rentalDays}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{(parseFloat(item.applied_rate) || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">{(parseFloat(item.retail_value) || 0).toFixed(2)} €</td>
+                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
+                  </tr>
+                ))}
+                {(qd.shipping || 0) > 0 && (
+                  <tr className="bg-blue-50">
+                    <td colSpan={5} className="px-3 py-2 text-blue-800">Frais de port</td>
+                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(qd.shipping).toFixed(2)} €</td>
+                  </tr>
+                )}
+                {(qd.discount || 0) > 0 && (
+                  <tr className="bg-green-50">
+                    <td colSpan={5} className="px-3 py-2 text-green-700">Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</td>
+                    <td className="px-3 py-2 text-right font-medium text-green-700 whitespace-nowrap">-{(qd.discountAmount || 0).toFixed(2)} €</td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot><tr className="bg-[#8B5CF6] text-white">
+                <td colSpan={5} className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{totalHT.toFixed(2)} €</td>
+              </tr></tfoot>
+            </table>
+            {(qd.totalRetailValue || 0) > 0 && <p className="text-xs text-gray-500 mt-2">Valeur totale à assurer: {qd.totalRetailValue.toFixed(2)} € HT</p>}
+            {qd.buybackClause && <p className="text-sm text-purple-700 mt-3 bg-purple-50 px-3 py-2 rounded">💰 Option de rachat disponible à {qd.buybackPercent || 50}% de la valeur neuf</p>}
+            {qd.notes && <p className="text-sm mt-2 bg-amber-50 px-3 py-2 rounded"><span className="font-medium">Notes :</span> {qd.notes}</p>}
           </div>
-          {(qd.totalRetailValue || 0) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '7pt', color: '#888', marginTop: '1mm' }}><span>Valeur totale à assurer</span><span>{(qd.totalRetailValue).toFixed(2)} € HT</span></div>}
-        </div>
-      )});
-
-      // Insurance
-      blocks.push({ h: 22, render: () => (
-        <div style={{ background: '#fafafa', padding: '3mm 0', marginTop: '2mm', borderTop: '0.3mm solid #eee' }}>
-          <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1.5mm 0' }}>CONDITIONS D'ASSURANCE</p>
-          <p style={{ fontSize: '7pt', color: '#505050', lineHeight: '1.4', margin: 0 }}>
-            Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client.
-            L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état.
-            Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
-          </p>
-        </div>
-      )});
-
-      // Terms + buyback
-      blocks.push({ h: 6 + (qd.buybackClause ? 5 : 0) + (qd.notes ? 5 : 0), render: () => (<>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '7.5pt', color: '#888', padding: '1mm 0', borderTop: '0.2mm solid #eee' }}>
-          <span>Livraison : {qd.deliveryTerms || '—'}</span>
-          <span>Paiement : {qd.paymentTerms || '—'}</span>
-        </div>
-        {qd.buybackClause && <div style={{ background: '#f5f3ff', padding: '1.5mm 3mm', borderRadius: '1mm', fontSize: '7.5pt', color: '#6d28d9', margin: '1mm 0' }}>💰 Option de rachat disponible à {qd.buybackPercent || 50}% de la valeur neuf</div>}
-        {qd.notes && <div style={{ background: '#fef3c7', padding: '1.5mm 3mm', borderRadius: '1mm', fontSize: '7.5pt', margin: '1mm 0' }}><span style={{fontWeight:'bold'}}>Notes :</span> {qd.notes}</div>}
-      </>)});
-
-      // Signature
-
-      const pages = paginate(blocks);
-      return (<div>
-        {pages.map((pb, pi) => (
-          <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#8B5CF6"
-            title="DEVIS LOCATION" number={qd.rentalNumber || review.quote_number}
-            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
-            infoItems={[{ label: 'DATE', value: qDate }, { label: 'PÉRIODE', value: `${startDate} — ${endDate} (${rentalDays}j)` }, { label: 'VALIDITÉ', value: '30 jours' }]}
-            showAddresses={true}>
-            {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
-          </A4Page>
-        ))}
-      </div>);
+        </ReviewQuoteDoc>
+      );
     }
 
     // Generic fallback
     return (
-      <div className="bg-white shadow-xl mx-auto p-8" style={{ width: '210mm', minHeight: '297mm' }}>
-        <pre style={{ fontSize: '8pt', color: '#666', whiteSpace: 'pre-wrap' }}>{JSON.stringify(qd, null, 2)}</pre>
+      <div className="bg-white rounded-lg p-6 max-w-4xl mx-auto">
+        <pre className="text-xs text-gray-600 whitespace-pre-wrap">{JSON.stringify(qd, null, 2)}</pre>
       </div>
     );
   };
@@ -5893,7 +5784,7 @@ const renderQuotePreview = (review) => {
             {/* Split Content */}
             <div className="flex-1 overflow-hidden flex">
               {/* LEFT: Full Quote Preview — A4 document viewer */}
-              <div className="flex-1 overflow-y-auto" style={{ background: '#525659', padding: '24px' }}>
+              <div className="flex-1 overflow-y-auto bg-gray-100" style={{ padding: '24px' }}>
                 {renderQuotePreview(selectedReview)}
               </div>
               
