@@ -3296,7 +3296,7 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
     y += 20;
     pdf.setDrawColor(...navy); pdf.setLineWidth(1);
     pdf.line(margin, y, pageWidth - margin, y);
-    y += 4;
+    y += 8;
   };
 
   const checkPageBreak = (needed) => {
@@ -3490,14 +3490,10 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
     y += rowH;
   };
 
-  // Keep-together logic (same as RMA)
-  let totalRowCount = 0;
-  devices.forEach(d => { totalRowCount++; if (d.needsNettoyage && (d.nettoyagePrice || 0) > 0) totalRowCount++; });
-  if ((qd.shippingTotal || 0) > 0) totalRowCount++;
-  const totalTableHeight = 7 + 9 + (totalRowCount * rowH) + 11 + 4;
-  const spaceRemaining = getUsableHeight() - y;
-  const freshPageSpace = getUsableHeight() - margin;
-  if (totalTableHeight > spaceRemaining && totalTableHeight <= freshPageSpace) {
+  // If less than title + header + 2 rows space, break to new page
+  // Otherwise let table flow and split naturally across pages
+  const minTableStart = 7 + 9 + (rowH * 2); // title + header + 2 rows
+  if (y + minTableStart > getUsableHeight()) {
     addFooter(); pdf.addPage(); y = margin; addContinuationHeader();
   }
 
@@ -3592,7 +3588,7 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   const signatoryName = qd.createdBy || qs.signatory_name || biz.quote_signatory || 'M. Meleney';
   const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
   const signatureLimit = pageHeight - footerHeight - 2;
-  if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
+  if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; addContinuationHeader(); }
   const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
 
   pdf.setDrawColor(200, 200, 200); pdf.setLineWidth(0.3);
@@ -5823,9 +5819,8 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
                 )}
               </tbody>
               <tfoot><tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
-                <td colSpan={2} className="px-3 py-3"></td>
-                <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
-                <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{isFullyContractCovered ? 'Contrat' : `${(qd.grandTotal || review.total_amount || 0).toFixed(2)} €`}</td>
+                <td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td>
+                <td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{isFullyContractCovered ? 'Contrat' : `${(qd.grandTotal || review.total_amount || 0).toFixed(2)} €`}</td>
               </tr></tfoot>
             </table>
             {devices.some(d => d.needsNettoyage && !d.isContractCovered) && (
@@ -5957,9 +5952,8 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
                 })}
               </tbody>
               <tfoot><tr className="bg-[#2D5A7B] text-white">
-                <td colSpan={2} className="px-3 py-3"></td>
-                <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
-                <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{total.toFixed(2)} €</td>
+                <td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td>
+                <td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{total.toFixed(2)} €</td>
               </tr></tfoot>
             </table>
           </div>
@@ -6112,7 +6106,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
                       <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
                     </tr>)}
                   </tbody>
-                  <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td></tr></tfoot>
+                  <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td><td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotal.toFixed(2)} €</td></tr></tfoot>
                 </table>
                 {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
               </div>
@@ -6174,7 +6168,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
                       <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
                     </tr>)}
                   </tbody>
-                  <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td></tr></tfoot>
+                  <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td><td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotal.toFixed(2)} €</td></tr></tfoot>
                 </table>
                 {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
               </div>
@@ -22963,7 +22957,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
                     <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
                   </tr>)}
                 </tbody>
-                <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td></tr></tfoot>
+                <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td><td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotal.toFixed(2)} €</td></tr></tfoot>
               </table>
               {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
             </div>
@@ -23867,7 +23861,7 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                               <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shipT.toFixed(2)} €</td>
                             </tr>)}
                           </tbody>
-                          <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl">{gTotal.toFixed(2)} €</td></tr></tfoot>
+                          <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td><td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{gTotal.toFixed(2)} €</td></tr></tfoot>
                         </table>
                         {hasNett && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
                       </div>
