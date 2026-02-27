@@ -10478,15 +10478,6 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         if (error) throw error;
       }
       
-      // Send message to admin
-      await supabase.from('messages').insert({
-        request_id: request.id,
-        sender_id: profile.id,
-        sender_type: 'customer',
-        sender_name: profile.full_name || 'Client',
-        content: `📦 Documents de transport soumis\nTransporteur : ${shippingDocCarrier.trim()}\nDate d'enlèvement : ${new Date(shippingDocPickupDate).toLocaleDateString('fr-FR')}${shippingDocNotes ? '\nNotes : ' + shippingDocNotes.trim() : ''}`
-      });
-      
       notify('Documents de transport soumis avec succès !', 'success');
       setShowShippingDocModal(false);
       refresh();
@@ -15189,10 +15180,6 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           submitted_at: new Date().toISOString()
         });
       }
-      await supabase.from('messages').insert({
-        rental_request_id: selectedRental.id, sender_id: profile.id, sender_type: 'customer', sender_name: profile.full_name || 'Client',
-        content: `📦 Documents de transport soumis\nTransporteur : ${rentalShipDocCarrier.trim()}\nDate d'enlèvement : ${new Date(rentalShipDocPickupDate).toLocaleDateString('fr-FR')}${rentalShipDocNotes ? '\nNotes : ' + rentalShipDocNotes.trim() : ''}`
-      });
       notify('Documents de transport soumis !', 'success');
       setShowRentalShippingDocModal(false);
       loadRentalComms(selectedRental.id);
