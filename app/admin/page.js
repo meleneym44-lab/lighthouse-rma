@@ -5165,7 +5165,7 @@ const renderQuotePreview = (review) => {
               <span className="text-gray-600">{lang === 'en' ? 'Services Subtotal' : 'Sous-total Services'}</span>
               <span className="font-medium">{(qd.servicesSubtotal || 0).toFixed(2)} €</span>
             </div>
-            {qd.shipping && (
+            {qd.shipping && (qd.shippingTotal || qd.shipping.total || 0) > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">
                   {lang === 'en' ? 'Shipping' : 'Transport'}
@@ -5256,7 +5256,7 @@ const renderQuotePreview = (review) => {
               <span className="text-gray-600">{lang === 'en' ? 'Parts Subtotal' : 'Sous-total Pièces'}</span>
               <span className="font-medium">{(qd.partsTotal || 0).toFixed(2)} €</span>
             </div>
-            {qd.shipping && (
+            {qd.shipping && (qd.shippingTotal || qd.shipping.total || 0) > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">
                   {lang === 'en' ? 'Shipping' : 'Transport'}
@@ -30987,7 +30987,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                         return rows;
                       })}
                       
-                      {/* Shipping row */}
+                      {/* Shipping row — hidden if client handles own return */}
+                      {!isClientReturn && (
                       <tr className={isFullyContractCovered ? "border-b bg-emerald-50" : "border-b bg-gray-50"}>
                         <td className="px-4 py-3 text-center">{shippingData.parcels}</td>
                         <td className="px-4 py-3">Frais de port ({shippingData.parcels} colis)</td>
@@ -30998,6 +30999,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                           {isFullyContractCovered ? <span className="text-emerald-600">{lang === 'en' ? 'Contract' : 'Contrat'}</span> : `${shippingTotal.toFixed(2)} €`}
                         </td>
                       </tr>
+                      )}
                       {/* Discount row */}
                       {discountAmount > 0 && (
                         <tr className="border-b bg-amber-50">
