@@ -6545,7 +6545,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                   <button
                     onClick={() => {
                       if (linkedRMA) {
-                        setSelectedRMA(linkedRMA);
+                        onSelectRMA(linkedRMA);
                       }
                     }}
                     className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
