@@ -7068,11 +7068,25 @@ function ContractRequestForm({ profile, addresses, t, notify, refresh, setPage, 
               <option value="__new__">+ Nouvelle adresse de facturation...</option>
             </select>
             {selectedBillingAddr && !showNewBillingForm && (
-              <div className="mt-2 p-3 bg-gray-50 rounded-lg border text-sm">
-                <p className="font-medium">{selectedBillingAddr.company_name}</p>
-                <p className="text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
-                {selectedBillingAddr.siret && <p className="text-green-600 mt-1">SIRET: {selectedBillingAddr.siret}{selectedBillingAddr.tva_number ? ` • TVA: ${selectedBillingAddr.tva_number}` : ''}</p>}
-                {selectedBillingAddr.chorus_invoicing && <p className="text-blue-600 mt-1">🏛️ Chorus Pro{selectedBillingAddr.chorus_service_code ? `: ${selectedBillingAddr.chorus_service_code}` : ''}</p>}
+              <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                <p className="font-medium text-[#1E3A5F] text-sm">{selectedBillingAddr.company_name || selectedBillingAddr.label}</p>
+                {selectedBillingAddr.attention && <p className="text-xs text-gray-600">Contact : {selectedBillingAddr.attention}</p>}
+                {selectedBillingAddr.phone && <p className="text-xs text-gray-500">📞 {selectedBillingAddr.phone}</p>}
+                <p className="text-xs text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+                <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-3">
+                  <span className={selectedBillingAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                    SIRET: {selectedBillingAddr.siret ? <span className="font-mono">{selectedBillingAddr.siret}</span> : 'Non renseigné'}
+                  </span>
+                  <span className={selectedBillingAddr.tva_number ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                    TVA: {selectedBillingAddr.tva_number ? <span className="font-mono">{selectedBillingAddr.tva_number}</span> : 'Non renseigné'}
+                  </span>
+                </div>
+                {selectedBillingAddr.chorus_invoicing && (
+                  <div className="mt-1">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
+                    {selectedBillingAddr.chorus_service_code && <span className="text-xs text-gray-500 ml-2">Service: <span className="font-mono">{selectedBillingAddr.chorus_service_code}</span></span>}
+                  </div>
+                )}
               </div>
             )}
             {showNewBillingForm && (
