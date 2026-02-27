@@ -4462,6 +4462,7 @@ export default function AdminPortal() {
               filter={dashboardFilter} 
               setFilter={setDashboardFilter}
               pendingArrivalsCount={pendingArrivalsCount}
+              pendingShippingDocs={pendingShippingDocs}
               onShowReceptions={() => setShowReceptions(true)}
             />}
             {activeSheet === 'quote_review' && <QuoteReviewSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
@@ -6220,7 +6221,7 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
   );
 }
 
-function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter, pendingArrivalsCount = 0, onShowReceptions, t = k=>k, lang = 'fr' }) {
+function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter, pendingArrivalsCount = 0, pendingShippingDocs = [], onShowReceptions, t = k=>k, lang = 'fr' }) {
   const [reviewingBC, setReviewingBC] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
