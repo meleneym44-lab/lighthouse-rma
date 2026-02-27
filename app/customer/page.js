@@ -14037,6 +14037,8 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
                 </div>);
               })}
             </div>
+            {/* Visual page separator */}
+            <div className="relative my-2"><div className="border-t-2 border-dashed border-gray-300 mx-8" /><span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-[10px] text-gray-400 font-medium">— suite —</span></div>
             <div className="px-8 py-6 bg-gray-50">
               <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
               <table className="w-full text-sm">
@@ -15908,7 +15910,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             extraFooterLeft={rental.status === 'quote_sent' ? <button onClick={() => setShowRentalRevision(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">Demander modification</button> : null}
           >
             <div className="px-8 py-3">
-              <div className="border-l-4 border-purple-500 pl-4">
+              <div className="border-l-4 border-[#2D5A7B] pl-4">
                 <h3 className="font-bold text-[#1a1a2e] mb-2">Location de Matériel</h3>
                 <p className="text-sm text-gray-600">- Période : du {formatDateWrittenFR(period.start || rental.start_date)} au {formatDateWrittenFR(period.end || rental.end_date)} ({period.days || rentalDaysDisplay} jours)</p>
                 {qd.deliveryTerms && <p className="text-sm text-gray-600">- Délai de livraison : {qd.deliveryTerms}</p>}
