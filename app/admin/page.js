@@ -6307,7 +6307,6 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const stats = [
     { id: 'all', label: lang === 'en' ? 'Active RMAs' : 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
-    { id: 'shipping_docs', label: lang === 'en' ? 'Shipping Docs' : 'Docs Transport', value: pendingShippingDocs.length, color: 'bg-amber-500', icon: '📦' },
     { id: 'supplement', label: lang === 'en' ? 'Supplement' : 'Supplément', value: supplementActive.length, color: 'bg-amber-500', icon: '📄' },
     { id: 'waiting_bc', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
     { id: 'waiting_device', label: lang === 'en' ? 'Awaiting Device' : 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
@@ -6521,7 +6520,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       )}
       
       {/* Pending Shipping Documents — own_label returns */}
-      {pendingShippingDocs.length > 0 && (!filter || filter === 'shipping_docs') && !searchQuery.trim() && (
+      {pendingShippingDocs.length > 0 && !searchQuery.trim() && (
         <div className="bg-amber-50 border-2 border-amber-300 rounded-xl shadow-lg">
           <div className="px-6 py-4 border-b border-amber-200 bg-amber-100 rounded-t-xl">
             <h2 className="font-bold text-amber-800 text-lg">{lang === 'en' ? '📦 Shipping Documents to Review' : '📦 Documents de Transport à Vérifier'} ({pendingShippingDocs.length})</h2>
