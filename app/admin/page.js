@@ -801,14 +801,13 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   
   // Add page numbers to all pages (Page X / Y) for multi-page quotes
   const totalPages = pdf.internal.getNumberOfPages();
-  if (totalPages > 1) {
+  // Always show page numbers
     for (let i = 1; i <= totalPages; i++) {
       pdf.setPage(i);
       pdf.setFontSize(7);
       pdf.setTextColor(180, 180, 180);
       pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
     }
-  }
   
   return pdf.output('blob');
 };
@@ -1195,14 +1194,13 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   addFooter();
   
   const totalPages = pdf.internal.getNumberOfPages();
-  if (totalPages > 1) {
+  // Always show page numbers
     for (let i = 1; i <= totalPages; i++) {
       pdf.setPage(i);
       pdf.setFontSize(7);
       pdf.setTextColor(180, 180, 180);
       pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
     }
-  }
 
   return pdf.output('blob');
 };
@@ -2979,7 +2977,7 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   // ===== RENTAL PERIOD BLOCK =====
   checkPageBreak(16);
   const periodStartY = y;
-  pdf.setDrawColor(139, 92, 246);
+  pdf.setDrawColor(...navy);
   pdf.setLineWidth(1);
   
   pdf.setFontSize(12);
@@ -3231,13 +3229,323 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   addFooter();
 
   const totalPages = pdf.internal.getNumberOfPages();
-  if (totalPages > 1) {
+  // Always show page numbers
     for (let i = 1; i <= totalPages; i++) {
       pdf.setPage(i);
       pdf.setFontSize(7);
       pdf.setTextColor(180, 180, 180);
       pdf.text('Page ' + i + ' / ' + totalPages, pageWidth - margin, pageHeight - 2, { align: 'right' });
     }
+
+  return pdf.output('blob');
+};
+
+// ============================================
+// CONTRACT QUOTE PDF - Standalone (for quote review approval)
+// Works for both token contracts from customer requests and manual entry
+// ============================================
+const generateContractQuotePDF = async (contract, quoteData, businessSettings = {}) => {
+  const jsPDF = await loadJsPDF();
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const biz = businessSettings || {};
+  const qs = biz.quote_settings || {};
+  const qd = quoteData || {};
+  const company = contract.companies || {};
+  const devices = qd.devices || [];
+  const contractDates = qd.contractDates || { start_date: contract.start_date, end_date: contract.end_date };
+
+  const pageWidth = 210, pageHeight = 297, margin = 15;
+  const contentWidth = pageWidth - (margin * 2);
+  const footerHeight = 16;
+  const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
+  let y = margin - 8;
+
+  const formatDateFR = (d) => {
+    const date = new Date(d);
+    const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+    return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
+  };
+
+  let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
+  let capcertLogo = null;
+  try { capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png'); } catch (e) {}
+
+  const addFooter = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(0, pageHeight - footerHeight, pageWidth, footerHeight, 'F');
+    pdf.setTextColor(...white);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(biz.company_name || 'Lighthouse France SAS', pageWidth / 2, pageHeight - footerHeight + 6, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(8);
+    pdf.text(`${biz.address || '16, rue Paul Séjourné'} - ${biz.postal_code || '94000'} ${biz.city || 'CRÉTEIL'} - Tél. ${biz.phone || '01 43 77 28 07'}`, pageWidth / 2, pageHeight - footerHeight + 11, { align: 'center' });
+  };
+
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+  const checkPageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; return true; }
+    return false;
+  };
+
+  // ===== HEADER =====
+  if (lighthouseLogo) {
+    try {
+      const fmt = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
+      pdf.addImage(lighthouseLogo, fmt, margin, y - 2, 85, 22);
+    } catch (e) {
+      pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+      pdf.text('LIGHTHOUSE', margin, y + 8);
+    }
+  } else {
+    pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text('LIGHTHOUSE', margin, y + 8);
+  }
+
+  pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
+
+  pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+  pdf.text('N\u00B0 ' + (contract.contract_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
+
+  pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+  pdf.text("Contrat d'étalonnage", pageWidth - margin, y + 16, { align: 'right' });
+
+  y += 20;
+  pdf.setDrawColor(...navy); pdf.setLineWidth(1);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 3;
+
+  // ===== INFO BAR =====
+  pdf.setFillColor(245, 245, 245);
+  pdf.rect(margin, y, contentWidth, 14, 'F');
+  pdf.setFontSize(7); pdf.setTextColor(...lightGray);
+  pdf.text('DATE', margin + 5, y + 4);
+  pdf.text('DÉBUT', margin + 50, y + 4);
+  pdf.text('FIN', margin + 100, y + 4);
+  pdf.text('VALIDITÉ', margin + 145, y + 4);
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+  pdf.text(formatDateFR(new Date()), margin + 5, y + 10);
+  pdf.text(contractDates.start_date ? formatDateFR(contractDates.start_date) : '\u2014', margin + 50, y + 10);
+  pdf.text(contractDates.end_date ? formatDateFR(contractDates.end_date) : '\u2014', margin + 100, y + 10);
+  pdf.text('30 jours', margin + 145, y + 10);
+  y += 18;
+
+  // ===== FACTURER À =====
+  const billingAddr = qd.billingAddress || null;
+  const clientName = billingAddr?.company_name || company.name || contract.client_name || 'Client';
+  const boxPad = 4;
+  const billLines = [];
+  billLines.push({ text: clientName, bold: true, size: 11 });
+  if (billingAddr) {
+    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
+    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
+    const cityLine = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
+    if (cityLine) billLines.push({ text: cityLine + (billingAddr.country ? ', ' + billingAddr.country : ''), bold: false, size: 8.5 });
+    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
+    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
+  } else {
+    if (company.contact_name) billLines.push({ text: 'Contact: ' + company.contact_name, bold: false, size: 8.5 });
+    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
+    const cityLine = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
+    if (cityLine) billLines.push({ text: cityLine, bold: false, size: 8.5 });
+    if (company.phone) billLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
+    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
+  }
+
+  const lineH = 4;
+  const bigLineH = 5.5;
+  const labelH = 4;
+  const getLineH = (line) => line.bold && line.size > 9 ? bigLineH : lineH;
+  const billContentH = billLines.reduce((h, l) => h + getLineH(l), 0);
+  const boxH = labelH + boxPad + billContentH + boxPad;
+
+  pdf.setDrawColor(0, 51, 102); pdf.setLineWidth(0.4);
+  pdf.rect(margin, y, contentWidth, boxH);
+  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(0, 51, 102);
+  pdf.text('FACTURER À', margin + boxPad, y + 4);
+
+  let lineY = y + labelH + boxPad + 2;
+  for (const line of billLines) {
+    pdf.setFontSize(line.size);
+    pdf.setFont('helvetica', line.bold ? 'bold' : 'normal');
+    pdf.setTextColor(...(line.color || (line.bold && line.size > 9 ? darkBlue : gray)));
+    pdf.text(line.text, margin + boxPad, lineY, { maxWidth: contentWidth - boxPad * 2 });
+    lineY += getLineH(line);
+  }
+  y += boxH + 5;
+
+  // ===== SERVICE DESCRIPTIONS =====
+  const deviceTypes = [...new Set(devices.map(d => d.deviceType).filter(Boolean))];
+  if (deviceTypes.length === 0) deviceTypes.push('particle_counter');
+
+  const CAL_DATA = {
+    particle_counter: { title: "Étalonnage Compteur de Particules Aéroportées", prestations: ["Vérification des fonctionnalités du compteur","Vérification et réglage du débit","Vérification de la cellule de mesure","Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées","Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4","Fourniture d'un rapport de test et de calibration"] },
+    bio_collector: { title: "Étalonnage Bio Collecteur", prestations: ["Vérification des fonctionnalités de l'appareil","Vérification et réglage du débit","Vérification de la cellule d'impaction","Contrôle des paramètres de collecte","Fourniture d'un rapport de test et de calibration"] },
+    liquid_counter: { title: "Étalonnage Compteur de Particules en Milieu Liquide", prestations: ["Vérification des fonctionnalités du compteur","Vérification et réglage du débit","Vérification de la cellule de mesure optique","Contrôle et réglage des seuils de mesures granulométrique","Vérification en nombre par comparaison à un étalon","Fourniture d'un rapport de test et de calibration"] },
+    temp_humidity: { title: "Étalonnage Capteur Température/Humidité", prestations: ["Vérification des fonctionnalités du capteur","Étalonnage température sur points de référence certifiés","Étalonnage humidité relative","Vérification de la stabilité des mesures","Fourniture d'un certificat d'étalonnage"] },
+    other: { title: "Étalonnage Équipement", prestations: ["Vérification des fonctionnalités de l'appareil","Étalonnage selon les spécifications du fabricant","Tests de fonctionnement","Fourniture d'un rapport de test"] }
+  };
+
+  for (const type of deviceTypes) {
+    const tpl = CAL_DATA[type] || CAL_DATA.particle_counter;
+    checkPageBreak(8 + tpl.prestations.length * 4);
+    pdf.setDrawColor(...navy); pdf.setLineWidth(0.8);
+    pdf.line(margin, y, margin, y + 4 + tpl.prestations.length * 3.8);
+    pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text(tpl.title, margin + 4, y + 4);
+    y += 8;
+    pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+    tpl.prestations.forEach(p => {
+      checkPageBreak(4);
+      const wrapped = pdf.splitTextToSize('\u25B8 ' + p, contentWidth - 8);
+      wrapped.forEach(line => { pdf.text(line, margin + 6, y); y += 3.8; });
+    });
+    y += 5;
+  }
+
+  // ===== DEVICE TABLE (token contracts) =====
+  pdf.setFontSize(13); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+  pdf.text('Appareils sous Contrat', margin, y);
+  y += 7;
+
+  const col1 = margin + 4;
+  const col2 = margin + 55;
+  const col3 = margin + 120;
+  const col4 = pageWidth - margin - 4;
+
+  // Table header
+  pdf.setFillColor(...darkBlue);
+  pdf.rect(margin, y, contentWidth, 9, 'F');
+  pdf.setTextColor(...white); pdf.setFontSize(8); pdf.setFont('helvetica', 'bold');
+  pdf.text('N. SÉRIE', col1, y + 6.5);
+  pdf.text('MODÈLE', col2, y + 6.5);
+  pdf.text('ÉTAL. / AN', col3, y + 6.5);
+  pdf.text('PRIX HT', col4, y + 6.5, { align: 'right' });
+  y += 11;
+
+  // Device rows
+  devices.forEach((d, i) => {
+    checkPageBreak(7);
+    if (i % 2 === 0) { pdf.setFillColor(250, 250, 252); pdf.rect(margin, y - 0.5, contentWidth, 7, 'F'); }
+    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text(d.serial || d.serial_number || '', col1, y + 4.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(d.model || d.model_name || '', col2, y + 4.5);
+    pdf.setTextColor(...gray);
+    pdf.text(String(d.tokens_total || d.calibrationQty || 1), col3, y + 4.5);
+    pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text(`${(parseFloat(d.calibrationPrice || d.unit_price) || 0).toFixed(2)} EUR`, col4, y + 4.5, { align: 'right' });
+    y += 7;
+  });
+
+  // Nettoyage rows
+  devices.filter(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0).forEach(d => {
+    checkPageBreak(7);
+    pdf.setFillColor(255, 251, 235); pdf.rect(margin, y - 0.5, contentWidth, 7, 'F');
+    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(146, 64, 14);
+    pdf.text('Nettoyage cellule - si requis (' + (d.model || d.model_name || '') + ')', col1, y + 4.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`${(parseFloat(d.nettoyagePrice) || 0).toFixed(2)} EUR`, col4, y + 4.5, { align: 'right' });
+    y += 7;
+  });
+
+  // Shipping row
+  const shippingTotal = qd.shippingTotal || 0;
+  if (shippingTotal > 0) {
+    checkPageBreak(7);
+    pdf.setFillColor(239, 246, 255); pdf.rect(margin, y - 0.5, contentWidth, 7, 'F');
+    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(30, 64, 175);
+    pdf.text(`Frais de port (${qd.shipping?.parcels || 1} colis)`, col1, y + 4.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`${shippingTotal.toFixed(2)} EUR`, col4, y + 4.5, { align: 'right' });
+    y += 7;
+  }
+
+  // Total row
+  y += 2;
+  const grandTotal = qd.grandTotal || contract.quote_total || 0;
+  pdf.setFillColor(...navy);
+  pdf.rect(margin, y, contentWidth, 11, 'F');
+  pdf.setTextColor(...white); pdf.setFontSize(11); pdf.setFont('helvetica', 'bold');
+  pdf.text('TOTAL HT', col3 - 20, y + 7.5);
+  pdf.setFontSize(16);
+  pdf.text(`${grandTotal.toFixed(2)} EUR`, col4, y + 8, { align: 'right' });
+  y += 15;
+
+  // Nettoyage disclaimer
+  if (devices.some(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0)) {
+    pdf.setFontSize(7); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(...gray);
+    pdf.text('* Le nettoyage cellule sera facturé uniquement si nécessaire selon l\u2019état du capteur à réception.', margin, y);
+    y += 6;
+  }
+
+  // ===== CONDITIONS =====
+  const startStr = contractDates.start_date ? formatDateFR(contractDates.start_date) : '\u2014';
+  const endStr = contractDates.end_date ? formatDateFR(contractDates.end_date) : '\u2014';
+  const CONTRACT_CONDITIONS = [
+    `Période du contrat: ${startStr} au ${endStr}`,
+    `${qd.totalTokens || devices.reduce((s,d) => s + (d.tokens_total || 1), 0)} étalonnage(s) inclus pendant la période contractuelle`,
+    'Étalonnages supplémentaires facturés au tarif standard',
+    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables",
+    'Paiement à 30 jours date de facture'
+  ];
+  y += 3;
+  checkPageBreak(8 + CONTRACT_CONDITIONS.length * 4);
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+  CONTRACT_CONDITIONS.forEach(d => {
+    checkPageBreak(5);
+    const wrapped = pdf.splitTextToSize('- ' + d, contentWidth);
+    wrapped.forEach(line => { checkPageBreak(4); pdf.text(line, margin, y); y += 4; });
+  });
+  y += 1;
+
+  // ===== SIGNATURE SECTION =====
+  const signatureHeight = 38;
+  const signatoryName = qd.createdBy || qs.signatory_name || biz.quote_signatory || 'M. Meleney';
+  const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
+
+  const signatureLimit = pageHeight - footerHeight - 2;
+  if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
+
+  const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
+  pdf.setDrawColor(200, 200, 200); pdf.setLineWidth(0.3);
+  pdf.line(margin, sigY, pageWidth - margin, sigY);
+
+  pdf.setFontSize(8); pdf.setTextColor(...lightGray);
+  pdf.text('ETABLI PAR', margin, sigY + 7);
+  pdf.setFontSize(12); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+  pdf.text(signatoryName, margin, sigY + 14);
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+  pdf.text(signatoryCompany, margin, sigY + 20);
+
+  if (capcertLogo) {
+    try { const fmt = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG'; pdf.addImage(capcertLogo, fmt, margin + 52, sigY + 3, 30, 30); } catch (e) {}
+  }
+
+  const sigBoxX = pageWidth - margin - 62;
+  pdf.setFontSize(8); pdf.setTextColor(...lightGray);
+  pdf.text('Signature client', sigBoxX + 16, sigY + 7);
+  pdf.setDrawColor(180, 180, 180); pdf.setLineWidth(0.3);
+  pdf.setLineDashPattern([2, 2], 0);
+  pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
+  pdf.setLineDashPattern([], 0);
+  pdf.text('Lu et approuvé', sigBoxX + 18, sigY + 34);
+
+  addFooter();
+
+  // Always show page numbers
+  const totalPages = pdf.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    pdf.setPage(i);
+    pdf.setFontSize(7);
+    pdf.setTextColor(180, 180, 180);
+    pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
   }
 
   return pdf.output('blob');
@@ -4388,8 +4696,8 @@ export default function AdminPortal() {
           </div>
           <div className="flex items-center gap-4">
             <div className="flex bg-gray-100 rounded-lg p-0.5">
-              <button onClick={async () => { setLang('fr'); await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'fr' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>FR</button>
-              <button onClick={async () => { setLang('en'); await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'en' ? 'bg-[#00A651] text-white' : 'text-gray-500 hover:text-gray-700'}`}>EN</button>
+              <button onClick={async () => { setLang('fr'); await supabase.from('profiles').update({ preferred_language: 'fr' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'fr' ? 'bg-[#2D5A7B] text-white' : 'text-gray-500 hover:text-gray-700'}`}>FR</button>
+              <button onClick={async () => { setLang('en'); await supabase.from('profiles').update({ preferred_language: 'en' }).eq('id', profile.id); }} className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${lang === 'en' ? 'bg-[#2D5A7B] text-white' : 'text-gray-500 hover:text-gray-700'}`}>EN</button>
             </div>
             <div className="text-right">
               <p className="font-medium">{profile?.full_name}</p>
@@ -4407,7 +4715,7 @@ export default function AdminPortal() {
               setSelectedRMA(null); 
               setSelectedDeviceFromDashboard(null); 
             }}
-              className={`px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap relative ${activeSheet === sheet.id ? 'bg-[#00A651] text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
+              className={`px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap relative ${activeSheet === sheet.id ? 'bg-[#2D5A7B] text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}>
               <span>{sheet.icon}</span>{sheet.label}
               {sheet.badge > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1 animate-pulse">
@@ -4564,7 +4872,7 @@ function LoginPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">{lang === 'en' ? 'Password' : 'Mot de passe'}</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-4 py-3 border border-gray-300 rounded-lg" required />
           </div>
-          <button type="submit" disabled={loading} className="w-full py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45] disabled:opacity-50">
+          <button type="submit" disabled={loading} className="w-full py-3 bg-[#2D5A7B] text-white rounded-lg font-bold hover:bg-[#008f45] disabled:opacity-50">
             {loading ? 'Connexion...' : 'Se connecter'}
           </button>
         </form>
@@ -4879,16 +5187,53 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           throw pdfErr;
         }
       } else if (review.quote_type === 'contract') {
-        // === CONTRACT QUOTE: Set status to quote_sent ===
+        // === CONTRACT QUOTE: Generate number, PDF, and send ===
         const qd = review.quote_data;
         const contractId = review.contract_id || qd.contractId;
         if (contractId) {
-          await supabase.from('contracts').update({
+          // Generate quote number if not already set
+          let contractNumber = qd.contractNumber || review.quote_number;
+          if (!contractNumber) {
+            try {
+              const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'CTR' });
+              if (!docNumError && docNumData) contractNumber = docNumData;
+            } catch (e) { console.error('Could not generate CTR number:', e); }
+            if (!contractNumber) {
+              const year = new Date().getFullYear();
+              contractNumber = `CTR-${year}-???`;
+            }
+          }
+
+          // Fetch full contract + company for PDF
+          let quoteUrl = null;
+          try {
+            const { data: contractData } = await supabase.from('contracts')
+              .select('*, companies(*)')
+              .eq('id', contractId).single();
+            
+            if (contractData) {
+              const pdfBlob = await generateContractQuotePDF(
+                { ...contractData, contract_number: contractNumber },
+                qd,
+                businessSettings
+              );
+              const fileName = `${contractNumber}_devis_${Date.now()}.pdf`;
+              quoteUrl = await uploadPDFToStorage(pdfBlob, `contracts/${contractId}`, fileName);
+            }
+          } catch (pdfErr) {
+            console.error('Contract PDF generation error:', pdfErr);
+          }
+
+          const updateData = {
             status: 'quote_sent',
             quote_sent_at: new Date().toISOString(),
+            contract_number: contractNumber,
             quote_review_id: null,
             quote_rejection_notes: null
-          }).eq('id', contractId);
+          };
+          if (quoteUrl) updateData.quote_url = quoteUrl;
+
+          await supabase.from('contracts').update(updateData).eq('id', contractId);
         }
       } else if (review.quote_type === 'rental') {
         // === RENTAL QUOTE: Generate PDF and set status to quote_sent ===
@@ -5105,12 +5450,12 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   // ========================
 // ReviewQuoteDoc — non-modal version of customer QuoteDocumentView
   // Renders just the document content (no modal overlay, no action buttons)
-  const ReviewQuoteDoc = ({ title = 'OFFRE DE PRIX', docNumber, reference, refLabel = 'RMA', date, quoteData = {}, conditions = [], addressMode = 'both', accentColor, extraInfoBar = null, children }) => {
+  const ReviewQuoteDoc = ({ title = 'OFFRE DE PRIX', docNumber, reference, refLabel = 'RMA', date, quoteData = {}, conditions = [], addressMode = 'both', extraInfoBar = null, children }) => {
     const billingAddr = quoteData.billingAddress || null;
     const shippingAddr = quoteData.shippingAddress || null;
     const submitterName = quoteData.submitterName || null;
     const returnShipping = quoteData.returnShipping || 'standard';
-    const accent = accentColor || '#2D5A7B';
+    const accent = '#2D5A7B';
     const qDate = date ? (() => { try { return new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); } catch { return date; } })() : new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
     const renderShipTo = () => {
@@ -5458,7 +5803,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           title="SUPPLÉMENT AU DEVIS" docNumber={qd.supNumber || review.quote_number}
           reference={qd.rmaNumber || review.rma_number} refLabel="RMA"
           date={qd.createdAt || review.submitted_at}
-          quoteData={docData} accentColor="#e67e22"
+          quoteData={docData}
           conditions={["Ce devis complémentaire doit être approuvé avant poursuite des travaux.", "Paiement : 30 jours fin de mois."]}
         >
           <div className="mx-8 mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
@@ -5511,7 +5856,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
                   </Fragment>);
                 })}
               </tbody>
-              <tfoot><tr className="bg-[#e67e22] text-white">
+              <tfoot><tr className="bg-[#2D5A7B] text-white">
                 <td colSpan={2} className="px-3 py-3"></td>
                 <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                 <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{total.toFixed(2)} €</td>
@@ -5546,7 +5891,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           reference={qd.contractNumber || review.rma_number} refLabel="Contrat"
           date={qd.createdAt || review.submitted_at}
           quoteData={docData} conditions={contractConditions}
-          addressMode="billing_only" accentColor="#00A651" extraInfoBar={contractInfoBar}
+          addressMode="billing_only" extraInfoBar={contractInfoBar}
         >
           <div className="px-8 py-2"><p className="text-sm text-gray-500 italic">Contrat de tarification / d'étalonnage</p></div>
           <div className="px-8 py-4 space-y-5">
@@ -5584,7 +5929,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
                   <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
                 </tr>)}
               </tbody>
-              <tfoot><tr className="bg-[#00A651] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td></tr></tfoot>
+              <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td></tr></tfoot>
             </table>
             {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
           </div>
@@ -5614,7 +5959,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           reference={review.rma_number} refLabel="Location"
           date={qd.quoted_at || review.submitted_at}
           quoteData={docData} conditions={rentalConditions}
-          accentColor="#8B5CF6" extraInfoBar={rentalInfoBar}
+          extraInfoBar={rentalInfoBar}
         >
           <div className="px-8 py-6">
             <h3 className="font-bold text-[#1a1a2e] mb-3">Équipements en Location</h3>
@@ -5651,7 +5996,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
                   </tr>
                 )}
               </tbody>
-              <tfoot><tr className="bg-[#8B5CF6] text-white">
+              <tfoot><tr className="bg-[#2D5A7B] text-white">
                 <td colSpan={5} className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                 <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{totalHT.toFixed(2)} €</td>
               </tr></tfoot>
@@ -6957,7 +7302,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                         <div 
                           className={`
                             flex items-center justify-center h-9 px-2 text-[10px] font-medium text-center leading-tight
-                            ${isQuoteStepRed ? 'bg-red-500 text-white animate-pulse' : isShipped && isLast ? 'bg-[#00A651] text-white' : isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
+                            ${isQuoteStepRed ? 'bg-red-500 text-white animate-pulse' : isShipped && isLast ? 'bg-[#2D5A7B] text-white' : isCompleted ? 'bg-[#2D5A7B] text-white' : isCurrent ? 'bg-[#003366] text-white' : 'bg-gray-200 text-gray-500'}
                             ${index === 0 ? 'rounded-l-sm' : ''}
                             ${isLast ? 'rounded-r-sm' : ''}
                           `}
@@ -12165,14 +12510,13 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   addFooter();
   
   const totalPages = pdf.internal.getNumberOfPages();
-  if (totalPages > 1) {
+  // Always show page numbers
     for (let i = 1; i <= totalPages; i++) {
       pdf.setPage(i);
       pdf.setFontSize(7);
       pdf.setTextColor(180, 180, 180);
       pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
     }
-  }
 
   return { blob: pdf.output('blob'), total: grandTotal };
 };
@@ -13038,7 +13382,7 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
             <div 
               className={`
                 relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
-                ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'}
+                ${isCompleted ? 'bg-[#2D5A7B] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'}
                 ${index === 0 ? 'rounded-l-md' : ''}
                 ${isLast ? 'rounded-r-md' : ''}
               `}
@@ -20509,7 +20853,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     </button>
                   ))}
                 </div>
-                <button onClick={openAddDevice} className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm font-medium hover:bg-[#008C44]">
+                <button onClick={openAddDevice} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#008C44]">
                   + {lang === 'en' ? 'Add Device' : 'Ajouter un appareil'}
                 </button>
               </div>
@@ -20602,7 +20946,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                     
                     <div className="flex justify-end gap-2 pt-2">
                       <button onClick={() => setShowDeviceModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg text-sm">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
-                      <button onClick={saveDevice} disabled={deviceSaving} className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                      <button onClick={saveDevice} disabled={deviceSaving} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium disabled:opacity-50">
                         {deviceSaving ? '...' : (editingDevice ? (lang === 'en' ? 'Save Changes' : 'Enregistrer') : (lang === 'en' ? 'Add Device' : 'Ajouter'))}
                       </button>
                     </div>
@@ -20753,7 +21097,7 @@ function ClientDetailModal({ client, requests, partsOrders, equipment, onClose, 
                   
                   <div className="flex gap-2 pt-2">
                     <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-200 rounded-lg">{t('cancel')}</button>
-                    <button onClick={saveClient} disabled={saving} className="px-4 py-2 bg-[#00A651] text-white rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
+                    <button onClick={saveClient} disabled={saving} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg disabled:opacity-50">{saving ? '...' : t('save')}</button>
                   </div>
                 </div>
               ) : (
@@ -22301,7 +22645,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
                     </tr>
                   </tbody>
                   <tfoot>
-                    <tr className="bg-[#00A651] text-white">
+                    <tr className="bg-[#2D5A7B] text-white">
                       <td colSpan={2} className="px-3 py-3"></td>
                       <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                       <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
@@ -22508,7 +22852,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
             {step < 3 && (
               <button
                 onClick={() => setStep(step + 1)}
-                className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45]"
+                className="px-6 py-2 bg-[#2D5A7B] text-white rounded-lg font-medium hover:bg-[#008f45]"
               >
                 {step === 1 ? (lang === 'en' ? 'Preview →' : 'Aperçu →') : 'Confirmer →'}
               </button>
@@ -22517,7 +22861,7 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
               <button
                 onClick={sendQuote}
                 disabled={saving}
-                className="px-6 py-2 bg-[#00A651] text-white rounded-lg font-medium hover:bg-[#008f45] disabled:opacity-50"
+                className="px-6 py-2 bg-[#2D5A7B] text-white rounded-lg font-medium hover:bg-[#008f45] disabled:opacity-50"
               >
                 {saving ? (lang === 'en' ? 'Sending...' : 'Envoi...') : (lang === 'en' ? '✅ Send Quote' : '✅ Envoyer le Devis')}
               </button>
@@ -22797,7 +23141,7 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
               <div key={step.id} className="flex items-center flex-1">
                 <div
                   className={`relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium
-                    ${isCompleted ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'}
+                    ${isCompleted ? 'bg-[#2D5A7B] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'}
                     ${index === 0 ? 'rounded-l-md' : ''} ${isLast ? 'rounded-r-md' : ''}
                   `}
                   style={{
@@ -23360,14 +23704,14 @@ function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-co
         <button
           type="button"
           onClick={() => setUrlMode(false)}
-          className={`px-3 py-1 text-xs rounded ${!urlMode ? 'bg-[#00A651] text-white' : 'bg-gray-200 text-gray-700'}`}
+          className={`px-3 py-1 text-xs rounded ${!urlMode ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-700'}`}
         >
           📄 Fichier
         </button>
         <button
           type="button"
           onClick={() => setUrlMode(true)}
-          className={`px-3 py-1 text-xs rounded ${urlMode ? 'bg-[#00A651] text-white' : 'bg-gray-200 text-gray-700'}`}
+          className={`px-3 py-1 text-xs rounded ${urlMode ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-700'}`}
         >
           🔗 Lien
         </button>
@@ -23385,7 +23729,7 @@ function BCFileUploader({ onUploaded, currentUrl, lang = 'fr', folder = 'bons-co
           <button
             type="button"
             onClick={handleUrlSubmit}
-            className="px-3 py-2 bg-[#00A651] text-white rounded-lg text-sm"
+            className="px-3 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm"
           >
             OK
           </button>
@@ -23979,15 +24323,13 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
 
     addFooter();
 
-    // Add page numbers to all pages
+    // Always show page numbers
     const pageCount = pdf.internal.getNumberOfPages();
-    if (pageCount > 1) {
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(7);
-        pdf.setTextColor(180, 180, 180);
-        pdf.text(`Page ${i} / ${pageCount}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
-      }
+    for (let i = 1; i <= pageCount; i++) {
+      pdf.setPage(i);
+      pdf.setFontSize(7);
+      pdf.setTextColor(180, 180, 180);
+      pdf.text(`Page ${i} / ${pageCount}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
     }
     
     return pdf;
@@ -24314,7 +24656,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
           <div className="border-t pt-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-gray-800">{lang === 'en' ? `Devices under contract (${devices.length})` : `Appareils sous contrat (${devices.length})`}</h3>
-              <button onClick={addDevice} className="px-4 py-2 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]">+ Ajouter appareil</button>
+              <button onClick={addDevice} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#008f45]">+ Ajouter appareil</button>
             </div>
             <div className="space-y-3">
               {devices.map((device, index) => (
@@ -24387,7 +24729,7 @@ function CreateContractModal({ clients, notify, onClose, onCreated, lang = 'fr' 
                 <div className="flex items-center gap-2">
                   <input type="number" value={globalDiscount} onChange={e => setGlobalDiscount(parseFloat(e.target.value) || 0)} className="w-20 px-3 py-1.5 border rounded-lg text-sm text-center" min="0" max="100" step="1" placeholder="%" />
                   <span className="text-sm text-gray-600">%</span>
-                  <button onClick={applyDiscountToAll} className="px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm hover:bg-[#008f45]">Appliquer à tout</button>
+                  <button onClick={applyDiscountToAll} className="px-3 py-1.5 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#008f45]">Appliquer à tout</button>
                   <span className="text-xs text-gray-400">Les prix catalogue seront recalculés</span>
                 </div>
               )}
@@ -26934,7 +27276,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
             {staffMembers.map(member => (
               <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#00A651] text-white flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 rounded-full bg-[#2D5A7B] text-white flex items-center justify-center font-bold">
                     {member.full_name?.charAt(0)?.toUpperCase()}
                   </div>
                   <div>
@@ -26985,7 +27327,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                       <div className="bg-[#00A651]/10 rounded-xl p-4 border border-[#00A651]/30 max-w-xs">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-medium text-gray-500">RMA</span>
-                          <span className="text-xs bg-[#00A651] text-white px-2 py-0.5 rounded font-mono">FR</span>
+                          <span className="text-xs bg-[#2D5A7B] text-white px-2 py-0.5 rounded font-mono">FR</span>
                         </div>
                         
                         {isEditingRMA ? (
@@ -26993,7 +27335,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                             <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-center font-mono" min="0" />
                             <div className="flex gap-2">
                               <button onClick={() => { setEditingCounter(null); setNewValue(''); }} className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
-                              <button onClick={() => saveCounter('RMA', 'RMA', newValue)} disabled={counterSaving} className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50">{counterSaving ? '...' : 'OK'}</button>
+                              <button onClick={() => saveCounter('RMA', 'RMA', newValue)} disabled={counterSaving} className="flex-1 px-3 py-1.5 bg-[#2D5A7B] text-white rounded-lg text-sm disabled:opacity-50">{counterSaving ? '...' : 'OK'}</button>
                             </div>
                           </div>
                         ) : (
@@ -27042,7 +27384,7 @@ function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, s
                               <input type="number" value={newValue} onChange={e => setNewValue(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-center font-mono" min="0" />
                               <div className="flex gap-2">
                                 <button onClick={() => { setEditingCounter(null); setNewValue(''); }} className="flex-1 px-3 py-1.5 bg-gray-200 rounded-lg text-sm">{lang === 'en' ? 'Cancel' : 'Annuler'}</button>
-                                <button onClick={() => saveCounter(docType.doc_type, currentYearMonth, newValue)} disabled={counterSaving} className="flex-1 px-3 py-1.5 bg-[#00A651] text-white rounded-lg text-sm disabled:opacity-50">{counterSaving ? '...' : 'OK'}</button>
+                                <button onClick={() => saveCounter(docType.doc_type, currentYearMonth, newValue)} disabled={counterSaving} className="flex-1 px-3 py-1.5 bg-[#2D5A7B] text-white rounded-lg text-sm disabled:opacity-50">{counterSaving ? '...' : 'OK'}</button>
                               </div>
                             </div>
                           ) : (
@@ -27497,7 +27839,7 @@ function SalesforceLinkingTool({ notify, lang = 'fr' }) {
                                   : score >= 0.4 ? <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">{lang === 'en' ? 'Possible match' : 'Correspondance possible'}</span>
                                   : <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">{lang === 'en' ? 'Low match' : 'Faible correspondance'}</span>;
                               })()}
-                              <button onClick={linkPair} disabled={linkSaving} className="px-5 py-2 bg-[#00A651] text-white rounded-lg font-bold text-sm hover:bg-[#008C44] disabled:opacity-50 shadow-sm">
+                              <button onClick={linkPair} disabled={linkSaving} className="px-5 py-2 bg-[#2D5A7B] text-white rounded-lg font-bold text-sm hover:bg-[#008C44] disabled:opacity-50 shadow-sm">
                                 {linkSaving ? '...' : (lang === 'en' ? '\uD83D\uDD17 Link These' : '\uD83D\uDD17 Lier')}
                               </button>
                             </>
@@ -30756,7 +31098,7 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
                       <span className="font-medium text-red-600">-{discountAmount.toFixed(2)} €</span>
                     </div>
                   )}
-                  <div className="flex justify-between items-center bg-[#00A651] text-white px-4 py-3 rounded-lg mt-4">
+                  <div className="flex justify-between items-center bg-[#2D5A7B] text-white px-4 py-3 rounded-lg mt-4">
                     <span className="font-bold">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</span>
                     <span className="font-bold text-xl">{grandTotal.toFixed(2)} €</span>
                   </div>
@@ -32011,7 +32353,7 @@ function USAOrdersSheet({ clients = [], notify, reload, profile, t = k=>k, lang 
               return (
                 <div key={step.id} className="flex-1 flex flex-col items-center relative">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold z-10 ${
-                    isComplete ? 'bg-[#00A651] text-white' : isCurrent ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'
+                    isComplete ? 'bg-[#2D5A7B] text-white' : isCurrent ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'
                   }`}>
                     {isComplete ? '✓' : i + 1}
                   </div>
@@ -32152,7 +32494,7 @@ function USAOrdersSheet({ clients = [], notify, reload, profile, t = k=>k, lang 
             key={f.id}
             onClick={() => setFilter(f.id)}
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-              filter === f.id ? 'bg-[#00A651] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              filter === f.id ? 'bg-[#2D5A7B] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
             {f.label} ({f.count})
@@ -32823,7 +33165,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">{lang === 'en' ? 'Rentals' : 'Locations'}</h1>
         <div className="flex gap-2">
-          <button onClick={() => setShowAddDevice(true)} className="px-4 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium hover:bg-[#7C3AED]">{lang === 'en' ? '+ Add Device' : '+ Ajouter Appareil'}</button>
+          <button onClick={() => setShowAddDevice(true)} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg font-medium hover:bg-[#7C3AED]">{lang === 'en' ? '+ Add Device' : '+ Ajouter Appareil'}</button>
           <button onClick={() => setShowAddBundle(true)} className="px-4 py-2 bg-[#8B5CF6]/80 text-white rounded-lg font-medium hover:bg-[#7C3AED]">{lang === 'en' ? '+ Create Kit' : '+ Créer Kit'}</button>
         </div>
       </div>
@@ -32988,7 +33330,7 @@ function RentalsSheet({ rentals = [], clients, notify, reload, profile, business
                       {rental.status === 'bc_review' ? (
                         <button onClick={() => setReviewingRentalBC(rental)} className="px-3 py-1.5 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 font-medium">🔍 Examiner BC</button>
                       ) : (
-                        <button onClick={() => setFullPageRental(rental)} className="px-3 py-1.5 bg-[#8B5CF6] text-white text-sm rounded-lg hover:bg-[#7C3AED] font-medium">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
+                        <button onClick={() => setFullPageRental(rental)} className="px-3 py-1.5 bg-[#2D5A7B] text-white text-sm rounded-lg hover:bg-[#7C3AED] font-medium">{lang === 'en' ? 'Manage' : 'Gérer'}</button>
                       )}
                     </td>
                   </tr>
@@ -35312,7 +35654,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               const isLast = index === rentalSteps.length - 1;
               return (
                 <div key={step.id} className="flex items-center flex-1">
-                  <div className={`relative flex items-center justify-center flex-1 py-1.5 px-1 text-xs font-medium ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#8B5CF6] text-white' : 'bg-gray-200 text-gray-500'} ${index === 0 ? 'rounded-l-md' : ''} ${isLast ? 'rounded-r-md' : ''}`}
+                  <div className={`relative flex items-center justify-center flex-1 py-1.5 px-1 text-xs font-medium ${isCompleted ? 'bg-[#3B7AB4] text-white' : isCurrent ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'} ${index === 0 ? 'rounded-l-md' : ''} ${isLast ? 'rounded-r-md' : ''}`}
                     style={{ clipPath: isLast ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)' : index === 0 ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)' : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)' }}>
                     <span className="truncate px-1">{step.label}</span>
                   </div>
@@ -35721,7 +36063,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               {/* Add Document Button */}
               {isAdmin && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                  <label className="flex items-center gap-2 px-4 py-2.5 bg-[#8B5CF6] text-white rounded-lg hover:bg-[#7C3AED] transition-colors font-medium text-sm cursor-pointer w-fit">
+                  <label className="flex items-center gap-2 px-4 py-2.5 bg-[#2D5A7B] text-white rounded-lg hover:bg-[#7C3AED] transition-colors font-medium text-sm cursor-pointer w-fit">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     {docUploading ? '⏳ Upload...' : '📤 Ajouter un document'}
                     <input type="file" className="hidden" onChange={uploadDocument} disabled={docUploading} />
@@ -35747,7 +36089,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
                   const isAdminMsg = msg.sender_type === 'admin' || msg.sender_role === 'admin';
                   return (
                     <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[70%] rounded-lg p-3 ${isMe ? 'bg-[#8B5CF6] text-white' : 'bg-gray-100 text-gray-800'}`}>
+                      <div className={`max-w-[70%] rounded-lg p-3 ${isMe ? 'bg-[#2D5A7B] text-white' : 'bg-gray-100 text-gray-800'}`}>
                         <p className={`text-xs font-medium mb-1 ${isMe ? 'text-white/70' : 'text-[#8B5CF6]'}`}>{msg.sender_name || (isAdminMsg ? 'Admin' : 'Client')}</p>
                         <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                         {msg.attachment_url && <a href={msg.attachment_url} target="_blank" rel="noopener noreferrer" className={`text-xs mt-2 block ${isMe ? 'text-white/80' : 'text-blue-600'}`}>📎 {msg.attachment_name || 'Fichier'}</a>}
@@ -35759,7 +36101,7 @@ function RentalFullPage({ rental, inventory = [], onBack, notify, reload, busine
               </div>
               <form onSubmit={sendMessage} className="flex gap-2">
                 <input type="text" value={newMsg} onChange={e => setNewMsg(e.target.value)} placeholder="Écrire un message au client..." className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]" />
-                <button type="submit" disabled={!newMsg.trim() || sendingMsg} className="px-6 py-2 bg-[#8B5CF6] text-white rounded-lg font-medium disabled:opacity-50">{sendingMsg ? '...' : 'Envoyer'}</button>
+                <button type="submit" disabled={!newMsg.trim() || sendingMsg} className="px-6 py-2 bg-[#2D5A7B] text-white rounded-lg font-medium disabled:opacity-50">{sendingMsg ? '...' : 'Envoyer'}</button>
               </form>
             </div>
           )}
