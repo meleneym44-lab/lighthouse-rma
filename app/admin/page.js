@@ -5226,7 +5226,7 @@ const renderQuotePreview = (review) => {
 
         {/* Signature block — pinned to bottom of last page, above footer */}
         {isLastPage && signatureName && (
-          <div style={{ position: 'absolute', bottom: '10mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '0.3mm solid #e0e0e0', paddingTop: '3mm' }}>
+          <div style={{ position: 'absolute', bottom: '18mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '0.3mm solid #e0e0e0', paddingTop: '3mm' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
               <div>
                 <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
@@ -5244,12 +5244,12 @@ const renderQuotePreview = (review) => {
         )}
 
         {/* Footer — absolutely positioned at bottom */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#1a1a2e', color: 'white', padding: '2.5mm 15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <span style={{ fontSize: '7pt', fontWeight: 'bold' }}>Lighthouse France SAS</span>
-            <span style={{ fontSize: '6pt', color: '#999', marginLeft: '3mm' }}>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</span>
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#1a1a2e', color: 'white', padding: '2mm 15mm 2.5mm 15mm' }}>
+          <p style={{ fontSize: '7.5pt', fontWeight: 'bold', margin: 0, textAlign: 'center' }}>Lighthouse France SAS</p>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'relative', marginTop: '0.5mm' }}>
+            <span style={{ fontSize: '6pt', color: '#999' }}>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</span>
+            <span style={{ position: 'absolute', right: 0, fontSize: '7pt', color: '#ccc', fontWeight: 'bold' }}>Page {pageNum}/{totalPages}</span>
           </div>
-          <span style={{ fontSize: '7pt', color: '#ccc', fontWeight: 'bold' }}>Page {pageNum}/{totalPages}</span>
         </div>
       </div>
     );
