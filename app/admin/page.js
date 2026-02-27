@@ -7438,14 +7438,17 @@ function ShippingDocReviewModal({ doc, requests, onClose, notify, reload, profil
       }).eq('id', doc.id);
       if (error) throw error;
 
-      // Send message to customer
-      await supabase.from('messages').insert({
-        request_id: doc.request_id,
-        sender_id: profile?.id,
-        sender_type: 'admin',
-        sender_name: profile?.full_name || 'Lighthouse France',
-        content: `✅ Documents de transport approuvés\nNuméro de suivi : ${trackingNumber.trim()}\nTransporteur : ${carrier}`
-      });
+      // Save shipping doc as a request_attachment so it shows in Documents section
+      if (doc.document_url) {
+        await supabase.from('request_attachments').insert({
+          request_id: doc.request_id,
+          file_name: `Tracking ${carrier} - ${trackingNumber.trim()}`,
+          file_url: doc.document_url,
+          category: 'shipping_label',
+          shared_with_customer: true,
+          uploaded_by: profile?.id
+        });
+      }
 
       notify(lang === 'en' ? '✅ Shipping docs approved!' : '✅ Documents de transport approuvés !');
       reload();
@@ -7472,14 +7475,6 @@ function ShippingDocReviewModal({ doc, requests, onClose, notify, reload, profil
       }).eq('id', doc.id);
       if (error) throw error;
 
-      await supabase.from('messages').insert({
-        request_id: doc.request_id,
-        sender_id: profile?.id,
-        sender_type: 'admin',
-        sender_name: profile?.full_name || 'Lighthouse France',
-        content: `❌ Documents de transport rejetés\nMotif : ${adminNotes.trim()}`
-      });
-
       notify(lang === 'en' ? '❌ Shipping docs rejected' : '❌ Documents rejetés');
       reload();
       onClose();
@@ -7504,14 +7499,6 @@ function ShippingDocReviewModal({ doc, requests, onClose, notify, reload, profil
         updated_at: new Date().toISOString()
       }).eq('id', doc.id);
       if (error) throw error;
-
-      await supabase.from('messages').insert({
-        request_id: doc.request_id,
-        sender_id: profile?.id,
-        sender_type: 'admin',
-        sender_name: profile?.full_name || 'Lighthouse France',
-        content: `✏️ Modification demandée pour vos documents de transport\nMotif : ${adminNotes.trim()}`
-      });
 
       notify(lang === 'en' ? '✏️ Modification requested' : '✏️ Modification demandée');
       reload();
@@ -8613,19 +8600,17 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
       const { error } = await supabase.from('shipping_documents').update(updateData).eq('id', shippingDoc.id);
       if (error) throw error;
       
-      const msgContent = action === 'approve' 
-        ? `✅ Documents de transport approuvés\nNuméro de suivi : ${shipDocTrackingNumber.trim()}\nTransporteur : ${carrier}`
-        : action === 'reject'
-        ? `❌ Documents de transport rejetés\nMotif : ${shipDocAdminNotes.trim()}`
-        : `✏️ Modification demandée pour vos documents de transport\nMotif : ${shipDocAdminNotes.trim()}`;
-      
-      await supabase.from('messages').insert({
-        request_id: rma.id,
-        sender_id: profile?.id,
-        sender_type: 'admin',
-        sender_name: profile?.full_name || 'Lighthouse France',
-        content: msgContent
-      });
+      // Save shipping doc as attachment on approve
+      if (action === 'approve' && shippingDoc.document_url) {
+        await supabase.from('request_attachments').insert({
+          request_id: rma.id,
+          file_name: `Tracking ${carrier} - ${shipDocTrackingNumber.trim()}`,
+          file_url: shippingDoc.document_url,
+          category: 'shipping_label',
+          shared_with_customer: true,
+          uploaded_by: profile?.id
+        });
+      }
       
       const labels = { approve: '✅ Approuvé', reject: '❌ Rejeté', modification: '✏️ Modification demandée' };
       notify(labels[action]);
@@ -12796,8 +12781,17 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
       };
       if (action === 'approve') { updateData.tracking_number = partsShipDocTracking.trim(); updateData.tracking_url = trackingUrl; }
       await supabase.from('shipping_documents').update(updateData).eq('id', partsShippingDoc.id);
-      const msgContent = action === 'approve' ? `✅ Documents approuvés — Suivi: ${partsShipDocTracking.trim()}` : action === 'reject' ? `❌ Documents rejetés: ${partsShipDocNotes.trim()}` : `✏️ Modification demandée: ${partsShipDocNotes.trim()}`;
-      await supabase.from('messages').insert({ request_id: order.id, sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name || 'Lighthouse', content: msgContent });
+      // Save shipping doc as attachment on approve
+      if (action === 'approve' && partsShippingDoc.document_url) {
+        await supabase.from('request_attachments').insert({
+          request_id: order.id,
+          file_name: `Tracking ${partsShippingDoc.carrier_name || ''} - ${partsShipDocTracking.trim()}`,
+          file_url: partsShippingDoc.document_url,
+          category: 'shipping_label',
+          shared_with_customer: true,
+          uploaded_by: profile?.id
+        });
+      }
       notify(action === 'approve' ? '✅ Approuvé' : action === 'reject' ? '❌ Rejeté' : '✏️ Modification demandée');
       setShowPartsShipDocReview(false);
       reload();
