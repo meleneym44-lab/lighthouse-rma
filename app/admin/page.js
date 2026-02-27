@@ -3241,8 +3241,8 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
 };
 
 // ============================================
-// CONTRACT QUOTE PDF - Standalone (for quote review approval)
-// Works for both token contracts from customer requests and manual entry
+// CONTRACT QUOTE PDF - Modeled on RMA generateQuotePDF
+// Same structure: header, info bar, addresses, service blocks, pricing table, conditions, signature
 // ============================================
 const generateContractQuotePDF = async (contract, quoteData, businessSettings = {}) => {
   const jsPDF = await loadJsPDF();
@@ -3253,6 +3253,7 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   const company = contract.companies || {};
   const devices = qd.devices || [];
   const contractDates = qd.contractDates || { start_date: contract.start_date, end_date: contract.end_date };
+  const contractNumber = contract.contract_number || qd.contractNumber || '';
 
   const pageWidth = 210, pageHeight = 297, margin = 15;
   const contentWidth = pageWidth - (margin * 2);
@@ -3260,15 +3261,8 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   const { navy, darkBlue, gray, lightGray, white } = PDF_COLORS;
   let y = margin - 8;
 
-  const formatDateFR = (d) => {
-    const date = new Date(d);
-    const months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
-    return date.getDate() + ' ' + months[date.getMonth()] + ' ' + date.getFullYear();
-  };
-
   let lighthouseLogo = await loadImageAsBase64('/images/logos/Lighthouse-color-logo.jpg');
-  let capcertLogo = null;
-  try { capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png'); } catch (e) {}
+  let capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png');
 
   const addFooter = () => {
     pdf.setFillColor(...darkBlue);
@@ -3289,35 +3283,32 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
     return false;
   };
 
-  // ===== HEADER =====
+  // ===== HEADER (identical to RMA) =====
   if (lighthouseLogo) {
     try {
       const fmt = lighthouseLogo.includes('image/png') ? 'PNG' : 'JPEG';
       pdf.addImage(lighthouseLogo, fmt, margin, y - 2, 85, 22);
-    } catch (e) {
-      pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-      pdf.text('LIGHTHOUSE', margin, y + 8);
-    }
-  } else {
-    pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-    pdf.text('LIGHTHOUSE', margin, y + 8);
-  }
+    } catch (e) { pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue); pdf.text('LIGHTHOUSE', margin, y + 8); }
+  } else { pdf.setFontSize(26); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue); pdf.text('LIGHTHOUSE', margin, y + 8); }
 
   pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
   pdf.text('OFFRE DE PRIX', pageWidth - margin, y + 5, { align: 'right' });
-
   pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-  pdf.text('N\u00B0 ' + (contract.contract_number || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
-
+  pdf.text('N\u00B0 ' + (contractNumber || '\u2014'), pageWidth - margin, y + 11, { align: 'right' });
   pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
-  pdf.text("Contrat d'étalonnage", pageWidth - margin, y + 16, { align: 'right' });
+  pdf.text('Contrat: ' + contractNumber, pageWidth - margin, y + 16, { align: 'right' });
 
   y += 20;
   pdf.setDrawColor(...navy); pdf.setLineWidth(1);
   pdf.line(margin, y, pageWidth - margin, y);
   y += 3;
 
-  // ===== INFO BAR =====
+  // ===== INFO BAR (4 fields: DATE / DÉBUT / FIN / VALIDITÉ) =====
+  const formatDateFR = (d) => {
+    if (!d) return '\u2014';
+    try { return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); } catch { return d; }
+  };
+
   pdf.setFillColor(245, 245, 245);
   pdf.rect(margin, y, contentWidth, 14, 'F');
   pdf.setFontSize(7); pdf.setTextColor(...lightGray);
@@ -3327,25 +3318,25 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   pdf.text('VALIDITÉ', margin + 145, y + 4);
   pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
   pdf.text(formatDateFR(new Date()), margin + 5, y + 10);
-  pdf.text(contractDates.start_date ? formatDateFR(contractDates.start_date) : '\u2014', margin + 50, y + 10);
-  pdf.text(contractDates.end_date ? formatDateFR(contractDates.end_date) : '\u2014', margin + 100, y + 10);
+  pdf.text(formatDateFR(contractDates.start_date), margin + 50, y + 10);
+  pdf.text(formatDateFR(contractDates.end_date), margin + 100, y + 10);
   pdf.text('30 jours', margin + 145, y + 10);
   y += 18;
 
-  // ===== FACTURER À =====
+  // ===== ADDRESS BOX: FACTURER À (full width, same style as RMA) =====
   const billingAddr = qd.billingAddress || null;
-  const clientName = billingAddr?.company_name || company.name || contract.client_name || 'Client';
   const boxPad = 4;
   const billLines = [];
-  billLines.push({ text: clientName, bold: true, size: 11 });
+  const billName = billingAddr?.company_name || company.name || contract.client_name || 'Client';
+  billLines.push({ text: billName, bold: true, size: 11 });
   if (billingAddr) {
     if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
     if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
     const cityLine = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
     if (cityLine) billLines.push({ text: cityLine + (billingAddr.country ? ', ' + billingAddr.country : ''), bold: false, size: 8.5 });
     if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
-    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
     if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
+    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
   } else {
     if (company.contact_name) billLines.push({ text: 'Contact: ' + company.contact_name, bold: false, size: 8.5 });
     if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
@@ -3375,13 +3366,17 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
     pdf.text(line.text, margin + boxPad, lineY, { maxWidth: contentWidth - boxPad * 2 });
     lineY += getLineH(line);
   }
-  y += boxH + 5;
+  y += boxH + 3;
 
-  // ===== SERVICE DESCRIPTIONS =====
-  const deviceTypes = [...new Set(devices.map(d => d.deviceType).filter(Boolean))];
-  if (deviceTypes.length === 0) deviceTypes.push('particle_counter');
+  // ===== SERVICE DESCRIPTION BLOCKS (identical pattern to RMA) =====
+  const calibrationTypes = new Set();
+  devices.forEach(d => {
+    const devType = d.deviceType || d.device_type || 'particle_counter';
+    calibrationTypes.add(devType);
+  });
+  if (calibrationTypes.size === 0) calibrationTypes.add('particle_counter');
 
-  const CAL_DATA = {
+  const DEFAULT_CAL_DATA = {
     particle_counter: { title: "Étalonnage Compteur de Particules Aéroportées", prestations: ["Vérification des fonctionnalités du compteur","Vérification et réglage du débit","Vérification de la cellule de mesure","Contrôle et réglage des seuils de mesures granulométrique à l'aide de sphères de latex calibrées et certifiées","Vérification en nombre par comparaison à un étalon étalonné selon la norme ISO 17025, conformément à la norme ISO 21501-4","Fourniture d'un rapport de test et de calibration"] },
     bio_collector: { title: "Étalonnage Bio Collecteur", prestations: ["Vérification des fonctionnalités de l'appareil","Vérification et réglage du débit","Vérification de la cellule d'impaction","Contrôle des paramètres de collecte","Fourniture d'un rapport de test et de calibration"] },
     liquid_counter: { title: "Étalonnage Compteur de Particules en Milieu Liquide", prestations: ["Vérification des fonctionnalités du compteur","Vérification et réglage du débit","Vérification de la cellule de mesure optique","Contrôle et réglage des seuils de mesures granulométrique","Vérification en nombre par comparaison à un étalon","Fourniture d'un rapport de test et de calibration"] },
@@ -3389,109 +3384,175 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
     other: { title: "Étalonnage Équipement", prestations: ["Vérification des fonctionnalités de l'appareil","Étalonnage selon les spécifications du fabricant","Tests de fonctionnement","Fourniture d'un rapport de test"] }
   };
 
-  for (const type of deviceTypes) {
-    const tpl = CAL_DATA[type] || CAL_DATA.particle_counter;
-    checkPageBreak(8 + tpl.prestations.length * 4);
-    pdf.setDrawColor(...navy); pdf.setLineWidth(0.8);
-    pdf.line(margin, y, margin, y + 4 + tpl.prestations.length * 3.8);
-    pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-    pdf.text(tpl.title, margin + 4, y + 4);
-    y += 8;
-    pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
-    tpl.prestations.forEach(p => {
-      checkPageBreak(4);
-      const wrapped = pdf.splitTextToSize('\u25B8 ' + p, contentWidth - 8);
-      wrapped.forEach(line => { pdf.text(line, margin + 6, y); y += 3.8; });
-    });
-    y += 5;
+  const CAL_DATA = {};
+  for (const key of Object.keys(DEFAULT_CAL_DATA)) {
+    const settingsBlock = qs.calibration?.[key];
+    if (settingsBlock && settingsBlock.title && settingsBlock.prestations?.length) {
+      CAL_DATA[key] = settingsBlock;
+    } else {
+      CAL_DATA[key] = DEFAULT_CAL_DATA[key];
+    }
   }
 
-  // ===== DEVICE TABLE (token contracts) =====
-  pdf.setFontSize(13); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-  pdf.text('Appareils sous Contrat', margin, y);
-  y += 7;
+  // drawServiceBlock — same as RMA (page-break aware vertical line + title + prestations)
+  const drawServiceBlock = (data, color) => {
+    const sLineH = 5;
+    const titleH = 10;
+    const allLines = [];
+    data.prestations.forEach(p => {
+      const wrapped = pdf.splitTextToSize(p, contentWidth - 14);
+      wrapped.forEach((l, i) => allLines.push({ text: l, isFirst: i === 0 }));
+    });
+    checkPageBreak(titleH + sLineH * 2);
+    let vLineStartY = y + 2;
+    pdf.setDrawColor(...color); pdf.setLineWidth(1);
+    pdf.setFontSize(12); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+    pdf.text(data.title, margin + 5, y + 4);
+    y += titleH;
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+    allLines.forEach((lineObj) => {
+      if (y + sLineH > getUsableHeight()) {
+        pdf.setDrawColor(...color); pdf.setLineWidth(1);
+        pdf.line(margin, vLineStartY, margin, y - 2);
+        addFooter(); pdf.addPage(); y = margin;
+        vLineStartY = y + 2;
+        pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...gray);
+      }
+      if (lineObj.isFirst) pdf.text('-', margin + 5, y);
+      pdf.text(lineObj.text, margin + 9, y);
+      y += sLineH;
+    });
+    pdf.setDrawColor(...color); pdf.setLineWidth(1);
+    pdf.line(margin, vLineStartY, margin, Math.max(vLineStartY + 5, y - 7));
+    y += 5;
+  };
 
-  const col1 = margin + 4;
-  const col2 = margin + 55;
-  const col3 = margin + 120;
-  const col4 = pageWidth - margin - 4;
-
-  // Table header
-  pdf.setFillColor(...darkBlue);
-  pdf.rect(margin, y, contentWidth, 9, 'F');
-  pdf.setTextColor(...white); pdf.setFontSize(8); pdf.setFont('helvetica', 'bold');
-  pdf.text('N. SÉRIE', col1, y + 6.5);
-  pdf.text('MODÈLE', col2, y + 6.5);
-  pdf.text('ÉTAL. / AN', col3, y + 6.5);
-  pdf.text('PRIX HT', col4, y + 6.5, { align: 'right' });
-  y += 11;
-
-  // Device rows
-  devices.forEach((d, i) => {
-    checkPageBreak(7);
-    if (i % 2 === 0) { pdf.setFillColor(250, 250, 252); pdf.rect(margin, y - 0.5, contentWidth, 7, 'F'); }
-    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-    pdf.text(d.serial || d.serial_number || '', col1, y + 4.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(d.model || d.model_name || '', col2, y + 4.5);
-    pdf.setTextColor(...gray);
-    pdf.text(String(d.tokens_total || d.calibrationQty || 1), col3, y + 4.5);
-    pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
-    pdf.text(`${(parseFloat(d.calibrationPrice || d.unit_price) || 0).toFixed(2)} EUR`, col4, y + 4.5, { align: 'right' });
-    y += 7;
+  calibrationTypes.forEach(type => {
+    const data = CAL_DATA[type] || CAL_DATA.particle_counter;
+    drawServiceBlock(data, [59, 130, 246]);
   });
 
-  // Nettoyage rows
-  devices.filter(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0).forEach(d => {
-    checkPageBreak(7);
-    pdf.setFillColor(255, 251, 235); pdf.rect(margin, y - 0.5, contentWidth, 7, 'F');
-    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(146, 64, 14);
-    pdf.text('Nettoyage cellule - si requis (' + (d.model || d.model_name || '') + ')', col1, y + 4.5);
+  // ===== PRICING TABLE (identical to RMA: Qté | Désignation | Prix Unit. | Total HT) =====
+  y += 5;
+  const rowH = 7;
+  const colQty = margin;
+  const colDesc = margin + 12;
+  const colUnit = pageWidth - margin - 45;
+  const colTotal = pageWidth - margin - 3;
+
+  const drawTableHeader = () => {
+    pdf.setFillColor(...darkBlue);
+    pdf.rect(margin, y, contentWidth, 9, 'F');
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...white);
+    pdf.text('Qté', colQty + 3, y + 6);
+    pdf.text('Désignation', colDesc, y + 6);
+    pdf.text('Prix Unit.', colUnit, y + 6, { align: 'right' });
+    pdf.text('Total HT', colTotal, y + 6, { align: 'right' });
+    y += 9;
+  };
+
+  const checkTablePageBreak = (needed) => {
+    if (y + needed > getUsableHeight()) { addFooter(); pdf.addPage(); y = margin; drawTableHeader(); return true; }
+    return false;
+  };
+
+  const drawTableRow = (qty, desc, unitDisplay, totalDisplay, bgIndex) => {
+    checkTablePageBreak(rowH);
+    pdf.setFillColor(bgIndex % 2 === 0 ? 255 : 250, bgIndex % 2 === 0 ? 255 : 250, bgIndex % 2 === 0 ? 255 : 250);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkBlue);
+    pdf.text(String(qty), colQty + 3, y + 5);
+    pdf.text(desc.substring(0, 60), colDesc, y + 5);
+    pdf.text(unitDisplay, colUnit, y + 5, { align: 'right' });
     pdf.setFont('helvetica', 'bold');
-    pdf.text(`${(parseFloat(d.nettoyagePrice) || 0).toFixed(2)} EUR`, col4, y + 4.5, { align: 'right' });
-    y += 7;
+    pdf.text(totalDisplay, colTotal, y + 5, { align: 'right' });
+    y += rowH;
+  };
+
+  // Keep-together logic (same as RMA)
+  let totalRowCount = 0;
+  devices.forEach(d => { totalRowCount++; if (d.needsNettoyage && (d.nettoyagePrice || 0) > 0) totalRowCount++; });
+  if ((qd.shippingTotal || 0) > 0) totalRowCount++;
+  const totalTableHeight = 7 + 9 + (totalRowCount * rowH) + 11 + 4;
+  const spaceRemaining = getUsableHeight() - y;
+  const freshPageSpace = getUsableHeight() - margin;
+  if (totalTableHeight > spaceRemaining && totalTableHeight <= freshPageSpace) {
+    addFooter(); pdf.addPage(); y = margin;
+  }
+
+  pdf.setFontSize(13); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
+  pdf.text('Récapitulatif des Prix', margin, y);
+  y += 7;
+  drawTableHeader();
+
+  let rowIndex = 0;
+  let hasNettoyage = false;
+
+  devices.forEach((d) => {
+    const qty = d.calibrationQty || d.tokens_total || 1;
+    const unitPrice = parseFloat(d.calibrationPrice || d.unit_price) || 0;
+    const lineTotal = qty * unitPrice;
+    const calDesc = `Étalonnage ${d.model || d.model_name || ''} (SN: ${d.serial || d.serial_number || ''})`;
+    drawTableRow(qty, calDesc, unitPrice.toFixed(2) + ' EUR', lineTotal.toFixed(2) + ' EUR', rowIndex);
+    rowIndex++;
+
+    if (d.needsNettoyage && (d.nettoyagePrice || 0) > 0) {
+      hasNettoyage = true;
+      const nQty = d.nettoyageQty || 1;
+      const nPrice = parseFloat(d.nettoyagePrice) || 0;
+      drawTableRow(nQty, 'Nettoyage cellule - si requis selon état du capteur', nPrice.toFixed(2) + ' EUR', (nQty * nPrice).toFixed(2) + ' EUR', rowIndex);
+      rowIndex++;
+    }
   });
 
   // Shipping row
   const shippingTotal = qd.shippingTotal || 0;
   if (shippingTotal > 0) {
-    checkPageBreak(7);
-    pdf.setFillColor(239, 246, 255); pdf.rect(margin, y - 0.5, contentWidth, 7, 'F');
-    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(30, 64, 175);
-    pdf.text(`Frais de port (${qd.shipping?.parcels || 1} colis)`, col1, y + 4.5);
+    checkTablePageBreak(rowH + 11 + 4);
+    pdf.setFillColor(245, 245, 245);
+    pdf.rect(margin, y, contentWidth, rowH, 'F');
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkBlue);
+    pdf.text(String(qd.shipping?.parcels || 1), colQty + 3, y + 5);
+    pdf.text('Frais de port', colDesc, y + 5);
+    pdf.text((qd.shipping?.unitPrice || shippingTotal).toFixed(2) + ' EUR', colUnit, y + 5, { align: 'right' });
     pdf.setFont('helvetica', 'bold');
-    pdf.text(`${shippingTotal.toFixed(2)} EUR`, col4, y + 4.5, { align: 'right' });
-    y += 7;
+    pdf.text(shippingTotal.toFixed(2) + ' EUR', colTotal, y + 5, { align: 'right' });
+    y += rowH;
   }
 
   // Total row
-  y += 2;
   const grandTotal = qd.grandTotal || contract.quote_total || 0;
   pdf.setFillColor(...navy);
   pdf.rect(margin, y, contentWidth, 11, 'F');
   pdf.setTextColor(...white); pdf.setFontSize(11); pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL HT', col3 - 20, y + 7.5);
+  pdf.text('TOTAL HT', colUnit - 30, y + 7.5);
   pdf.setFontSize(16);
-  pdf.text(`${grandTotal.toFixed(2)} EUR`, col4, y + 8, { align: 'right' });
+  pdf.text(grandTotal.toFixed(2) + ' EUR', colTotal, y + 8, { align: 'right' });
   y += 15;
 
   // Nettoyage disclaimer
-  if (devices.some(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0)) {
-    pdf.setFontSize(7); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(...gray);
-    pdf.text('* Le nettoyage cellule sera facturé uniquement si nécessaire selon l\u2019état du capteur à réception.', margin, y);
-    y += 6;
+  if (hasNettoyage) {
+    checkPageBreak(8);
+    pdf.setFontSize(7); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(...lightGray);
+    pdf.text('* Le nettoyage cellule sera facturé uniquement si nécessaire selon l\'état du capteur à réception.', margin, y);
+    y += 5;
   }
 
   // ===== CONDITIONS =====
   const startStr = contractDates.start_date ? formatDateFR(contractDates.start_date) : '\u2014';
   const endStr = contractDates.end_date ? formatDateFR(contractDates.end_date) : '\u2014';
+  const totalTokens = qd.totalTokens || devices.reduce((s, d) => s + (d.tokens_total || d.calibrationQty || 1), 0);
   const CONTRACT_CONDITIONS = [
-    `Période du contrat: ${startStr} au ${endStr}`,
-    `${qd.totalTokens || devices.reduce((s,d) => s + (d.tokens_total || 1), 0)} étalonnage(s) inclus pendant la période contractuelle`,
-    'Étalonnages supplémentaires facturés au tarif standard',
-    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables",
-    'Paiement à 30 jours date de facture'
+    'Devis valable 30 jours à compter de la date d\'émission.',
+    `Période du contrat : du ${startStr} au ${endStr}.`,
+    `${totalTokens} étalonnage(s) inclus pendant la période contractuelle.`,
+    'Étalonnages supplémentaires facturés au tarif standard.',
+    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+    'Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.',
+    'Les mesures stockées dans les appareils seront éventuellement perdues.',
+    'Paiement à 30 jours date de facture.'
   ];
+
   y += 3;
   checkPageBreak(8 + CONTRACT_CONDITIONS.length * 4);
   pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...lightGray);
@@ -3505,18 +3566,16 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   });
   y += 1;
 
-  // ===== SIGNATURE SECTION =====
+  // ===== SIGNATURE SECTION (identical to RMA) =====
   const signatureHeight = 38;
   const signatoryName = qd.createdBy || qs.signatory_name || biz.quote_signatory || 'M. Meleney';
   const signatoryCompany = qs.signatory_company || biz.company_name || 'Lighthouse France';
-
   const signatureLimit = pageHeight - footerHeight - 2;
   if (y + signatureHeight > signatureLimit) { addFooter(); pdf.addPage(); y = margin; }
-
   const sigY = Math.max(y + 3, signatureLimit - signatureHeight);
+
   pdf.setDrawColor(200, 200, 200); pdf.setLineWidth(0.3);
   pdf.line(margin, sigY, pageWidth - margin, sigY);
-
   pdf.setFontSize(8); pdf.setTextColor(...lightGray);
   pdf.text('ETABLI PAR', margin, sigY + 7);
   pdf.setFontSize(12); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkBlue);
@@ -3535,7 +3594,7 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   pdf.setLineDashPattern([2, 2], 0);
   pdf.roundedRect(sigBoxX + 5, sigY + 10, 52, 20, 2, 2, 'D');
   pdf.setLineDashPattern([], 0);
-  pdf.text('Lu et approuvé', sigBoxX + 18, sigY + 34);
+  pdf.text('Lu et approuve', sigBoxX + 18, sigY + 34);
 
   addFooter();
 
@@ -3543,8 +3602,7 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   const totalPages = pdf.internal.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     pdf.setPage(i);
-    pdf.setFontSize(7);
-    pdf.setTextColor(180, 180, 180);
+    pdf.setFontSize(7); pdf.setTextColor(180, 180, 180);
     pdf.text(`Page ${i} / ${totalPages}`, pageWidth - margin, pageHeight - 2, { align: 'right' });
   }
 
@@ -5879,61 +5937,232 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       const endDate = qd.contractDates?.end_date ? new Date(qd.contractDates.end_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
       const shippingTotal = qd.shippingTotal || 0;
       const grandTotal = qd.grandTotal || review.total_amount || 0;
-      const contractConditions = [`Période du contrat: ${startDate} au ${endDate}`, `${qd.totalTokens || 0} étalonnage(s) inclus pendant la période contractuelle`, 'Étalonnages supplémentaires facturés au tarif standard', "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables", 'Paiement à 30 jours date de facture'];
-      const contractInfoBar = (<>
-        <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">PÉRIODE</p><p className="font-bold text-[#1a1a2e]">{startDate} — {endDate}</p></div>
-        <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
-      </>);
+      const totalTokens = qd.totalTokens || devices.reduce((s, d) => s + (d.tokens_total || d.calibrationQty || 1), 0);
+      const accent = '#2D5A7B';
+      const qDate = (qd.createdAt || review.submitted_at) ? (() => { try { return new Date(qd.createdAt || review.submitted_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); } catch { return '—'; } })() : new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+      const contractConditions = [
+        'Devis valable 30 jours à compter de la date d\'émission.',
+        `Période du contrat : du ${startDate} au ${endDate}.`,
+        `${totalTokens} étalonnage(s) inclus pendant la période contractuelle.`,
+        'Étalonnages supplémentaires facturés au tarif standard.',
+        "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+        'Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.',
+        'Les mesures stockées dans les appareils seront éventuellement perdues.',
+        'Paiement à 30 jours date de facture.'
+      ];
+
+      const billingAddr = qd.billingAddress || null;
+      const clientName = billingAddr?.company_name || docData.clientName || 'Client';
+      const contractNumber = qd.contractNumber || review.quote_number;
+
+      // Estimate if we need 2 pages (service descriptions + many devices)
+      const totalRows = devices.length + devices.filter(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0).length + (shippingTotal > 0 ? 1 : 0);
+      const needsSecondPage = totalRows > 4 || deviceTypes.length > 1;
+
+      // Shared page header (small, for continuation pages)
+      const PageHeader = ({ pageNum, totalPages }) => (
+        <div className="px-8 pt-6 pb-3 flex justify-between items-center border-b" style={{ borderColor: accent }}>
+          <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+          <div className="text-right">
+            <p className="text-sm font-bold" style={{ color: accent }}>OFFRE DE PRIX — N° {contractNumber || '(en attente)'}</p>
+            <p className="text-xs text-gray-400">Contrat: {contractNumber}</p>
+          </div>
+        </div>
+      );
+
+      // Shared page footer
+      const PageFooter = ({ pageNum, totalPages }) => (
+        <div className="bg-[#1a1a2e] text-white px-8 py-3 flex items-end justify-between mt-auto">
+          <div className="text-center flex-1">
+            <p className="font-bold text-sm">Lighthouse France SAS</p>
+            <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+          </div>
+          <p className="text-xs text-gray-400 font-bold ml-4">Page {pageNum}/{totalPages}</p>
+        </div>
+      );
+
+      const totalPages = needsSecondPage ? 2 : 1;
 
       return (
-        <ReviewQuoteDoc
-          title="DEVIS CONTRAT" docNumber={qd.contractNumber || review.quote_number}
-          reference={qd.contractNumber || review.rma_number} refLabel="Contrat"
-          date={qd.createdAt || review.submitted_at}
-          quoteData={docData} conditions={contractConditions}
-          addressMode="billing_only" extraInfoBar={contractInfoBar}
-        >
-          <div className="px-8 py-2"><p className="text-sm text-gray-500 italic">Contrat de tarification / d'étalonnage</p></div>
-          <div className="px-8 py-4 space-y-5">
-            {deviceTypes.map(type => {
-              const template = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '🔬', title: `Étalonnage ${type}`, prestations: [] };
-              return (<div key={type} className="border-l-4 border-blue-500 pl-4">
-                <h3 className="font-bold text-[#1a1a2e] mb-2 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
-                <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 text-sm flex items-start gap-2"><span className="text-[#1a1a2e] mt-0.5">▸</span><span>{p}</span></li>))}</ul>
-              </div>);
-            })}
+        <div className="space-y-6">
+          {/* ===== PAGE 1: Header + Info + Address + Service Descriptions ===== */}
+          <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: needsSecondPage ? '1100px' : 'auto' }}>
+            {/* Full Header */}
+            <div className="px-8 pt-8 pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
+              <div className="flex justify-between items-start">
+                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                <div className="text-right">
+                  <p className="text-2xl font-bold" style={{ color: accent }}>OFFRE DE PRIX</p>
+                  <p className="font-bold text-[#1a1a2e]">N° {contractNumber || <span className="text-amber-500 italic text-sm">(attribué à l'approbation)</span>}</p>
+                  <p className="text-xs text-gray-400">Contrat: {contractNumber}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Info Bar (DATE / DÉBUT / FIN / VALIDITÉ) */}
+            <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
+              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p><p className="font-bold text-[#1a1a2e]">{qDate}</p></div>
+              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DÉBUT</p><p className="font-bold text-[#1a1a2e]">{startDate}</p></div>
+              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">FIN</p><p className="font-bold text-[#1a1a2e]">{endDate}</p></div>
+              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
+            </div>
+
+            {/* Address Box (billing only) */}
+            <div className="px-8 py-4 border-b">
+              <div className="border-2 rounded p-3" style={{ borderColor: `${accent}80` }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>FACTURER À</p>
+                <p className="font-bold text-[#1a1a2e]">{clientName}</p>
+                {billingAddr ? (<>
+                  {billingAddr.attention && <p className="text-sm text-gray-600">Contact: {billingAddr.attention}</p>}
+                  {billingAddr.address_line1 && <p className="text-sm text-gray-600">{billingAddr.address_line1}</p>}
+                  {(billingAddr.postal_code || billingAddr.city) && <p className="text-sm text-gray-600">{[billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ')}{billingAddr.country ? `, ${billingAddr.country}` : ''}</p>}
+                  {billingAddr.phone && <p className="text-sm text-gray-500">Tél: {billingAddr.phone}</p>}
+                  {billingAddr.siret && <p className="text-sm font-bold text-[#1a1a2e]">SIRET: {billingAddr.siret}</p>}
+                  {billingAddr.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {billingAddr.tva_number}</p>}
+                </>) : (<>
+                  {docData.clientAddress && <p className="text-sm text-gray-600">{docData.clientAddress}</p>}
+                </>)}
+              </div>
+            </div>
+
+            {/* Service Descriptions (same as RMA) */}
+            <div className="px-8 py-6 space-y-6 flex-1">
+              {deviceTypes.map(type => {
+                const template = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '🔬', title: `Étalonnage ${type}`, prestations: [] };
+                return (
+                  <div key={type} className="border-l-4 border-blue-500 pl-4">
+                    <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
+                    <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 flex items-start gap-2"><span className="text-[#1a1a2e] mt-1">▸</span><span>{p}</span></li>))}</ul>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Page 1 footer — only if multi-page */}
+            {needsSecondPage && <PageFooter pageNum={1} totalPages={totalPages} />}
+
+            {/* If single page, continue with pricing inline */}
+            {!needsSecondPage && (<>
+              <div className="px-8 py-6 bg-gray-50">
+                <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-24">Prix Unit.</th><th className="px-3 py-2.5 text-right w-24">Total HT</th></tr></thead>
+                  <tbody>
+                    {devices.map((d, i) => (<Fragment key={i}>
+                      <tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-2 text-center">{d.calibrationQty || d.tokens_total || 1}</td>
+                        <td className="px-3 py-2">Étalonnage {d.model} <span className="text-gray-500 text-xs">(SN: {d.serial})</span></td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{(d.calibrationPrice || 0).toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.calibrationQty || d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
+                      </tr>
+                      {d.needsNettoyage && (d.nettoyagePrice || 0) > 0 && (<tr className="bg-amber-50">
+                        <td className="px-3 py-2 text-center">{d.nettoyageQty || 1}</td>
+                        <td className="px-3 py-2"><span className="text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis</span></td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
+                      </tr>)}
+                    </Fragment>))}
+                    {shippingTotal > 0 && (<tr className="bg-blue-50">
+                      <td className="px-3 py-2 text-center">{qd.shipping?.parcels || 1}</td>
+                      <td className="px-3 py-2 text-blue-800">Frais de port</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{(qd.shipping?.unitPrice || shippingTotal).toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
+                    </tr>)}
+                  </tbody>
+                  <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td></tr></tfoot>
+                </table>
+                {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
+              </div>
+              {/* Conditions */}
+              <div className="px-8 py-4 border-t bg-[#f9fafb]">
+                <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+                <ul className="text-xs text-[#505050] space-y-1">{contractConditions.map((d, i) => <li key={i}>– {d}</li>)}</ul>
+              </div>
+              {/* Signature */}
+              <div className="px-8 py-6 border-t flex justify-between items-end">
+                <div className="flex items-end gap-6">
+                  <div>
+                    <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+                    <p className="font-bold text-lg text-[#1a1a2e]">{signName}</p>
+                    <p className="text-[#505050]">Lighthouse France SAS</p>
+                  </div>
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-[#828282] mb-1">Bon pour accord</p>
+                  <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                  <p className="text-xs text-[#828282] mt-1">Signature et cachet</p>
+                </div>
+              </div>
+              <PageFooter pageNum={1} totalPages={1} />
+            </>)}
           </div>
-          <div className="px-8 py-6 bg-gray-50">
-            <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
-            <table className="w-full text-sm">
-              <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-20">Prix Unit.</th><th className="px-3 py-2.5 text-right w-20">Total HT</th></tr></thead>
-              <tbody>
-                {devices.map((d, i) => (<Fragment key={i}>
-                  {d.needsCalibration !== false && (<tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 text-center">{d.tokens_total || 1}</td>
-                    <td className="px-3 py-2"><span className="font-medium">Étalonnage {d.model}</span> <span className="text-gray-500 text-xs">(SN: {d.serial})</span></td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">{(d.calibrationPrice || 0).toFixed(2)} €</td>
-                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
-                  </tr>)}
-                  {d.needsNettoyage && (d.nettoyagePrice || 0) > 0 && (<tr className="bg-amber-50">
-                    <td className="px-3 py-2 text-center">{d.nettoyageQty || 1}</td>
-                    <td className="px-3 py-2"><span className="font-medium text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis ({d.model})</span></td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
-                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
-                  </tr>)}
-                </Fragment>))}
-                {shippingTotal > 0 && (<tr className="bg-blue-50">
-                  <td className="px-3 py-2 text-center">{qd.shipping?.parcels || 1}</td>
-                  <td className="px-3 py-2"><span className="font-medium text-blue-800">Frais de port</span></td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">{(qd.shipping?.unitPrice || shippingTotal).toFixed(2)} €</td>
-                  <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
-                </tr>)}
-              </tbody>
-              <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td></tr></tfoot>
-            </table>
-            {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
-          </div>
-        </ReviewQuoteDoc>
+
+          {/* ===== PAGE 2: Pricing Table + Conditions + Signature (only if multi-page) ===== */}
+          {needsSecondPage && (
+            <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: '1100px' }}>
+              <PageHeader pageNum={2} totalPages={totalPages} />
+
+              {/* Pricing Table */}
+              <div className="px-8 py-6 bg-gray-50">
+                <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-24">Prix Unit.</th><th className="px-3 py-2.5 text-right w-24">Total HT</th></tr></thead>
+                  <tbody>
+                    {devices.map((d, i) => (<Fragment key={i}>
+                      <tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-3 py-2 text-center">{d.calibrationQty || d.tokens_total || 1}</td>
+                        <td className="px-3 py-2">Étalonnage {d.model} <span className="text-gray-500 text-xs">(SN: {d.serial})</span></td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{(d.calibrationPrice || 0).toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.calibrationQty || d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
+                      </tr>
+                      {d.needsNettoyage && (d.nettoyagePrice || 0) > 0 && (<tr className="bg-amber-50">
+                        <td className="px-3 py-2 text-center">{d.nettoyageQty || 1}</td>
+                        <td className="px-3 py-2"><span className="text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis</span></td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
+                        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
+                      </tr>)}
+                    </Fragment>))}
+                    {shippingTotal > 0 && (<tr className="bg-blue-50">
+                      <td className="px-3 py-2 text-center">{qd.shipping?.parcels || 1}</td>
+                      <td className="px-3 py-2 text-blue-800">Frais de port</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{(qd.shipping?.unitPrice || shippingTotal).toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
+                    </tr>)}
+                  </tbody>
+                  <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl">{grandTotal.toFixed(2)} €</td></tr></tfoot>
+                </table>
+                {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
+              </div>
+
+              {/* Conditions */}
+              <div className="px-8 py-4 border-t bg-[#f9fafb]">
+                <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+                <ul className="text-xs text-[#505050] space-y-1">{contractConditions.map((d, i) => <li key={i}>– {d}</li>)}</ul>
+              </div>
+
+              {/* Signature — pushed to bottom via flex */}
+              <div className="flex-1"></div>
+              <div className="px-8 py-6 border-t flex justify-between items-end">
+                <div className="flex items-end gap-6">
+                  <div>
+                    <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+                    <p className="font-bold text-lg text-[#1a1a2e]">{signName}</p>
+                    <p className="text-[#505050]">Lighthouse France SAS</p>
+                  </div>
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-[#828282] mb-1">Bon pour accord</p>
+                  <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                  <p className="text-xs text-[#828282] mt-1">Signature et cachet</p>
+                </div>
+              </div>
+
+              <PageFooter pageNum={2} totalPages={totalPages} />
+            </div>
+          )}
+        </div>
       );
     }
 
