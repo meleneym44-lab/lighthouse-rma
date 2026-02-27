@@ -254,24 +254,26 @@ const generateQuotePDF = async (rma, devices, options = {}) => {
   const billLines = [];
   const billName = billingAddr?.company_name || company.name || 'Client';
   billLines.push({ text: billName, bold: true, size: 11 });
-  if (billingAddr) {
-    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
-    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
-    const billCityParts = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
-    const billCityCountry = [billCityParts, billingAddr.country].filter(Boolean).join(', ');
-    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
-    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
-    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
-  } else {
-    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
-    const fallbackBillCityParts = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    const fallbackBillCountry = company.billing_country || company.country || null;
-    const fallbackBillCityCountry = [fallbackBillCityParts, fallbackBillCountry].filter(Boolean).join(', ');
-    if (fallbackBillCityCountry) billLines.push({ text: fallbackBillCityCountry, bold: false, size: 8.5 });
-    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
-  }
+  // Merge billingAddr fields with company fallback for any missing data
+  const bAttn = billingAddr?.attention || company.contact_name || null;
+  const bAddr = billingAddr?.address_line1 || company.billing_address || company.address || null;
+  const bPostal = billingAddr?.postal_code || company.billing_postal_code || company.postal_code || null;
+  const bCity = billingAddr?.city || company.billing_city || company.city || null;
+  const bCountry = billingAddr?.country || company.billing_country || company.country || null;
+  const bPhone = billingAddr?.phone || company.phone || null;
+  const bSiret = billingAddr?.siret || company.siret || null;
+  const bTva = billingAddr?.tva_number || company.tva_number || null;
+  const bChorus = billingAddr?.chorus_invoicing || company.chorus_invoicing || false;
+  const bChorusCode = billingAddr?.chorus_service_code || company.chorus_service_code || null;
+  if (bAttn) billLines.push({ text: 'Contact: ' + bAttn, bold: false, size: 8.5 });
+  if (bAddr) billLines.push({ text: bAddr, bold: false, size: 8.5 });
+  const billCityLine = [bPostal, bCity].filter(Boolean).join(' ');
+  const billCityCountry = [billCityLine, bCountry].filter(Boolean).join(', ');
+  if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+  if (bPhone) billLines.push({ text: 'Tél: ' + bPhone, bold: false, size: 8.5 });
+  if (bSiret) billLines.push({ text: 'SIRET: ' + bSiret, bold: true, size: 8, color: [...darkBlue] });
+  if (bTva) billLines.push({ text: 'TVA: ' + bTva, bold: true, size: 8, color: [...darkBlue] });
+  if (bChorus) billLines.push({ text: 'Chorus Pro' + (bChorusCode ? ' — Service: ' + bChorusCode : ''), bold: false, size: 7, color: [0, 100, 200] });
 
   // Calculate box heights: label(4) + pad + lines + pad
   const lineH = 4;
@@ -961,23 +963,25 @@ const generatePartsQuotePDF = async (order, quoteData) => {
   const billLines = [];
   const billName = billingAddr?.company_name || company.name || 'Client';
   billLines.push({ text: billName, bold: true, size: 11 });
-  if (billingAddr) {
-    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
-    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
-    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
-    const billCityCountry = [billCity, billingAddr.country].filter(Boolean).join(', ');
-    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
-    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
-    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
-  } else {
-    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
-    const fbc = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    const fbcc = [fbc, company.billing_country || company.country].filter(Boolean).join(', ');
-    if (fbcc) billLines.push({ text: fbcc, bold: false, size: 8.5 });
-    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
-  }
+  const bAttn = billingAddr?.attention || company.contact_name || null;
+  const bAddr = billingAddr?.address_line1 || company.billing_address || company.address || null;
+  const bPostal = billingAddr?.postal_code || company.billing_postal_code || company.postal_code || null;
+  const bCity = billingAddr?.city || company.billing_city || company.city || null;
+  const bCountry = billingAddr?.country || company.billing_country || company.country || null;
+  const bPhone = billingAddr?.phone || company.phone || null;
+  const bSiret = billingAddr?.siret || company.siret || null;
+  const bTva = billingAddr?.tva_number || company.tva_number || null;
+  const bChorus = billingAddr?.chorus_invoicing || company.chorus_invoicing || false;
+  const bChorusCode = billingAddr?.chorus_service_code || company.chorus_service_code || null;
+  if (bAttn) billLines.push({ text: 'Contact: ' + bAttn, bold: false, size: 8.5 });
+  if (bAddr) billLines.push({ text: bAddr, bold: false, size: 8.5 });
+  const billCityLine = [bPostal, bCity].filter(Boolean).join(' ');
+  const billCityCountry = [billCityLine, bCountry].filter(Boolean).join(', ');
+  if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+  if (bPhone) billLines.push({ text: 'Tél: ' + bPhone, bold: false, size: 8.5 });
+  if (bSiret) billLines.push({ text: 'SIRET: ' + bSiret, bold: true, size: 8, color: [...darkBlue] });
+  if (bTva) billLines.push({ text: 'TVA: ' + bTva, bold: true, size: 8, color: [...darkBlue] });
+  if (bChorus) billLines.push({ text: 'Chorus Pro' + (bChorusCode ? ' — Service: ' + bChorusCode : ''), bold: false, size: 7, color: [0, 100, 200] });
 
   // Calculate box heights
   const lineH = 4;
@@ -2911,26 +2915,27 @@ const generateRentalQuotePDF = async (rental, quoteData, businessSettings = {}) 
   }
 
   const billLines = [];
-  const billName = billingAddr?.company_name || qd.clientName || company.name || 'Client';
+  const billName = billingAddr?.company_name || company.name || 'Client';
   billLines.push({ text: billName, bold: true, size: 11 });
-  if (billingAddr) {
-    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
-    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
-    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
-    const billCityCountry = [billCity, billingAddr.country].filter(Boolean).join(', ');
-    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
-    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
-    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
-  } else {
-    const addr = qd.clientAddress || company.billing_address || company.address || '';
-    if (addr) billLines.push({ text: addr, bold: false, size: 8.5 });
-    const cityLine = [qd.clientPostalCode || company.billing_postal_code || company.postal_code, qd.clientCity || company.billing_city || company.city].filter(Boolean).join(' ');
-    const cityCountry = [cityLine, qd.clientCountry || company.country].filter(Boolean).join(', ');
-    if (cityCountry) billLines.push({ text: cityCountry, bold: false, size: 8.5 });
-    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
-  }
+  const bAttn = billingAddr?.attention || company.contact_name || null;
+  const bAddr = billingAddr?.address_line1 || company.billing_address || company.address || null;
+  const bPostal = billingAddr?.postal_code || company.billing_postal_code || company.postal_code || null;
+  const bCity = billingAddr?.city || company.billing_city || company.city || null;
+  const bCountry = billingAddr?.country || company.billing_country || company.country || null;
+  const bPhone = billingAddr?.phone || company.phone || null;
+  const bSiret = billingAddr?.siret || company.siret || null;
+  const bTva = billingAddr?.tva_number || company.tva_number || null;
+  const bChorus = billingAddr?.chorus_invoicing || company.chorus_invoicing || false;
+  const bChorusCode = billingAddr?.chorus_service_code || company.chorus_service_code || null;
+  if (bAttn) billLines.push({ text: 'Contact: ' + bAttn, bold: false, size: 8.5 });
+  if (bAddr) billLines.push({ text: bAddr, bold: false, size: 8.5 });
+  const billCityLine = [bPostal, bCity].filter(Boolean).join(' ');
+  const billCityCountry = [billCityLine, bCountry].filter(Boolean).join(', ');
+  if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+  if (bPhone) billLines.push({ text: 'Tél: ' + bPhone, bold: false, size: 8.5 });
+  if (bSiret) billLines.push({ text: 'SIRET: ' + bSiret, bold: true, size: 8, color: [...darkBlue] });
+  if (bTva) billLines.push({ text: 'TVA: ' + bTva, bold: true, size: 8, color: [...darkBlue] });
+  if (bChorus) billLines.push({ text: 'Chorus Pro' + (bChorusCode ? ' — Service: ' + bChorusCode : ''), bold: false, size: 7, color: [0, 100, 200] });
 
   // Calculate box heights
   const lineH = 4;
@@ -3344,24 +3349,27 @@ const generateContractQuotePDF = async (contract, quoteData, businessSettings = 
   const billingAddr = qd.billingAddress || null;
   const boxPad = 4;
   const billLines = [];
-  const billName = billingAddr?.company_name || company.name || contract.client_name || 'Client';
+  const billName = billingAddr?.company_name || company.name || 'Client';
   billLines.push({ text: billName, bold: true, size: 11 });
-  if (billingAddr) {
-    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
-    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
-    const cityLine = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
-    if (cityLine) billLines.push({ text: cityLine + (billingAddr.country ? ', ' + billingAddr.country : ''), bold: false, size: 8.5 });
-    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
-    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
-  } else {
-    if (company.contact_name) billLines.push({ text: 'Contact: ' + company.contact_name, bold: false, size: 8.5 });
-    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
-    const cityLine = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    if (cityLine) billLines.push({ text: cityLine, bold: false, size: 8.5 });
-    if (company.phone) billLines.push({ text: 'Tél: ' + company.phone, bold: false, size: 8.5 });
-    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
-  }
+  const bAttn = billingAddr?.attention || company.contact_name || null;
+  const bAddr = billingAddr?.address_line1 || company.billing_address || company.address || null;
+  const bPostal = billingAddr?.postal_code || company.billing_postal_code || company.postal_code || null;
+  const bCity = billingAddr?.city || company.billing_city || company.city || null;
+  const bCountry = billingAddr?.country || company.billing_country || company.country || null;
+  const bPhone = billingAddr?.phone || company.phone || null;
+  const bSiret = billingAddr?.siret || company.siret || null;
+  const bTva = billingAddr?.tva_number || company.tva_number || null;
+  const bChorus = billingAddr?.chorus_invoicing || company.chorus_invoicing || false;
+  const bChorusCode = billingAddr?.chorus_service_code || company.chorus_service_code || null;
+  if (bAttn) billLines.push({ text: 'Contact: ' + bAttn, bold: false, size: 8.5 });
+  if (bAddr) billLines.push({ text: bAddr, bold: false, size: 8.5 });
+  const billCityLine = [bPostal, bCity].filter(Boolean).join(' ');
+  const billCityCountry = [billCityLine, bCountry].filter(Boolean).join(', ');
+  if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+  if (bPhone) billLines.push({ text: 'Tél: ' + bPhone, bold: false, size: 8.5 });
+  if (bSiret) billLines.push({ text: 'SIRET: ' + bSiret, bold: true, size: 8, color: [...darkBlue] });
+  if (bTva) billLines.push({ text: 'TVA: ' + bTva, bold: true, size: 8, color: [...darkBlue] });
+  if (bChorus) billLines.push({ text: 'Chorus Pro' + (bChorusCode ? ' — Service: ' + bChorusCode : ''), bold: false, size: 7, color: [0, 100, 200] });
 
   const lineH = 4;
   const bigLineH = 5.5;
@@ -5704,9 +5712,9 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       createdBy: signName,
       signatory: signName,
       clientName: qd.clientName || review.client_name || 'Client',
-      clientAddress: qd.clientAddress || '',
-      clientPostalCode: qd.clientPostalCode || '',
-      clientCity: qd.clientCity || ''
+      clientAddress: qd.billingAddress?.address_line1 || qd.clientAddress || '',
+      clientPostalCode: qd.billingAddress?.postal_code || qd.clientPostalCode || '',
+      clientCity: qd.billingAddress?.city || qd.clientCity || ''
     };
 
     // ============================================
@@ -12579,23 +12587,25 @@ const generateAvenantPDF = async (rma, devicesWithWork, options = {}) => {
   const billLines = [];
   const billName = billingAddr?.company_name || company.name || 'Client';
   billLines.push({ text: billName, bold: true, size: 11 });
-  if (billingAddr) {
-    if (billingAddr.attention) billLines.push({ text: 'Contact: ' + billingAddr.attention, bold: false, size: 8.5 });
-    if (billingAddr.address_line1) billLines.push({ text: billingAddr.address_line1, bold: false, size: 8.5 });
-    const billCity = [billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ');
-    const billCityCountry = [billCity, billingAddr.country].filter(Boolean).join(', ');
-    if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
-    if (billingAddr.phone) billLines.push({ text: 'Tél: ' + billingAddr.phone, bold: false, size: 8.5 });
-    if (billingAddr.siret) billLines.push({ text: 'SIRET: ' + billingAddr.siret, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.tva_number) billLines.push({ text: 'TVA: ' + billingAddr.tva_number, bold: true, size: 8, color: [...darkBlue] });
-    if (billingAddr.chorus_invoicing) billLines.push({ text: 'Chorus Pro' + (billingAddr.chorus_service_code ? ' — Service: ' + billingAddr.chorus_service_code : ''), bold: false, size: 7, color: [0, 100, 200] });
-  } else {
-    if (company.billing_address || company.address) billLines.push({ text: company.billing_address || company.address, bold: false, size: 8.5 });
-    const fbc = [company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ');
-    const fbcc = [fbc, company.billing_country || company.country].filter(Boolean).join(', ');
-    if (fbcc) billLines.push({ text: fbcc, bold: false, size: 8.5 });
-    if (company.tva_number) billLines.push({ text: 'TVA: ' + company.tva_number, bold: true, size: 8, color: [...darkBlue] });
-  }
+  const bAttn = billingAddr?.attention || company.contact_name || null;
+  const bAddr = billingAddr?.address_line1 || company.billing_address || company.address || null;
+  const bPostal = billingAddr?.postal_code || company.billing_postal_code || company.postal_code || null;
+  const bCity = billingAddr?.city || company.billing_city || company.city || null;
+  const bCountry = billingAddr?.country || company.billing_country || company.country || null;
+  const bPhone = billingAddr?.phone || company.phone || null;
+  const bSiret = billingAddr?.siret || company.siret || null;
+  const bTva = billingAddr?.tva_number || company.tva_number || null;
+  const bChorus = billingAddr?.chorus_invoicing || company.chorus_invoicing || false;
+  const bChorusCode = billingAddr?.chorus_service_code || company.chorus_service_code || null;
+  if (bAttn) billLines.push({ text: 'Contact: ' + bAttn, bold: false, size: 8.5 });
+  if (bAddr) billLines.push({ text: bAddr, bold: false, size: 8.5 });
+  const billCityLine = [bPostal, bCity].filter(Boolean).join(' ');
+  const billCityCountry = [billCityLine, bCountry].filter(Boolean).join(', ');
+  if (billCityCountry) billLines.push({ text: billCityCountry, bold: false, size: 8.5 });
+  if (bPhone) billLines.push({ text: 'Tél: ' + bPhone, bold: false, size: 8.5 });
+  if (bSiret) billLines.push({ text: 'SIRET: ' + bSiret, bold: true, size: 8, color: [...darkBlue] });
+  if (bTva) billLines.push({ text: 'TVA: ' + bTva, bold: true, size: 8, color: [...darkBlue] });
+  if (bChorus) billLines.push({ text: 'Chorus Pro' + (bChorusCode ? ' — Service: ' + bChorusCode : ''), bold: false, size: 7, color: [0, 100, 200] });
 
   // Calculate box heights
   const lineH = 4;
@@ -22504,6 +22514,32 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
 
       // Build quote_data in same format as RMA
       const company = contract.companies || {};
+      
+      // Fetch billing address from shipping_addresses (same as RMA flow)
+      let billingAddrData = null;
+      try {
+        const { data: billingAddrs } = await supabase
+          .from('shipping_addresses')
+          .select('*')
+          .eq('company_id', company.id)
+          .eq('is_billing', true)
+          .order('is_default', { ascending: false })
+          .limit(1);
+        if (billingAddrs?.[0]) billingAddrData = billingAddrs[0];
+      } catch (e) { console.warn('Could not fetch billing address:', e); }
+      // Fallback: try any default address
+      if (!billingAddrData) {
+        try {
+          const { data: defaultAddrs } = await supabase
+            .from('shipping_addresses')
+            .select('*')
+            .eq('company_id', company.id)
+            .eq('is_default', true)
+            .limit(1);
+          if (defaultAddrs?.[0]) billingAddrData = defaultAddrs[0];
+        } catch (e) {}
+      }
+
       const quoteData = {
         devices: devicePricing.map(d => ({
           id: d.id,
@@ -22528,8 +22564,20 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
         contractDates: contractDates,
         createdBy: signatory,
         createdAt: new Date().toISOString(),
-        clientName: company.name || contract.client_name || 'Client',
-        billingAddress: {
+        clientName: billingAddrData?.company_name || company.name || contract.client_name || 'Client',
+        billingAddress: billingAddrData ? {
+          company_name: billingAddrData.company_name || company.name || '',
+          attention: billingAddrData.attention || '',
+          address_line1: billingAddrData.address_line1 || '',
+          postal_code: billingAddrData.postal_code || '',
+          city: billingAddrData.city || '',
+          country: billingAddrData.country || '',
+          phone: billingAddrData.phone || '',
+          siret: billingAddrData.siret || '',
+          tva_number: billingAddrData.tva_number || '',
+          chorus_invoicing: billingAddrData.chorus_invoicing || false,
+          chorus_service_code: billingAddrData.chorus_service_code || ''
+        } : {
           company_name: company.name || contract.client_name || '',
           attention: company.contact_name || '',
           address_line1: company.billing_address || company.address || '',
