@@ -9914,6 +9914,15 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   // Supplement modal
   const [showSupplementModal, setShowSupplementModal] = useState(false);
   
+  // Shipping document state (for own_label return)
+  const [shippingDoc, setShippingDoc] = useState(null);
+  const [showShippingDocModal, setShowShippingDocModal] = useState(false);
+  const [shippingDocFile, setShippingDocFile] = useState(null);
+  const [shippingDocCarrier, setShippingDocCarrier] = useState('');
+  const [shippingDocPickupDate, setShippingDocPickupDate] = useState('');
+  const [shippingDocNotes, setShippingDocNotes] = useState('');
+  const [submittingShippingDoc, setSubmittingShippingDoc] = useState(false);
+  
   // Quote review state
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
@@ -9936,6 +9945,13 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
   const receivedWithoutBC = !request.bc_approved_at && !request.bc_submitted_at && 
     (request.received_at || (request.request_devices || []).some(d => d.received_at)) &&
     !needsQuoteAction && !needsCustomerAction;
+  
+  // Shipping document status (own_label)
+  const isOwnLabel = request.return_shipping === 'own_label';
+  const isReadyToShip = ['ready_to_ship', 'shipped', 'completed'].includes(request.status);
+  const needsShippingDoc = isOwnLabel && isReadyToShip && (!shippingDoc || shippingDoc.status === 'rejected' || shippingDoc.status === 'modification_requested');
+  const shippingDocSubmitted = isOwnLabel && shippingDoc?.status === 'submitted';
+  const shippingDocApproved = isOwnLabel && shippingDoc?.status === 'approved';
   
   // Check if submission is valid - need EITHER file OR signature (not both required)
   const hasFile = bcFile !== null;
@@ -10084,6 +10100,19 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
           .eq('id', request.billing_address_id)
           .single();
         if (bAddr) setBillingAddress(bAddr);
+      }
+      
+      // Load shipping document (for own_label return)
+      if (request.return_shipping === 'own_label') {
+        const { data: sdoc } = await supabase
+          .from('shipping_documents')
+          .select('*')
+          .eq('request_id', request.id)
+          .eq('request_type', request.request_type === 'parts' ? 'parts' : 'rma')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (sdoc) setShippingDoc(sdoc);
       }
       
       // Load per-device shipping addresses
@@ -10360,6 +10389,84 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
     }
     
     setSubmittingBC(false);
+  };
+
+  // Submit shipping document (own_label return)
+  const handleSubmitShippingDoc = async () => {
+    if (!shippingDocCarrier.trim()) { notify('Veuillez indiquer le transporteur', 'error'); return; }
+    if (!shippingDocPickupDate) { notify('Veuillez indiquer la date d\'enlèvement', 'error'); return; }
+    if (!shippingDocFile && !shippingDoc) { notify('Veuillez joindre votre étiquette de transport', 'error'); return; }
+    
+    setSubmittingShippingDoc(true);
+    try {
+      let documentUrl = shippingDoc?.document_url || null;
+      let documentName = shippingDoc?.document_name || null;
+      
+      // Upload file if provided
+      if (shippingDocFile) {
+        const ext = shippingDocFile.name.split('.').pop();
+        const filePath = `${profile.company_id}/${request.id}/shipping_label_${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('shipping-documents')
+          .upload(filePath, shippingDocFile);
+        if (uploadErr) throw uploadErr;
+        const { data: urlData } = supabase.storage.from('shipping-documents').getPublicUrl(filePath);
+        documentUrl = urlData.publicUrl;
+        documentName = shippingDocFile.name;
+      }
+      
+      const reqType = request.request_type === 'parts' ? 'parts' : 'rma';
+      
+      if (shippingDoc && (shippingDoc.status === 'rejected' || shippingDoc.status === 'modification_requested')) {
+        // Resubmission — update existing record
+        const { error } = await supabase.from('shipping_documents').update({
+          status: 'submitted',
+          carrier_name: shippingDocCarrier.trim(),
+          pickup_date: shippingDocPickupDate,
+          document_url: documentUrl,
+          document_name: documentName,
+          customer_notes: shippingDocNotes.trim() || null,
+          submitted_at: new Date().toISOString(),
+          admin_notes: null,
+          reviewed_at: null,
+          reviewed_by: null,
+          tracking_number: null,
+          updated_at: new Date().toISOString()
+        }).eq('id', shippingDoc.id);
+        if (error) throw error;
+      } else {
+        // New submission
+        const { error } = await supabase.from('shipping_documents').insert({
+          request_id: request.id,
+          request_type: reqType,
+          company_id: profile.company_id,
+          status: 'submitted',
+          carrier_name: shippingDocCarrier.trim(),
+          pickup_date: shippingDocPickupDate,
+          document_url: documentUrl,
+          document_name: documentName,
+          customer_notes: shippingDocNotes.trim() || null,
+          submitted_at: new Date().toISOString()
+        });
+        if (error) throw error;
+      }
+      
+      // Send message to admin
+      await supabase.from('messages').insert({
+        request_id: request.id,
+        sender_id: profile.id,
+        sender_type: 'customer',
+        sender_name: profile.full_name || 'Client',
+        content: `📦 Documents de transport soumis\nTransporteur : ${shippingDocCarrier.trim()}\nDate d'enlèvement : ${new Date(shippingDocPickupDate).toLocaleDateString('fr-FR')}${shippingDocNotes ? '\nNotes : ' + shippingDocNotes.trim() : ''}`
+      });
+      
+      notify('Documents de transport soumis avec succès !', 'success');
+      setShowShippingDocModal(false);
+      refresh();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setSubmittingShippingDoc(false);
   };
 
   const sendMessage = async (e) => {
@@ -10730,6 +10837,206 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     Soumis le {new Date(request.bc_submitted_at).toLocaleDateString('fr-FR')} à {new Date(request.bc_submitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ====== SHIPPING DOCUMENT SECTION (own_label) ====== */}
+        {/* Needs shipping doc — action required */}
+        {needsShippingDoc && (
+          <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                  <span className="text-2xl">📦</span>
+                </div>
+                <div>
+                  <p className="font-bold text-amber-800 text-lg">
+                    {shippingDoc?.status === 'rejected' ? '❌ Documents de transport rejetés' 
+                      : shippingDoc?.status === 'modification_requested' ? '✏️ Modification demandée'
+                      : '🏷️ Vos appareils sont prêts — Documents de transport requis'}
+                  </p>
+                  <p className="text-sm text-amber-700">
+                    {shippingDoc?.status === 'rejected' 
+                      ? 'Vos documents ont été rejetés. Veuillez les resoumettre.'
+                      : shippingDoc?.status === 'modification_requested'
+                      ? 'Notre équipe a demandé une modification de vos documents.'
+                      : 'Vous avez choisi de fournir votre propre étiquette de retour. Veuillez soumettre vos documents de transport pour que nous puissions préparer l\'enlèvement.'}
+                  </p>
+                  {shippingDoc?.admin_notes && (
+                    <div className="mt-2 p-2 bg-white rounded border border-amber-200">
+                      <p className="text-xs font-bold text-amber-800">Message de notre équipe :</p>
+                      <p className="text-sm text-amber-900">{shippingDoc.admin_notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (shippingDoc) {
+                    setShippingDocCarrier(shippingDoc.carrier_name || '');
+                    setShippingDocPickupDate(shippingDoc.pickup_date || '');
+                    setShippingDocNotes(shippingDoc.customer_notes || '');
+                  }
+                  setShowShippingDocModal(true);
+                }}
+                className="px-5 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 transition-colors whitespace-nowrap"
+              >
+                {shippingDoc ? '📄 Resoumettre' : '📄 Soumettre documents'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Shipping doc submitted — pending review */}
+        {shippingDocSubmitted && (
+          <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <span className="text-blue-600 text-lg">📦</span>
+              </div>
+              <div>
+                <p className="font-semibold text-blue-800">Documents de transport soumis — En vérification</p>
+                <p className="text-sm text-blue-600">
+                  Transporteur : {shippingDoc.carrier_name} • Date d'enlèvement : {new Date(shippingDoc.pickup_date).toLocaleDateString('fr-FR')}
+                </p>
+                {shippingDoc.submitted_at && (
+                  <p className="text-xs text-blue-500 mt-1">Soumis le {new Date(shippingDoc.submitted_at).toLocaleDateString('fr-FR')}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Shipping doc approved — show tracking */}
+        {shippingDocApproved && (
+          <div className="bg-green-50 border-b border-green-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                <span className="text-green-600 text-lg">✅</span>
+              </div>
+              <div>
+                <p className="font-semibold text-green-800">Documents de transport approuvés</p>
+                <p className="text-sm text-green-600">
+                  Transporteur : {shippingDoc.carrier_name} • Date d'enlèvement : {new Date(shippingDoc.pickup_date).toLocaleDateString('fr-FR')}
+                </p>
+                {shippingDoc.tracking_number && (
+                  <p className="text-sm text-green-700 mt-1 font-mono">
+                    📍 Suivi : <a href={shippingDoc.tracking_url || `https://www.google.com/search?q=${shippingDoc.carrier_name}+tracking+${shippingDoc.tracking_number}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{shippingDoc.tracking_number}</a>
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Shipping Document Upload Modal */}
+        {showShippingDocModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowShippingDocModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="bg-amber-500 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
+                <div>
+                  <h2 className="text-xl font-bold">📦 Documents de transport</h2>
+                  <p className="text-white/70 text-sm">Soumettez votre étiquette de retour et planifiez l'enlèvement</p>
+                </div>
+                <button onClick={() => setShowShippingDocModal(false)} className="text-white/80 hover:text-white text-2xl">×</button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto space-y-5">
+                {/* Reference */}
+                <div className="bg-gray-50 rounded-lg p-3 border">
+                  <p className="text-xs text-gray-400 uppercase font-bold">Référence</p>
+                  <p className="font-mono font-bold text-[#1E3A5F]">{request.request_number}</p>
+                </div>
+
+                {/* Carrier */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">🚛 Transporteur *</label>
+                  <input
+                    type="text"
+                    value={shippingDocCarrier}
+                    onChange={e => setShippingDocCarrier(e.target.value)}
+                    placeholder="Ex: DHL, GLS, FedEx, TNT, Chronopost..."
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+
+                {/* Pickup Date */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">📅 Date d'enlèvement prévue *</label>
+                  <input
+                    type="date"
+                    value={shippingDocPickupDate}
+                    onChange={e => setShippingDocPickupDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Date à laquelle votre transporteur viendra récupérer le colis</p>
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">📎 Étiquette de transport *</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-amber-400 transition-colors">
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={e => setShippingDocFile(e.target.files[0])}
+                      className="hidden"
+                      id="shipping-doc-upload"
+                    />
+                    <label htmlFor="shipping-doc-upload" className="cursor-pointer">
+                      {shippingDocFile ? (
+                        <div className="flex items-center justify-center gap-2 text-amber-600">
+                          <span className="text-lg">📄</span>
+                          <span className="font-medium text-sm">{shippingDocFile.name}</span>
+                        </div>
+                      ) : shippingDoc?.document_name ? (
+                        <div>
+                          <p className="text-sm text-gray-500">Document actuel : <span className="font-medium">{shippingDoc.document_name}</span></p>
+                          <p className="text-xs text-amber-500 mt-1">Cliquez pour remplacer</p>
+                        </div>
+                      ) : (
+                        <div>
+                          <p className="text-gray-400 text-3xl mb-1">📤</p>
+                          <p className="text-sm text-gray-600 font-medium">Cliquez pour télécharger</p>
+                          <p className="text-xs text-gray-400">PDF, JPG ou PNG</p>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">💬 Notes (optionnel)</label>
+                  <textarea
+                    value={shippingDocNotes}
+                    onChange={e => setShippingDocNotes(e.target.value)}
+                    rows={2}
+                    placeholder="Instructions spéciales pour l'enlèvement..."
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+
+                {/* Important notice */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs text-amber-800 font-medium">⚠️ Rappel : Vous êtes responsable de la planification de l'enlèvement avec votre transporteur. Assurez-vous que la date correspond à la disponibilité de votre transporteur.</p>
+                </div>
+              </div>
+
+              <div className="p-6 border-t flex gap-3">
+                <button onClick={() => setShowShippingDocModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200">
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSubmitShippingDoc}
+                  disabled={submittingShippingDoc}
+                  className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {submittingShippingDoc ? 'Envoi en cours...' : '✅ Soumettre'}
+                </button>
               </div>
             </div>
           </div>
@@ -13908,6 +14215,15 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
   const [rentalRevisionNotes, setRentalRevisionNotes] = useState('');
   const [rentalProcessing, setRentalProcessing] = useState(false);
   
+  // Rental shipping document state (own_label)
+  const [rentalShippingDoc, setRentalShippingDoc] = useState(null);
+  const [showRentalShippingDocModal, setShowRentalShippingDocModal] = useState(false);
+  const [rentalShipDocFile, setRentalShipDocFile] = useState(null);
+  const [rentalShipDocCarrier, setRentalShipDocCarrier] = useState('');
+  const [rentalShipDocPickupDate, setRentalShipDocPickupDate] = useState('');
+  const [rentalShipDocNotes, setRentalShipDocNotes] = useState('');
+  const [submittingRentalShipDoc, setSubmittingRentalShipDoc] = useState(false);
+  
   // BC Submission state (mirrors RMA exactly)
   const [showBCModal, setShowBCModal] = useState(false);
   const [bcFileUpload, setBcFileUpload] = useState(null);
@@ -14776,6 +15092,14 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
     if (msgs) setRentalMessages(msgs);
     const { data: docs } = await supabase.from('request_attachments').select('*').eq('rental_request_id', rentalId);
     if (docs) setRentalDocs(docs);
+    // Load shipping document for own_label rentals
+    const rental = rentals.find(r => r.id === rentalId);
+    if (rental?.return_shipping === 'own_label') {
+      const { data: sdoc } = await supabase.from('shipping_documents').select('*').eq('request_id', rentalId).eq('request_type', 'rental').order('created_at', { ascending: false }).limit(1).maybeSingle();
+      setRentalShippingDoc(sdoc || null);
+    } else {
+      setRentalShippingDoc(null);
+    }
   };
 
   const sendRentalMessage = async (e) => {
@@ -14803,6 +15127,51 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
       notify('Erreur: ' + err.message, 'error');
     }
     setRentalSending(false);
+  };
+
+  // Submit rental shipping document (own_label)
+  const handleSubmitRentalShippingDoc = async () => {
+    if (!rentalShipDocCarrier.trim()) { notify('Veuillez indiquer le transporteur', 'error'); return; }
+    if (!rentalShipDocPickupDate) { notify('Veuillez indiquer la date d\'enlèvement', 'error'); return; }
+    if (!rentalShipDocFile && !rentalShippingDoc) { notify('Veuillez joindre votre étiquette de transport', 'error'); return; }
+    setSubmittingRentalShipDoc(true);
+    try {
+      let documentUrl = rentalShippingDoc?.document_url || null;
+      let documentName = rentalShippingDoc?.document_name || null;
+      if (rentalShipDocFile) {
+        const ext = rentalShipDocFile.name.split('.').pop();
+        const filePath = `${profile.company_id}/${selectedRental.id}/rental_shipping_${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage.from('shipping-documents').upload(filePath, rentalShipDocFile);
+        if (uploadErr) throw uploadErr;
+        const { data: urlData } = supabase.storage.from('shipping-documents').getPublicUrl(filePath);
+        documentUrl = urlData.publicUrl;
+        documentName = rentalShipDocFile.name;
+      }
+      if (rentalShippingDoc && (rentalShippingDoc.status === 'rejected' || rentalShippingDoc.status === 'modification_requested')) {
+        await supabase.from('shipping_documents').update({
+          status: 'submitted', carrier_name: rentalShipDocCarrier.trim(), pickup_date: rentalShipDocPickupDate,
+          document_url: documentUrl, document_name: documentName, customer_notes: rentalShipDocNotes.trim() || null,
+          submitted_at: new Date().toISOString(), admin_notes: null, reviewed_at: null, reviewed_by: null, tracking_number: null,
+          updated_at: new Date().toISOString()
+        }).eq('id', rentalShippingDoc.id);
+      } else {
+        await supabase.from('shipping_documents').insert({
+          request_id: selectedRental.id, request_type: 'rental', company_id: profile.company_id,
+          status: 'submitted', carrier_name: rentalShipDocCarrier.trim(), pickup_date: rentalShipDocPickupDate,
+          document_url: documentUrl, document_name: documentName, customer_notes: rentalShipDocNotes.trim() || null,
+          submitted_at: new Date().toISOString()
+        });
+      }
+      await supabase.from('messages').insert({
+        rental_request_id: selectedRental.id, sender_id: profile.id, sender_type: 'customer', sender_name: profile.full_name || 'Client',
+        content: `📦 Documents de transport soumis\nTransporteur : ${rentalShipDocCarrier.trim()}\nDate d'enlèvement : ${new Date(rentalShipDocPickupDate).toLocaleDateString('fr-FR')}${rentalShipDocNotes ? '\nNotes : ' + rentalShipDocNotes.trim() : ''}`
+      });
+      notify('Documents de transport soumis !', 'success');
+      setShowRentalShippingDocModal(false);
+      loadRentalComms(selectedRental.id);
+      refresh();
+    } catch (err) { notify(`Erreur: ${err.message}`, 'error'); }
+    setSubmittingRentalShipDoc(false);
   };
 
   const handleRentalRevision = async () => {
@@ -15046,6 +15415,123 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </div>
                 </div>
                 <button onClick={() => setShowBCModal(true)} className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700">📄 Resoumettre BC</button>
+              </div>
+            </div>
+          )}
+
+          {/* ====== RENTAL SHIPPING DOCUMENT BANNERS ====== */}
+          {(() => {
+            const isOwnLabel = rental.return_shipping === 'own_label';
+            const isReady = ['ready_to_ship', 'shipped', 'return_pending', 'returned'].includes(rental.status);
+            const needsDoc = isOwnLabel && isReady && (!rentalShippingDoc || rentalShippingDoc.status === 'rejected' || rentalShippingDoc.status === 'modification_requested');
+            const docSubmitted = isOwnLabel && rentalShippingDoc?.status === 'submitted';
+            const docApproved = isOwnLabel && rentalShippingDoc?.status === 'approved';
+            
+            return (<>
+              {needsDoc && (
+                <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center"><span className="text-2xl">📦</span></div>
+                      <div>
+                        <p className="font-bold text-amber-800 text-lg">
+                          {rentalShippingDoc?.status === 'rejected' ? '❌ Documents rejetés' : rentalShippingDoc?.status === 'modification_requested' ? '✏️ Modification demandée' : '🏷️ Documents de transport requis'}
+                        </p>
+                        <p className="text-sm text-amber-700">Veuillez soumettre votre étiquette de retour et planifier l'enlèvement.</p>
+                        {rentalShippingDoc?.admin_notes && (
+                          <div className="mt-2 p-2 bg-white rounded border border-amber-200">
+                            <p className="text-xs font-bold text-amber-800">Message :</p>
+                            <p className="text-sm text-amber-900">{rentalShippingDoc.admin_notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <button onClick={() => {
+                      if (rentalShippingDoc) { setRentalShipDocCarrier(rentalShippingDoc.carrier_name || ''); setRentalShipDocPickupDate(rentalShippingDoc.pickup_date || ''); setRentalShipDocNotes(rentalShippingDoc.customer_notes || ''); }
+                      setShowRentalShippingDocModal(true);
+                    }} className="px-5 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 whitespace-nowrap">
+                      {rentalShippingDoc ? '📄 Resoumettre' : '📄 Soumettre documents'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {docSubmitted && (
+                <div className="bg-blue-50 border-b border-blue-200 px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center"><span className="text-blue-600 text-lg">📦</span></div>
+                    <div>
+                      <p className="font-semibold text-blue-800">Documents de transport soumis — En vérification</p>
+                      <p className="text-sm text-blue-600">Transporteur : {rentalShippingDoc.carrier_name} • Enlèvement : {new Date(rentalShippingDoc.pickup_date).toLocaleDateString('fr-FR')}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {docApproved && (
+                <div className="bg-green-50 border-b border-green-200 px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center"><span className="text-green-600 text-lg">✅</span></div>
+                    <div>
+                      <p className="font-semibold text-green-800">Documents approuvés</p>
+                      <p className="text-sm text-green-600">Transporteur : {rentalShippingDoc.carrier_name} • Enlèvement : {new Date(rentalShippingDoc.pickup_date).toLocaleDateString('fr-FR')}</p>
+                      {rentalShippingDoc.tracking_number && (
+                        <p className="text-sm text-green-700 mt-1 font-mono">📍 Suivi : <a href={rentalShippingDoc.tracking_url || '#'} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{rentalShippingDoc.tracking_number}</a></p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>);
+          })()}
+
+          {/* Rental Shipping Doc Upload Modal */}
+          {showRentalShippingDocModal && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowRentalShippingDocModal(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="bg-amber-500 text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xl font-bold">📦 Documents de transport</h2>
+                    <p className="text-white/70 text-sm">{rental.rental_number}</p>
+                  </div>
+                  <button onClick={() => setShowRentalShippingDocModal(false)} className="text-white/80 hover:text-white text-2xl">×</button>
+                </div>
+                <div className="p-6 overflow-y-auto space-y-5">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">🚛 Transporteur *</label>
+                    <input type="text" value={rentalShipDocCarrier} onChange={e => setRentalShipDocCarrier(e.target.value)} placeholder="DHL, GLS, FedEx, TNT..." className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">📅 Date d'enlèvement *</label>
+                    <input type="date" value={rentalShipDocPickupDate} onChange={e => setRentalShipDocPickupDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">📎 Étiquette de transport *</label>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-amber-400 transition-colors">
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setRentalShipDocFile(e.target.files[0])} className="hidden" id="rental-shipping-doc-upload" />
+                      <label htmlFor="rental-shipping-doc-upload" className="cursor-pointer">
+                        {rentalShipDocFile ? (
+                          <div className="flex items-center justify-center gap-2 text-amber-600"><span>📄</span><span className="font-medium text-sm">{rentalShipDocFile.name}</span></div>
+                        ) : rentalShippingDoc?.document_name ? (
+                          <div><p className="text-sm text-gray-500">Actuel : <span className="font-medium">{rentalShippingDoc.document_name}</span></p><p className="text-xs text-amber-500 mt-1">Cliquez pour remplacer</p></div>
+                        ) : (
+                          <div><p className="text-gray-400 text-3xl mb-1">📤</p><p className="text-sm text-gray-600 font-medium">Cliquez pour télécharger</p><p className="text-xs text-gray-400">PDF, JPG ou PNG</p></div>
+                        )}
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">💬 Notes (optionnel)</label>
+                    <textarea value={rentalShipDocNotes} onChange={e => setRentalShipDocNotes(e.target.value)} rows={2} placeholder="Instructions spéciales..." className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm" />
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-xs text-amber-800 font-medium">⚠️ Vous êtes responsable de la planification de l'enlèvement avec votre transporteur.</p>
+                  </div>
+                </div>
+                <div className="p-6 border-t flex gap-3">
+                  <button onClick={() => setShowRentalShippingDocModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200">Annuler</button>
+                  <button onClick={handleSubmitRentalShippingDoc} disabled={submittingRentalShipDoc} className="flex-1 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 disabled:opacity-50">
+                    {submittingRentalShipDoc ? 'Envoi...' : '✅ Soumettre'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
