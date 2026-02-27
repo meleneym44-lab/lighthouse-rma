@@ -5947,64 +5947,118 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       const startDate = period.start ? new Date(period.start).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
       const endDate = period.end ? new Date(period.end).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
       const totalHT = qd.totalHT || review.total_amount || 0;
+      const shippingVal = parseFloat(qd.shipping) || 0;
+      const discountAmount = parseFloat(qd.discountAmount) || 0;
       const rentalInfoBar = (<>
         <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">PÉRIODE</p><p className="font-bold text-[#1a1a2e]">{startDate} — {endDate} ({rentalDays}j)</p></div>
         <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
       </>);
-      const rentalConditions = ["Devis valable 30 jours.", `Livraison : ${qd.deliveryTerms || 'Standard'}`, `Paiement : ${qd.paymentTerms || 'À réception de facture'}`, "L'appareil reste la propriété de Lighthouse France pendant la durée de la location.", "Le client s'engage à souscrire une assurance prenant en compte le \"Bien Confié\".", "Tout incident doit être communiqué sous 48h."];
+      // Same conditions as PDF
+      const RENTAL_CONDITIONS = [
+        "Le matériel reste la propriété de Lighthouse France. La garde est transférée au client dès réception jusqu'à restitution.",
+        "Utilisation conforme par personnel qualifié. Sous-location interdite sans accord écrit. Tout incident doit être signalé sous 48h par écrit.",
+        "Le client doit souscrire une assurance « Bien Confié » couvrant: vol, incendie, dégâts des eaux, bris accidentel.",
+        "Le matériel doit être restitué en bon état à la date convenue. Les dommages ou pièces manquantes seront facturés au coût de remise en état.",
+        "Les jours de retard seront facturés au tarif journalier majoré de 50%. Lighthouse France pourra récupérer le matériel à tout moment.",
+        "Le non-respect des conditions peut entraîner la résiliation immédiate du contrat de location."
+      ];
 
       return (
         <ReviewQuoteDoc
-          title="DEVIS LOCATION" docNumber={qd.rentalNumber || review.quote_number}
+          title="OFFRE DE PRIX" docNumber={qd.rentalNumber || review.quote_number}
           reference={review.rma_number} refLabel="Location"
           date={qd.quoted_at || review.submitted_at}
-          quoteData={docData} conditions={rentalConditions}
+          quoteData={docData} conditions={[]}
           extraInfoBar={rentalInfoBar}
         >
-          <div className="px-8 py-6">
-            <h3 className="font-bold text-[#1a1a2e] mb-3">Équipements en Location</h3>
+          {/* Location de Matériel period block — matches PDF */}
+          <div className="px-8 py-4">
+            <div className="border-l-4 border-[#2D5A7B] pl-4">
+              <h3 className="font-bold text-lg text-[#1a1a2e] mb-2">Location de Matériel</h3>
+              <div className="flex gap-8 text-sm text-gray-600">
+                <div><span className="text-gray-400">Début:</span> <span className="font-medium text-[#1a1a2e]">{startDate}</span></div>
+                <div><span className="text-gray-400">Fin:</span> <span className="font-medium text-[#1a1a2e]">{endDate}</span></div>
+                <div><span className="text-gray-400">Durée:</span> <span className="font-medium text-[#1a1a2e]">{rentalDays} jours</span></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing Table — matches PDF columns: Qté / Désignation / Tarif / Durée / Total HT */}
+          <div className="px-8 py-4">
+            <h3 className="font-bold text-lg text-[#1a1a2e] mb-3">Récapitulatif des Prix</h3>
             <table className="w-full text-sm">
               <thead><tr className="bg-[#1a1a2e] text-white">
-                <th className="px-3 py-2.5 text-left">Équipement</th>
-                <th className="px-3 py-2.5 text-left w-24">S/N</th>
-                <th className="px-3 py-2.5 text-center w-12">Jours</th>
-                <th className="px-3 py-2.5 text-right w-20">Tarif/j</th>
-                <th className="px-3 py-2.5 text-right w-24">Val. Neuf</th>
-                <th className="px-3 py-2.5 text-right w-20">Total HT</th>
+                <th className="px-3 py-2.5 text-center w-10">Qté</th>
+                <th className="px-3 py-2.5 text-left">Désignation</th>
+                <th className="px-3 py-2.5 text-right w-24">Tarif</th>
+                <th className="px-3 py-2.5 text-right w-16">Durée</th>
+                <th className="px-3 py-2.5 text-right w-24">Total HT</th>
               </tr></thead>
               <tbody>
-                {items.map((item, i) => (
-                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-3 py-2 font-medium">{item.item_name || '—'}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-gray-500">{item.serial_number || '—'}</td>
-                    <td className="px-3 py-2 text-center">{item.rental_days || rentalDays}</td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">{(parseFloat(item.applied_rate) || 0).toFixed(2)} €</td>
-                    <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">{(parseFloat(item.retail_value) || 0).toFixed(2)} €</td>
-                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
-                  </tr>
-                ))}
-                {(qd.shipping || 0) > 0 && (
-                  <tr className="bg-blue-50">
-                    <td colSpan={5} className="px-3 py-2 text-blue-800">Frais de port</td>
-                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(qd.shipping).toFixed(2)} €</td>
+                {items.map((item, i) => {
+                  const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : item.rate_type === 'forfait' ? '' : '/jour';
+                  const appliedRate = parseFloat(item.applied_rate) || 0;
+                  const lineTotal = parseFloat(item.line_total) || 0;
+                  const retailVal = parseFloat(item.retail_value) || 0;
+                  const serial = item.serial_number || '';
+                  const rawName = item.item_name || 'Equipement';
+                  const deviceName = serial && !rawName.includes(serial) ? `${rawName} (SN: ${serial})` : rawName;
+                  const specs = item.specs || item.description || '';
+                  return (
+                    <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-3 py-2 text-center align-top">1</td>
+                      <td className="px-3 py-2 align-top">
+                        <span className="font-bold text-[#1a1a2e]">{deviceName}</span>
+                        {specs && <p className="text-xs text-gray-400 mt-0.5">{specs}</p>}
+                        {retailVal > 0 && <p className="text-xs text-gray-400 italic mt-0.5">Valeur neuf (assurance): {retailVal.toFixed(2)} €</p>}
+                      </td>
+                      <td className="px-3 py-2 text-right align-top whitespace-nowrap">{appliedRate > 0 ? `${appliedRate.toFixed(2)} €${rateLabel}` : '—'}</td>
+                      <td className="px-3 py-2 text-right align-top whitespace-nowrap">{item.rental_days || rentalDays}j</td>
+                      <td className="px-3 py-2 text-right align-top font-bold whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
+                    </tr>
+                  );
+                })}
+                {!isClientReturn && shippingVal > 0 && (
+                  <tr className="bg-gray-100">
+                    <td className="px-3 py-2 text-center">1</td>
+                    <td className="px-3 py-2">Frais de port</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">{shippingVal.toFixed(2)} €</td>
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-right font-bold whitespace-nowrap">{shippingVal.toFixed(2)} €</td>
                   </tr>
                 )}
-                {(qd.discount || 0) > 0 && (
-                  <tr className="bg-green-50">
-                    <td colSpan={5} className="px-3 py-2 text-green-700">Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</td>
-                    <td className="px-3 py-2 text-right font-medium text-green-700 whitespace-nowrap">-{(qd.discountAmount || 0).toFixed(2)} €</td>
+                {discountAmount > 0 && (
+                  <tr className="bg-amber-50">
+                    <td className="px-3 py-2 text-center">1</td>
+                    <td className="px-3 py-2 text-red-700">{qd.discountType === 'percent' ? `Remise (${qd.discount}%)` : 'Remise'}</td>
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2"></td>
+                    <td className="px-3 py-2 text-right font-bold text-red-700 whitespace-nowrap">-{discountAmount.toFixed(2)} €</td>
                   </tr>
                 )}
               </tbody>
               <tfoot><tr className="bg-[#2D5A7B] text-white">
-                <td colSpan={5} className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                <td colSpan={4} className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                 <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{totalHT.toFixed(2)} €</td>
               </tr></tfoot>
             </table>
-            {(qd.totalRetailValue || 0) > 0 && <p className="text-xs text-gray-500 mt-2">Valeur totale à assurer: {qd.totalRetailValue.toFixed(2)} € HT</p>}
-            {qd.buybackClause && <p className="text-sm text-purple-700 mt-3 bg-purple-50 px-3 py-2 rounded">💰 Option de rachat disponible à {qd.buybackPercent || 50}% de la valeur neuf</p>}
-            {qd.notes && <p className="text-sm mt-2 bg-amber-50 px-3 py-2 rounded"><span className="font-medium">Notes :</span> {qd.notes}</p>}
           </div>
+
+          {/* CONDITIONS GÉNÉRALES DE LOCATION — matches PDF exactly */}
+          <div className="px-8 py-4 border-t bg-[#f9fafb]">
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS GÉNÉRALES DE LOCATION</p>
+            <ol className="text-xs text-[#505050] space-y-1.5">
+              {RENTAL_CONDITIONS.map((c, i) => <li key={i}>{i + 1}. {c}</li>)}
+            </ol>
+          </div>
+
+          {/* Notes */}
+          {qd.notes && (
+            <div className="px-8 py-3 border-t">
+              <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">NOTES</p>
+              <p className="text-sm text-gray-600">{qd.notes}</p>
+            </div>
+          )}
         </ReviewQuoteDoc>
       );
     }
