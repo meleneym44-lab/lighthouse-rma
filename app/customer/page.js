@@ -4120,6 +4120,7 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
   const [deviceSearch, setDeviceSearch] = useState('');
   const [rentalActions, setRentalActions] = useState([]);
   const [rentalThreadData, setRentalThreadData] = useState([]);
+  const [pendingShippingDocs, setPendingShippingDocs] = useState([]);
 
   // Load messages + rental actions
   useEffect(() => {
@@ -4184,6 +4185,18 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
       if (rentalAll) setRentalThreadData(rentalAll);
     };
     loadMessages();
+  }, [profile, requests]);
+
+  // Load pending shipping docs for own_label requests
+  useEffect(() => {
+    const loadShippingDocs = async () => {
+      if (!profile?.company_id) return;
+      const ownLabelRequests = requests.filter(r => r.return_shipping === 'own_label' && ['ready_to_ship', 'shipped', 'completed'].includes(r.status));
+      if (ownLabelRequests.length === 0) { setPendingShippingDocs([]); return; }
+      const { data } = await supabase.from('shipping_documents').select('*').eq('company_id', profile.company_id).in('request_id', ownLabelRequests.map(r => r.id));
+      setPendingShippingDocs(data || []);
+    };
+    loadShippingDocs();
   }, [profile, requests]);
 
   // Separate service requests from parts orders
@@ -4337,7 +4350,8 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
           ).length > 0 || 
             partsNeedingAction.length > 0 ||
             (contracts && contracts.filter(c => c.status === 'quote_sent' || c.status === 'bc_rejected').length > 0) ||
-            rentalActions.length > 0) && (
+            rentalActions.length > 0 ||
+            requests.some(r => r.return_shipping === 'own_label' && ['ready_to_ship', 'shipped', 'completed'].includes(r.status) && (!pendingShippingDocs.find(d => d.request_id === r.id) || ['rejected', 'modification_requested'].includes(pendingShippingDocs.find(d => d.request_id === r.id)?.status)))) && (
             <div className="bg-red-50 border-l-4 border-red-500 rounded-lg p-4">
               <h3 className="font-bold text-red-800 mb-2 flex items-center gap-2">
                 <span className="animate-pulse">⚠</span> Action requise
@@ -4413,6 +4427,19 @@ function Dashboard({ profile, requests, contracts, t, setPage, setSelectedReques
                     number: rental.rental_number,
                     label: 'Approuver le devis location'
                   }));
+                  // Shipping Docs Required (own_label)
+                  requests.filter(r => r.return_shipping === 'own_label' && ['ready_to_ship', 'shipped', 'completed'].includes(r.status)).forEach(req => {
+                    const doc = pendingShippingDocs.find(d => d.request_id === req.id);
+                    if (!doc || doc.status === 'rejected' || doc.status === 'modification_requested') {
+                      actionItems.push({
+                        key: 'ship-' + req.id, type: 'shipping_doc', sortDate: req.updated_at || req.created_at,
+                        onClick: () => viewRequest(req),
+                        icon: '📦', pulse: true,
+                        number: req.request_number,
+                        label: doc?.status === 'rejected' ? '❌ Documents rejetés — Resoumettre' : doc?.status === 'modification_requested' ? '✏️ Modification demandée' : '📦 Documents de transport requis'
+                      });
+                    }
+                  });
                   // Sort newest first
                   actionItems.sort((a, b) => new Date(b.sortDate || 0) - new Date(a.sortDate || 0));
                   return actionItems.map(item => (
@@ -10845,29 +10872,29 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
         {/* ====== SHIPPING DOCUMENT SECTION (own_label) ====== */}
         {/* Needs shipping doc — action required */}
         {needsShippingDoc && (
-          <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
+          <div className="bg-red-50 border-b border-red-300 px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
-                  <span className="text-2xl">📦</span>
+                <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                  <span className="text-white text-2xl">⚠️</span>
                 </div>
                 <div>
-                  <p className="font-bold text-amber-800 text-lg">
-                    {shippingDoc?.status === 'rejected' ? '❌ Documents de transport rejetés' 
-                      : shippingDoc?.status === 'modification_requested' ? '✏️ Modification demandée'
-                      : '🏷️ Vos appareils sont prêts — Documents de transport requis'}
+                  <p className="font-bold text-red-800 text-lg">
+                    {shippingDoc?.status === 'rejected' ? '❌ Documents de transport rejetés — Action requise' 
+                      : shippingDoc?.status === 'modification_requested' ? '✏️ Modification demandée — Action requise'
+                      : '📦 Action requise — Documents de transport'}
                   </p>
-                  <p className="text-sm text-amber-700">
+                  <p className="text-sm text-red-600">
                     {shippingDoc?.status === 'rejected' 
-                      ? 'Vos documents ont été rejetés. Veuillez les resoumettre.'
+                      ? 'Vos documents ont été rejetés. Veuillez corriger et resoumettre.'
                       : shippingDoc?.status === 'modification_requested'
-                      ? 'Notre équipe a demandé une modification de vos documents.'
-                      : 'Vous avez choisi de fournir votre propre étiquette de retour. Veuillez soumettre vos documents de transport pour que nous puissions préparer l\'enlèvement.'}
+                      ? 'Notre équipe a demandé une modification de vos documents de transport.'
+                      : 'Vos appareils sont prêts. Veuillez soumettre votre étiquette de transport, le nom du transporteur et la date d\'enlèvement.'}
                   </p>
                   {shippingDoc?.admin_notes && (
-                    <div className="mt-2 p-2 bg-white rounded border border-amber-200">
-                      <p className="text-xs font-bold text-amber-800">Message de notre équipe :</p>
-                      <p className="text-sm text-amber-900">{shippingDoc.admin_notes}</p>
+                    <div className="mt-2 p-2 bg-white rounded border border-red-200">
+                      <p className="text-xs font-bold text-red-800">Message de notre équipe :</p>
+                      <p className="text-sm text-red-900">{shippingDoc.admin_notes}</p>
                     </div>
                   )}
                 </div>
@@ -10881,9 +10908,9 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   }
                   setShowShippingDocModal(true);
                 }}
-                className="px-5 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 transition-colors whitespace-nowrap"
+                className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors whitespace-nowrap animate-pulse"
               >
-                {shippingDoc ? '📄 Resoumettre' : '📄 Soumettre documents'}
+                📄 {shippingDoc ? 'Resoumettre' : 'Soumettre documents'}
               </button>
             </div>
           </div>
@@ -15429,19 +15456,19 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             
             return (<>
               {needsDoc && (
-                <div className="bg-amber-50 border-b border-amber-300 px-6 py-4">
+                <div className="bg-red-50 border-b border-red-300 px-6 py-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center"><span className="text-2xl">📦</span></div>
+                      <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center"><span className="text-white text-2xl">⚠️</span></div>
                       <div>
-                        <p className="font-bold text-amber-800 text-lg">
-                          {rentalShippingDoc?.status === 'rejected' ? '❌ Documents rejetés' : rentalShippingDoc?.status === 'modification_requested' ? '✏️ Modification demandée' : '🏷️ Documents de transport requis'}
+                        <p className="font-bold text-red-800 text-lg">
+                          {rentalShippingDoc?.status === 'rejected' ? '❌ Documents rejetés — Action requise' : rentalShippingDoc?.status === 'modification_requested' ? '✏️ Modification demandée — Action requise' : '📦 Action requise — Documents de transport'}
                         </p>
-                        <p className="text-sm text-amber-700">Veuillez soumettre votre étiquette de retour et planifier l'enlèvement.</p>
+                        <p className="text-sm text-red-600">Veuillez soumettre votre étiquette de retour, le transporteur et la date d'enlèvement.</p>
                         {rentalShippingDoc?.admin_notes && (
-                          <div className="mt-2 p-2 bg-white rounded border border-amber-200">
-                            <p className="text-xs font-bold text-amber-800">Message :</p>
-                            <p className="text-sm text-amber-900">{rentalShippingDoc.admin_notes}</p>
+                          <div className="mt-2 p-2 bg-white rounded border border-red-200">
+                            <p className="text-xs font-bold text-red-800">Message :</p>
+                            <p className="text-sm text-red-900">{rentalShippingDoc.admin_notes}</p>
                           </div>
                         )}
                       </div>
@@ -15449,8 +15476,8 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                     <button onClick={() => {
                       if (rentalShippingDoc) { setRentalShipDocCarrier(rentalShippingDoc.carrier_name || ''); setRentalShipDocPickupDate(rentalShippingDoc.pickup_date || ''); setRentalShipDocNotes(rentalShippingDoc.customer_notes || ''); }
                       setShowRentalShippingDocModal(true);
-                    }} className="px-5 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 whitespace-nowrap">
-                      {rentalShippingDoc ? '📄 Resoumettre' : '📄 Soumettre documents'}
+                    }} className="px-6 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 whitespace-nowrap animate-pulse">
+                      📄 {rentalShippingDoc ? 'Resoumettre' : 'Soumettre documents'}
                     </button>
                   </div>
                 </div>
