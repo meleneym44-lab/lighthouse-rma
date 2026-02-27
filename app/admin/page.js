@@ -5171,7 +5171,7 @@ const renderQuotePreview = (review) => {
     const billContent = () => renderAddr(qd.billingAddress, null);
 
     // Page shell
-    const A4Page = ({ children, pageNum, totalPages, accent = '#2D5A7B', title, number, subtitle, showHeader = true, isFirst = false, infoItems = [], showAddresses = false }) => (
+    const A4Page = ({ children, pageNum, totalPages, accent = '#2D5A7B', title, number, subtitle, showHeader = true, isFirst = false, isLastPage = false, signatureName = null, infoItems = [], showAddresses = false }) => (
       <div className="bg-white shadow-xl mx-auto" style={{ width: '210mm', height: '297mm', minHeight: '297mm', flexShrink: 0, position: 'relative', overflow: 'hidden', boxSizing: 'border-box', marginBottom: '8mm' }}>
         {/* Header */}
         {isFirst ? (
@@ -5220,15 +5220,36 @@ const renderQuotePreview = (review) => {
         ) : null}
 
         {/* Content area — between header and footer */}
-        <div style={{ padding: '0 15mm', paddingBottom: '18mm' }}>
+        <div style={{ padding: '0 15mm', paddingBottom: isLastPage ? '55mm' : '12mm' }}>
           {children}
         </div>
 
+        {/* Signature block — pinned to bottom of last page, above footer */}
+        {isLastPage && signatureName && (
+          <div style={{ position: 'absolute', bottom: '10mm', left: '15mm', right: '15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderTop: '0.3mm solid #e0e0e0', paddingTop: '3mm' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
+              <div>
+                <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
+                <p style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1a1a2e', margin: 0 }}>{signatureName}</p>
+                <p style={{ fontSize: '8pt', color: '#505050', margin: '0.5mm 0 0 0' }}>Lighthouse France SAS</p>
+              </div>
+              <img src="/images/logos/capcert-logo.png" alt="Capcert" style={{ height: '18mm', width: 'auto' }} onError={e => { e.target.style.display='none'; }} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: '6.5pt', color: '#828282', margin: '0 0 1mm 0' }}>Bon pour accord</p>
+              <div style={{ width: '45mm', height: '18mm', border: '0.4mm dashed #ccc', borderRadius: '1.5mm' }}></div>
+              <p style={{ fontSize: '6pt', color: '#aaa', margin: '1mm 0 0 0' }}>Signature et cachet</p>
+            </div>
+          </div>
+        )}
+
         {/* Footer — absolutely positioned at bottom */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#1a1a2e', color: 'white', padding: '3mm 15mm', textAlign: 'center' }}>
-          <p style={{ fontSize: '7.5pt', fontWeight: 'bold', margin: 0 }}>Lighthouse France SAS</p>
-          <p style={{ fontSize: '6.5pt', color: '#999', margin: '0.5mm 0 0 0' }}>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-          <p style={{ fontSize: '7pt', color: '#ccc', margin: '1mm 0 0 0', fontWeight: 'bold' }}>Page {pageNum}/{totalPages}</p>
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#1a1a2e', color: 'white', padding: '2.5mm 15mm', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: '7pt', fontWeight: 'bold' }}>Lighthouse France SAS</span>
+            <span style={{ fontSize: '6pt', color: '#999', marginLeft: '3mm' }}>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</span>
+          </div>
+          <span style={{ fontSize: '7pt', color: '#ccc', fontWeight: 'bold' }}>Page {pageNum}/{totalPages}</span>
         </div>
       </div>
     );
@@ -5329,7 +5350,7 @@ const renderQuotePreview = (review) => {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
           <tr style={{ background: '#2D5A7B', color: 'white' }}>
             <td colSpan={4} style={{ padding: '2.5mm 2mm', fontSize: '9pt', textAlign: 'right', fontWeight: 'bold' }}>TOTAL HT</td>
-            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', width: '18mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
+            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap', width: '25mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
           </tr>
         </tbody></table>
       )});
@@ -5344,23 +5365,6 @@ const renderQuotePreview = (review) => {
       )});
 
       // Signature
-      blocks.push({ h: 35, render: () => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '5mm', paddingTop: '3mm', borderTop: '0.3mm solid #eee' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
-            <div>
-              <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
-              <p style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1a1a2e', margin: 0 }}>{signName}</p>
-              <p style={{ fontSize: '8pt', color: '#505050', margin: '0.5mm 0 0 0' }}>Lighthouse France SAS</p>
-            </div>
-            <img src="/images/logos/capcert-logo.png" alt="Capcert" style={{ height: '20mm', width: 'auto' }} onError={e => { e.target.style.display='none'; }} />
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '6.5pt', color: '#828282', margin: '0 0 1mm 0' }}>Bon pour accord</p>
-            <div style={{ width: '45mm', height: '18mm', border: '0.4mm dashed #ccc', borderRadius: '1.5mm' }}></div>
-            <p style={{ fontSize: '6pt', color: '#aaa', margin: '1mm 0 0 0' }}>Signature et cachet</p>
-          </div>
-        </div>
-      )});
 
       const pages = paginate(blocks);
       const totalPages = pages.length;
@@ -5373,7 +5377,7 @@ const renderQuotePreview = (review) => {
         {pages.map((pageBlocks, pi) => (
           <A4Page key={pi} pageNum={pi + 1} totalPages={totalPages} accent={accent}
             title={titleText} number={numberText} subtitle={subtitleText}
-            isFirst={pi === 0} showHeader={true}
+            isFirst={pi === 0} isLastPage={pi === totalPages - 1} signatureName={signName} showHeader={true}
             infoItems={[{ label: 'DATE', value: qDate }, { label: 'VALIDITÉ', value: '30 jours' }, { label: 'CONDITIONS', value: qs.payment_terms || 'À réception de facture' }]}
             showAddresses={true}>
             {pageBlocks.map((block, bi) => <div key={bi}>{block.render()}</div>)}
@@ -5437,7 +5441,7 @@ const renderQuotePreview = (review) => {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
           <tr style={{ background: '#2D5A7B', color: 'white' }}>
             <td colSpan={4} style={{ padding: '2.5mm 2mm', fontSize: '9pt', textAlign: 'right', fontWeight: 'bold' }}>TOTAL HT</td>
-            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', width: '18mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
+            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap', width: '25mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
           </tr>
         </tbody></table>
       )});
@@ -5451,23 +5455,6 @@ const renderQuotePreview = (review) => {
         </div>
       )});
 
-      blocks.push({ h: 35, render: () => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '5mm', paddingTop: '3mm', borderTop: '0.3mm solid #eee' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
-            <div>
-              <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
-              <p style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1a1a2e', margin: 0 }}>{signName}</p>
-              <p style={{ fontSize: '8pt', color: '#505050', margin: '0.5mm 0 0 0' }}>Lighthouse France SAS</p>
-            </div>
-            <img src="/images/logos/capcert-logo.png" alt="Capcert" style={{ height: '20mm' }} onError={e => { e.target.style.display='none'; }} />
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '6.5pt', color: '#828282', margin: '0 0 1mm 0' }}>Bon pour accord</p>
-            <div style={{ width: '45mm', height: '18mm', border: '0.4mm dashed #ccc', borderRadius: '1.5mm' }}></div>
-            <p style={{ fontSize: '6pt', color: '#aaa', margin: '1mm 0 0 0' }}>Signature et cachet</p>
-          </div>
-        </div>
-      )});
 
       const pages = paginate(blocks);
       return (<div>
@@ -5475,7 +5462,7 @@ const renderQuotePreview = (review) => {
           <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#2D5A7B"
             title="OFFRE DE PRIX" number={qd.quoteNumber || qd.quoteRef || review.quote_number}
             subtitle={`Réf: ${qd.poNumber || review.rma_number}`}
-            isFirst={pi === 0} showHeader={true}
+            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
             infoItems={[{ label: 'DATE', value: qDate }, { label: 'VALIDITÉ', value: '30 jours' }, { label: 'CONDITIONS', value: 'À réception de facture' }]}
             showAddresses={true}>
             {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
@@ -5551,23 +5538,6 @@ const renderQuotePreview = (review) => {
         </div>
       )});
 
-      blocks.push({ h: 35, render: () => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '5mm', paddingTop: '3mm', borderTop: '0.3mm solid #eee' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
-            <div>
-              <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
-              <p style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1a1a2e', margin: 0 }}>{signName}</p>
-              <p style={{ fontSize: '8pt', color: '#505050', margin: '0.5mm 0 0 0' }}>Lighthouse France SAS</p>
-            </div>
-            <img src="/images/logos/capcert-logo.png" alt="Capcert" style={{ height: '20mm' }} onError={e => { e.target.style.display='none'; }} />
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '6.5pt', color: '#828282', margin: '0 0 1mm 0' }}>Bon pour accord</p>
-            <div style={{ width: '45mm', height: '18mm', border: '0.4mm dashed #ccc', borderRadius: '1.5mm' }}></div>
-            <p style={{ fontSize: '6pt', color: '#aaa', margin: '1mm 0 0 0' }}>Signature et cachet</p>
-          </div>
-        </div>
-      )});
 
       const pages = paginate(blocks);
       return (<div>
@@ -5575,7 +5545,7 @@ const renderQuotePreview = (review) => {
           <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#e67e22"
             title="SUPPLÉMENT AU DEVIS" number={qd.supNumber || review.quote_number}
             subtitle={`RMA: ${qd.rmaNumber || review.rma_number}`}
-            isFirst={pi === 0} showHeader={true}
+            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
             infoItems={[{ label: 'DATE', value: qDate }, { label: 'TYPE', value: 'Travaux supplémentaires' }, { label: 'VALIDITÉ', value: '30 jours' }]}
             showAddresses={false}>
             {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
@@ -5669,7 +5639,7 @@ const renderQuotePreview = (review) => {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody>
           <tr style={{ background: '#00A651', color: 'white' }}>
             <td colSpan={3} style={{ padding: '2.5mm 2mm', fontSize: '9pt', textAlign: 'right', fontWeight: 'bold' }}>TOTAL HT</td>
-            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', width: '18mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
+            <td style={{ padding: '2.5mm 2mm', fontSize: '12pt', textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap', width: '25mm' }}>{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
           </tr>
         </tbody></table>
       )});
@@ -5684,30 +5654,13 @@ const renderQuotePreview = (review) => {
         </div>
       )});
 
-      blocks.push({ h: 35, render: () => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '5mm', paddingTop: '3mm', borderTop: '0.3mm solid #eee' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
-            <div>
-              <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
-              <p style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1a1a2e', margin: 0 }}>{signName}</p>
-              <p style={{ fontSize: '8pt', color: '#505050', margin: '0.5mm 0 0 0' }}>Lighthouse France SAS</p>
-            </div>
-            <img src="/images/logos/capcert-logo.png" alt="Capcert" style={{ height: '20mm' }} onError={e => { e.target.style.display='none'; }} />
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '6.5pt', color: '#828282', margin: '0 0 1mm 0' }}>Bon pour accord</p>
-            <div style={{ width: '45mm', height: '18mm', border: '0.4mm dashed #ccc', borderRadius: '1.5mm' }}></div>
-            <p style={{ fontSize: '6pt', color: '#aaa', margin: '1mm 0 0 0' }}>Signature et cachet</p>
-          </div>
-        </div>
-      )});
 
       const pages = paginate(blocks);
       return (<div>
         {pages.map((pb, pi) => (
           <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#00A651"
             title="DEVIS CONTRAT" number={qd.contractNumber || review.quote_number}
-            isFirst={pi === 0} showHeader={true}
+            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
             infoItems={[{ label: 'DATE', value: qDate }, { label: 'PÉRIODE', value: `${startDate} — ${endDate}` }, { label: 'VALIDITÉ', value: '30 jours' }]}
             showAddresses={false}>
             {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
@@ -5805,30 +5758,13 @@ const renderQuotePreview = (review) => {
       </>)});
 
       // Signature
-      blocks.push({ h: 35, render: () => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '5mm', paddingTop: '3mm', borderTop: '0.3mm solid #eee' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5mm' }}>
-            <div>
-              <p style={{ fontSize: '6pt', color: '#828282', textTransform: 'uppercase', fontWeight: 'bold', margin: '0 0 1mm 0' }}>ÉTABLI PAR</p>
-              <p style={{ fontWeight: 'bold', fontSize: '11pt', color: '#1a1a2e', margin: 0 }}>{signName}</p>
-              <p style={{ fontSize: '8pt', color: '#505050', margin: '0.5mm 0 0 0' }}>Lighthouse France SAS</p>
-            </div>
-            <img src="/images/logos/capcert-logo.png" alt="Capcert" style={{ height: '20mm' }} onError={e => { e.target.style.display='none'; }} />
-          </div>
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '6.5pt', color: '#828282', margin: '0 0 1mm 0' }}>Bon pour accord</p>
-            <div style={{ width: '45mm', height: '18mm', border: '0.4mm dashed #ccc', borderRadius: '1.5mm' }}></div>
-            <p style={{ fontSize: '6pt', color: '#aaa', margin: '1mm 0 0 0' }}>Signature et cachet</p>
-          </div>
-        </div>
-      )});
 
       const pages = paginate(blocks);
       return (<div>
         {pages.map((pb, pi) => (
           <A4Page key={pi} pageNum={pi + 1} totalPages={pages.length} accent="#8B5CF6"
             title="DEVIS LOCATION" number={qd.rentalNumber || review.quote_number}
-            isFirst={pi === 0} showHeader={true}
+            isFirst={pi === 0} isLastPage={pi === pages.length - 1} signatureName={signName} showHeader={true}
             infoItems={[{ label: 'DATE', value: qDate }, { label: 'PÉRIODE', value: `${startDate} — ${endDate} (${rentalDays}j)` }, { label: 'VALIDITÉ', value: '30 jours' }]}
             showAddresses={true}>
             {pb.map((b, bi) => <div key={bi}>{b.render()}</div>)}
