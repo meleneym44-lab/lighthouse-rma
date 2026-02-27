@@ -4662,7 +4662,24 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       const qd = review.quote_data;
 
       if (review.quote_type === 'initial' || review.quote_type === 'revision') {
-        // === INITIAL/REVISION QUOTE: Generate PDF and send ===
+        // === INITIAL/REVISION QUOTE: Generate number, PDF, and send ===
+        
+        // Generate quote number NOW on approval (not at submit time)
+        let finalQuoteNumber = qd.quoteNumber; // May already exist for revisions
+        if (!finalQuoteNumber) {
+          try {
+            const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
+            if (!docNumError && docNumData) finalQuoteNumber = docNumData;
+          } catch (e) { console.error('Could not generate DEV number:', e); }
+          if (!finalQuoteNumber) {
+            const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+            const yy = String(new Date().getFullYear()).slice(-2);
+            finalQuoteNumber = `DEV-${mm}${yy}-???`;
+          }
+        }
+        // Update qd so PDF uses the correct number
+        qd.quoteNumber = finalQuoteNumber;
+        
         let quoteUrl = null;
         try {
           const rmaForPDF = { ...sr, request_number: qd.rmaNumber, companies: sr.companies };
@@ -4709,6 +4726,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         const updateData = {
           status: 'quote_sent',
           quote_sent_at: new Date().toISOString(),
+          quote_number: finalQuoteNumber,
           quote_review_id: null,
           quote_rejection_notes: null
         };
@@ -4729,7 +4747,24 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         }
 
       } else if (review.quote_type === 'parts') {
-        // === PARTS QUOTE: Generate PDF and send ===
+        // === PARTS QUOTE: Generate number, PDF, and send ===
+        
+        // Generate quote number NOW on approval
+        let finalQuoteNumber = qd.quoteNumber || qd.quoteRef;
+        if (!finalQuoteNumber) {
+          try {
+            const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
+            if (!docNumError && docNumData) finalQuoteNumber = docNumData;
+          } catch (e) { console.error('Could not generate DEV number:', e); }
+          if (!finalQuoteNumber) {
+            const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+            const yy = String(new Date().getFullYear()).slice(-2);
+            finalQuoteNumber = `DEV-${mm}${yy}-???`;
+          }
+        }
+        qd.quoteNumber = finalQuoteNumber;
+        qd.quoteRef = finalQuoteNumber;
+        
         let quoteUrl = null;
         try {
           const pdfBlob = await generatePartsQuotePDF(sr, { ...qd, quoteRef: qd.quoteNumber || qd.quoteRef });
@@ -4750,6 +4785,7 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         const updateData = {
           status: 'quote_sent',
           quote_sent_at: new Date().toISOString(),
+          quote_number: finalQuoteNumber,
           quote_url: quoteUrl,
           quote_review_id: null,
           quote_rejection_notes: null
@@ -4757,8 +4793,23 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         await supabase.from('service_requests').update(updateData).eq('id', sr.id);
 
       } else if (review.quote_type === 'supplement') {
-        // === SUPPLEMENT: Generate PDF and send ===
+        // === SUPPLEMENT: Generate number, PDF, and send ===
         try {
+          // Generate SUP number NOW on approval
+          let finalSupNumber = qd.supNumber;
+          if (!finalSupNumber) {
+            try {
+              const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'SUP' });
+              if (!docNumError && docNumData) finalSupNumber = docNumData;
+            } catch (e) { console.error('Could not generate SUP number:', e); }
+            if (!finalSupNumber) {
+              const mm = String(new Date().getMonth() + 1).padStart(2, '0');
+              const yy = String(new Date().getFullYear()).slice(-2);
+              finalSupNumber = `SUP-${mm}${yy}-???`;
+            }
+          }
+          qd.supNumber = finalSupNumber;
+          
           notify(lang === 'en' ? '📄 Generating supplement PDF...' : '📄 Génération du PDF supplément...');
           // Fetch RMA billing/shipping addresses (same as parent RMA quote)
           let supBillingAddr = null, supShippingAddr = null, supSubmitterName = null;
@@ -5054,307 +5105,332 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
   // ========================
 const renderQuotePreview = (review) => {
     const qd = review.quote_data || {};
+    const accentBlue = '#2D5A7B';
+    const accentGreen = '#00A651';
+    const darkNav = '#1a1a2e';
+    const qDate = new Date(qd.createdAt || review.submitted_at || Date.now()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const signName = qd.signatory || qd.createdBy || review.submitted_by_name || 'Lighthouse France';
     
+    // Shared helpers
+    const DocShell = ({ children, accent = accentBlue }) => (
+      <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>{children}
+        <div className="bg-[#1a1a2e] text-white px-8 py-3 text-center text-xs">
+          <p className="font-bold">Lighthouse France SAS</p>
+          <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+        </div>
+      </div>
+    );
+    
+    const DocHeader = ({ title, number, subtitle, accent = accentBlue }) => (
+      <div className="px-8 pt-6 pb-3" style={{ borderBottom: `2px solid ${accent}` }}>
+        <div className="flex justify-between items-start">
+          <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-16 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+          <div className="text-right">
+            <p className="text-xl font-bold" style={{ color: accent }}>{title}</p>
+            <p className="font-bold text-[#1a1a2e]">N° {number || <span className="text-amber-500 italic text-sm">(attribué à l'approbation)</span>}</p>
+            {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+          </div>
+        </div>
+      </div>
+    );
+    
+    const InfoBar = ({ items }) => (
+      <div className="bg-[#f5f5f5] px-8 py-2 flex justify-between text-sm border-b">
+        {items.map((item, i) => (
+          <div key={i}>
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider">{item.label}</p>
+            <p className="font-bold text-[#1a1a2e] text-xs">{item.value}</p>
+          </div>
+        ))}
+      </div>
+    );
+    
+    const renderAddr = (addr, company, submitterName) => {
+      const name = addr?.company_name || company?.name || review.client_name || 'Client';
+      return (<>
+        <p className="font-bold text-[#1a1a2e] text-sm">{name}</p>
+        {addr ? (<>
+          {addr.attention && <p className="text-xs text-gray-600">Contact: {addr.attention}</p>}
+          {addr.address_line1 && <p className="text-xs text-gray-600">{addr.address_line1}</p>}
+          {(addr.postal_code || addr.city) && <p className="text-xs text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
+          {addr.phone && <p className="text-xs text-gray-500">Tél: {addr.phone}</p>}
+          {addr.siret && <p className="text-xs font-bold text-[#1a1a2e]">SIRET: {addr.siret}</p>}
+          {addr.tva_number && <p className="text-xs font-bold text-[#1a1a2e]">TVA: {addr.tva_number}</p>}
+          {addr.chorus_invoicing && <p className="text-[10px] text-blue-600">Chorus Pro{addr.chorus_service_code ? ` — Service: ${addr.chorus_service_code}` : ''}</p>}
+        </>) : (<p className="text-xs text-gray-500 italic">Adresse non renseignée</p>)}
+      </>);
+    };
+    
+    const AddressBoxes = ({ shipLabel, shipContent, billContent, accent = accentBlue }) => (
+      <div className="px-8 py-3 grid grid-cols-2 gap-3 border-b">
+        <div className="border-2 rounded p-2.5" style={{ borderColor: `${accent}80` }}>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: accent }}>{shipLabel}</p>
+          {shipContent}
+        </div>
+        <div className="border-2 rounded p-2.5" style={{ borderColor: `${accent}80` }}>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: accent }}>FACTURER À</p>
+          {billContent}
+        </div>
+      </div>
+    );
+
+    const SignatureBlock = ({ name }) => (
+      <div className="px-8 py-4 border-t flex justify-between items-end">
+        <div className="flex items-end gap-4">
+          <div>
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+            <p className="font-bold text-sm text-[#1a1a2e]">{name}</p>
+            <p className="text-xs text-[#505050]">Lighthouse France SAS</p>
+          </div>
+          <img src="/images/logos/capcert-logo.png" alt="Capcert" className="h-16 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] text-[#828282] mb-1">Signature client</p>
+          <div className="w-36 h-14 border-2 border-dashed border-gray-300 rounded"></div>
+          <p className="text-[10px] text-[#828282] mt-0.5">Lu et approuvé</p>
+        </div>
+      </div>
+    );
+
+    const returnShipping = qd.returnShipping || 'standard';
+    const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
+    const shipLabel = returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'TRANSPORT CLIENT' : 'LIVRER À';
+    
+    const shipContent = () => {
+      if (returnShipping === 'pickup') return (<><p className="font-bold text-[#1a1a2e] text-sm">Enlèvement client</p><p className="text-xs text-gray-600">Le client récupérera la commande dans nos locaux.</p></>);
+      if (returnShipping === 'own_label') return (<><p className="font-bold text-[#1a1a2e] text-sm">Expédition client</p><p className="text-xs text-gray-600">Le client fournira son propre transporteur.</p></>);
+      return renderAddr(qd.shippingAddress, null, qd.submitterName);
+    };
+    const billContent = () => renderAddr(qd.billingAddress, null, null);
+
     // ============================================
-    // INITIAL / REVISION QUOTE - Full document view
+    // INITIAL / REVISION QUOTE
     // ============================================
     if (review.quote_type === 'initial' || review.quote_type === 'revision') {
       const devices = qd.devices || [];
       const bs = qd.businessSettings || {};
+      const qs = bs.quote_settings || {};
+      const deviceTypes = [...new Set(devices.map(d => d.deviceType).filter(Boolean))];
       
       return (
-        <div className="border rounded-xl overflow-hidden">
-          {/* Quote Header */}
-          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
-            <div className="flex justify-between items-start">
-              <div>
-                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
-              </div>
-              <div className="text-right">
-                <p className="text-xl font-bold text-[#2D5A7B]">{review.quote_type === 'revision' ? 'DEVIS RÉVISÉ' : 'DEVIS'}</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.quoteNumber || review.quote_number || '—'}</p>
-                {qd.newRevisionCount > 0 && <p className="text-xs text-amber-600 font-medium">Révision {qd.newRevisionCount}</p>}
-                <p className="text-xs text-gray-500">RMA: {qd.rmaNumber || review.rma_number}</p>
-              </div>
-            </div>
-          </div>
+        <DocShell>
+          <DocHeader 
+            title={review.quote_type === 'revision' ? 'DEVIS RÉVISÉ' : 'OFFRE DE PRIX'} 
+            number={qd.quoteNumber || review.quote_number}
+            subtitle={`RMA: ${qd.rmaNumber || review.rma_number}${qd.newRevisionCount > 0 ? ` • Rév. ${qd.newRevisionCount}` : ''}`}
+          />
+          <InfoBar items={[
+            { label: 'DATE', value: qDate },
+            { label: 'VALIDITÉ', value: '30 jours' },
+            { label: 'CONDITIONS', value: qs.payment_terms || 'À réception de facture' }
+          ]} />
+          <AddressBoxes shipLabel={shipLabel} shipContent={shipContent()} billContent={billContent()} />
           
-          {/* Info Bar */}
-          <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-b">
-            <div><span className="text-gray-500">Date: </span><span className="font-medium">{new Date(qd.createdAt || review.submitted_at).toLocaleDateString('fr-FR')}</span></div>
-            <div><span className="text-gray-500">Validité: </span><span className="font-medium">30 jours</span></div>
-            <div><span className="text-gray-500">Créé par: </span><span className="font-medium">{qd.signatory || qd.createdBy || review.submitted_by_name}</span></div>
-          </div>
-          
-          {/* Client */}
-          <div className="px-6 py-3 border-b">
-            <p className="text-xs text-gray-500 uppercase">Client</p>
-            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
-          </div>
-          
-          {/* Contract info if applicable */}
-          {qd.hasContractCoveredDevices && qd.contractInfo?.primaryContract && (
-            <div className="px-6 py-2 bg-green-50 border-b border-green-200">
-              <p className="text-sm text-green-700">📄 {lang === 'en' ? 'Contract' : 'Contrat'}: {qd.contractInfo.primaryContract.contract_number}</p>
-            </div>
-          )}
-          
-          {/* Per-Device Breakdown */}
-          <div className="px-6 py-4 space-y-4">
-            <h4 className="font-bold text-gray-800 text-sm uppercase tracking-wider">{lang === 'en' ? 'Services & Pricing' : 'Services & Tarification'}</h4>
-            
-            {devices.map((d, i) => {
-              const lines = [];
-              if (d.needsCalibration) lines.push({ desc: lang === 'en' ? 'Calibration' : 'Étalonnage', pn: d.calPartNumber, qty: d.calibrationQty || 1, price: d.calibrationPrice || 0 });
-              if (d.needsRepair) lines.push({ desc: lang === 'en' ? 'Repair' : 'Réparation', pn: d.repairPartNumber, qty: 1, price: d.repairPrice || 0 });
-              if (d.needsNettoyage) lines.push({ desc: lang === 'en' ? 'Cleaning' : 'Nettoyage', pn: d.nettoyagePartNumber, qty: 1, price: d.nettoyagePrice || 0 });
-              if (d.additionalParts) {
-                (Array.isArray(d.additionalParts) ? d.additionalParts : []).forEach(p => {
-                  lines.push({ desc: p.description || p.partNumber, pn: p.partNumber, qty: p.quantity || 1, price: p.unitPrice || p.price || 0 });
-                });
-              }
-              
+          {/* Service descriptions */}
+          <div className="px-8 py-4 space-y-3">
+            {deviceTypes.map(type => {
+              const tmpl = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '📦', title: `Étalonnage ${type}`, prestations: [] };
               return (
-                <div key={i} className="border rounded-lg overflow-hidden">
-                  {/* Device header */}
-                  <div className="bg-gray-50 px-4 py-2 flex justify-between items-center border-b">
-                    <div className="flex items-center gap-2">
-                      {getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-5 h-5 object-contain" />}
-                      <span className="font-bold text-[#1a1a2e]">{d.model}</span>
-                      <span className="font-mono text-xs text-gray-500">SN: {d.serial}</span>
-                      {d.isContractCovered && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">📄 Contrat</span>}
-                    </div>
-                    <span className="font-bold text-[#2D5A7B]">{(d.serviceTotal || 0).toFixed(2)} €</span>
-                  </div>
-                  {/* Service line items */}
-                  {lines.length > 0 && (
-                    <table className="w-full text-sm">
-                      <thead className="text-xs text-gray-500">
-                        <tr className="border-b bg-gray-50/50">
-                          <th className="text-left px-4 py-1.5">Description</th>
-                          <th className="text-left px-2 py-1.5">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
-                          <th className="text-center px-2 py-1.5">Qté</th>
-                          <th className="text-right px-2 py-1.5">{lang === 'en' ? 'Unit' : 'P.U.'}</th>
-                          <th className="text-right px-4 py-1.5">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lines.map((line, j) => (
-                          <tr key={j} className="border-b border-gray-50">
-                            <td className="px-4 py-1.5">{line.desc}</td>
-                            <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{line.pn || '—'}</td>
-                            <td className="px-2 py-1.5 text-center">{line.qty}</td>
-                            <td className="px-2 py-1.5 text-right">{(parseFloat(line.price) || 0).toFixed(2)} €</td>
-                            <td className="px-4 py-1.5 text-right font-medium">{((parseFloat(line.price) || 0) * (line.qty || 1)).toFixed(2)} €</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                  {lines.length === 0 && d.isContractCovered && (
-                    <div className="px-4 py-2 text-sm text-green-600 italic">{lang === 'en' ? 'Covered under contract' : 'Couvert par contrat'}</div>
-                  )}
+                <div key={type} className="border-l-4 border-blue-500 pl-3">
+                  <h3 className="font-bold text-sm text-[#1a1a2e] mb-1 flex items-center gap-1"><span>{tmpl.icon}</span> {tmpl.title}</h3>
+                  <ul className="text-xs text-gray-600 space-y-0.5">{tmpl.prestations.map((p, i) => <li key={i}>▸ {p}</li>)}</ul>
                 </div>
               );
             })}
+            {devices.some(d => d.needsRepair) && typeof REPAIR_TEMPLATE !== 'undefined' && (
+              <div className="border-l-4 border-orange-500 pl-3">
+                <h3 className="font-bold text-sm text-[#1a1a2e] mb-1 flex items-center gap-1"><span>{REPAIR_TEMPLATE.icon}</span> {REPAIR_TEMPLATE.title}</h3>
+                <ul className="text-xs text-gray-600 space-y-0.5">{REPAIR_TEMPLATE.prestations.map((p, i) => <li key={i}>▸ {p}</li>)}</ul>
+              </div>
+            )}
           </div>
           
-          {/* Totals Section */}
-          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">{lang === 'en' ? 'Services Subtotal' : 'Sous-total Services'}</span>
-              <span className="font-medium">{(qd.servicesSubtotal || 0).toFixed(2)} €</span>
-            </div>
-            {qd.shipping && (qd.shippingTotal || qd.shipping.total || 0) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">
-                  {lang === 'en' ? 'Shipping' : 'Transport'}
-                  {qd.shipping.parcels > 0 && ` (${qd.shipping.parcels} ${lang === 'en' ? 'parcels' : 'colis'} × ${(qd.shipping.unitPrice || 0).toFixed(2)} €)`}
-                  {qd.shipping.partNumber && <span className="text-xs text-gray-400 ml-1">[{qd.shipping.partNumber}]</span>}
-                </span>
-                <span className="font-medium">{(qd.shippingTotal || qd.shipping.total || 0).toFixed(2)} €</span>
-              </div>
-            )}
-            {qd.discount?.enabled && (
-              <div className="flex justify-between text-sm text-green-600">
-                <span>
-                  {lang === 'en' ? 'Discount' : 'Remise'}
-                  {qd.discount.type === 'percentage' && ` (${qd.discount.value}%)`}
-                  {qd.discount.note && ` — ${qd.discount.note}`}
-                </span>
-                <span className="font-medium">-{(qd.discountAmount || qd.discount.amount || 0).toFixed(2)} €</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold text-xl pt-2 border-t-2 border-[#2D5A7B]">
-              <span>TOTAL HT</span>
-              <span className="text-[#00A651]">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span>
-            </div>
+          {/* Pricing table */}
+          <div className="px-8 py-4 bg-gray-50">
+            <table className="w-full text-xs">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-2 py-2 text-center w-10">Qté</th>
+                <th className="px-2 py-2 text-left w-16">Réf.</th>
+                <th className="px-2 py-2 text-left">Désignation</th>
+                <th className="px-2 py-2 text-right w-16">P.U.</th>
+                <th className="px-2 py-2 text-right w-16">Total HT</th>
+              </tr></thead>
+              <tbody>
+                {devices.map((d, di) => {
+                  const rows = [];
+                  if (d.needsCalibration) rows.push({ desc: `Étalonnage ${d.model}`, pn: d.calPartNumber, qty: d.calibrationQty || 1, price: d.calibrationPrice || 0, contract: d.isContractCovered });
+                  if (d.needsRepair) rows.push({ desc: `Réparation ${d.model}`, pn: d.repairPartNumber, qty: 1, price: d.repairPrice || 0 });
+                  if (d.needsNettoyage && (d.nettoyagePrice || 0) > 0) rows.push({ desc: `Nettoyage cellule ${d.model}`, pn: d.nettoyagePartNumber, qty: d.nettoyageQty || 1, price: d.nettoyagePrice || 0 });
+                  if (d.additionalParts) (Array.isArray(d.additionalParts) ? d.additionalParts : []).forEach(p => rows.push({ desc: p.description || p.partNumber, pn: p.partNumber, qty: p.quantity || 1, price: p.unitPrice || p.price || 0 }));
+                  return rows.map((r, ri) => (
+                    <tr key={`${di}-${ri}`} className={`${r.contract ? 'bg-emerald-50' : di % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100`}>
+                      <td className="px-2 py-1.5 text-center">{r.qty}</td>
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-gray-500">{r.pn || '—'}</td>
+                      <td className="px-2 py-1.5">{r.desc} <span className="text-[10px] text-gray-400">(SN: {d.serial})</span>{r.contract && <span className="ml-1 text-[10px] text-emerald-600">📄 Contrat</span>}</td>
+                      <td className="px-2 py-1.5 text-right">{(r.price || 0).toFixed(2)} €</td>
+                      <td className="px-2 py-1.5 text-right font-medium">{((r.price || 0) * (r.qty || 1)).toFixed(2)} €</td>
+                    </tr>
+                  ));
+                })}
+                {!isClientReturn && qd.shipping && (qd.shippingTotal || qd.shipping?.total || 0) > 0 && (
+                  <tr className="bg-blue-50 border-b border-blue-100">
+                    <td className="px-2 py-1.5 text-center">{qd.shipping?.parcels || 1}</td>
+                    <td className="px-2 py-1.5 font-mono text-[10px] text-gray-500">{qd.shipping?.partNumber || 'PORT'}</td>
+                    <td className="px-2 py-1.5 text-blue-800">Frais de port</td>
+                    <td className="px-2 py-1.5 text-right">{(qd.shipping?.unitPrice || 0).toFixed(2)} €</td>
+                    <td className="px-2 py-1.5 text-right font-medium">{(qd.shippingTotal || qd.shipping?.total || 0).toFixed(2)} €</td>
+                  </tr>
+                )}
+                {qd.discount?.enabled && (
+                  <tr className="bg-green-50 border-b border-green-100">
+                    <td colSpan={4} className="px-2 py-1.5 text-right text-green-700">Remise{qd.discount.type === 'percentage' ? ` (${qd.discount.value}%)` : ''}{qd.discount.note ? ` — ${qd.discount.note}` : ''}</td>
+                    <td className="px-2 py-1.5 text-right font-medium text-green-700">-{(qd.discountAmount || qd.discount.amount || 0).toFixed(2)} €</td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot><tr className="bg-[#2D5A7B] text-white">
+                <td colSpan={4} className="px-2 py-2.5 text-right font-bold">TOTAL HT</td>
+                <td className="px-2 py-2.5 text-right font-bold text-lg">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
+              </tr></tfoot>
+            </table>
           </div>
-        </div>
+          
+          {/* Conditions */}
+          <div className="px-8 py-3 bg-[#f9fafb] border-t">
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">CONDITIONS</p>
+            <ul className="text-[10px] text-[#505050] space-y-0.5">
+              {(qs.conditions || ['Devis valable 30 jours.', 'Paiement : 30 jours fin de mois.']).map((c, i) => <li key={i}>- {c}</li>)}
+            </ul>
+          </div>
+          <SignatureBlock name={signName} />
+        </DocShell>
       );
     }
     
     // ============================================
-    // PARTS QUOTE - Full breakdown
+    // PARTS QUOTE
     // ============================================
     if (review.quote_type === 'parts') {
       const parts = qd.parts || [];
       return (
-        <div className="border rounded-xl overflow-hidden">
-          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
-            <div className="flex justify-between items-start">
-              <div>
-                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
-              </div>
-              <div className="text-right">
-                <p className="text-xl font-bold text-[#2D5A7B]">DEVIS PIÈCES</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.quoteNumber || qd.quoteRef || review.quote_number || '—'}</p>
-                <p className="text-xs text-gray-500">CDP: {qd.poNumber || review.rma_number}</p>
-              </div>
-            </div>
-          </div>
+        <DocShell>
+          <DocHeader title="OFFRE DE PRIX" number={qd.quoteNumber || qd.quoteRef || review.quote_number} subtitle={`Réf: ${qd.poNumber || review.rma_number}`} />
+          <InfoBar items={[
+            { label: 'DATE', value: qDate },
+            { label: 'VALIDITÉ', value: '30 jours' },
+            { label: 'CONDITIONS', value: 'À réception de facture' }
+          ]} />
+          <AddressBoxes shipLabel={shipLabel} shipContent={shipContent()} billContent={billContent()} />
           
-          <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-b">
-            <div><span className="text-gray-500">Date: </span><span className="font-medium">{new Date(qd.createdAt || review.submitted_at).toLocaleDateString('fr-FR')}</span></div>
-            <div><span className="text-gray-500">Créé par: </span><span className="font-medium">{qd.signatory || qd.createdBy || review.submitted_by_name}</span></div>
-          </div>
-          
-          <div className="px-6 py-3 border-b">
-            <p className="text-xs text-gray-500 uppercase">Client</p>
-            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
-          </div>
-          
-          {/* Parts Table */}
-          <div className="px-6 py-4">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-gray-200 text-xs text-gray-500">
-                  <th className="text-left py-2">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
-                  <th className="text-left py-2">Description</th>
-                  <th className="text-center py-2">Qté</th>
-                  <th className="text-right py-2">{lang === 'en' ? 'Unit Price' : 'P.U. HT'}</th>
-                  <th className="text-right py-2">Total HT</th>
-                </tr>
-              </thead>
+          <div className="px-8 py-4">
+            <h3 className="font-bold text-sm text-[#1a1a2e] mb-3">Pièces Commandées</h3>
+            <table className="w-full text-xs">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-2 py-2 text-center w-10">Qté</th>
+                <th className="px-2 py-2 text-left w-20">Réf.</th>
+                <th className="px-2 py-2 text-left">Désignation</th>
+                <th className="px-2 py-2 text-right w-16">P.U.</th>
+                <th className="px-2 py-2 text-right w-16">Total HT</th>
+              </tr></thead>
               <tbody>
                 {parts.map((p, i) => (
-                  <tr key={i} className="border-b border-gray-100">
-                    <td className="py-2 font-mono text-xs text-gray-600">{p.partNumber || '—'}</td>
-                    <td className="py-2">{p.description}</td>
-                    <td className="py-2 text-center">{p.quantity}</td>
-                    <td className="py-2 text-right">{(p.unitPrice || 0).toFixed(2)} €</td>
-                    <td className="py-2 text-right font-medium">{(p.lineTotal || (p.quantity * p.unitPrice) || 0).toFixed(2)} €</td>
+                  <tr key={i} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100`}>
+                    <td className="px-2 py-1.5 text-center">{p.quantity}</td>
+                    <td className="px-2 py-1.5 font-mono text-[10px]">{p.partNumber || '—'}</td>
+                    <td className="px-2 py-1.5">{p.description}</td>
+                    <td className="px-2 py-1.5 text-right">{(p.unitPrice || 0).toFixed(2)} €</td>
+                    <td className="px-2 py-1.5 text-right font-medium">{((p.quantity || 1) * (p.unitPrice || 0)).toFixed(2)} €</td>
                   </tr>
                 ))}
+                {!isClientReturn && qd.shipping && (qd.shipping.total || 0) > 0 && (
+                  <tr className="bg-blue-50 border-b border-blue-100">
+                    <td className="px-2 py-1.5 text-center">{qd.shipping.parcels || 1}</td>
+                    <td className="px-2 py-1.5 font-mono text-[10px]">PORT</td>
+                    <td className="px-2 py-1.5 text-blue-800">Frais de port</td>
+                    <td className="px-2 py-1.5 text-right">{(qd.shipping.unitPrice || 0).toFixed(2)} €</td>
+                    <td className="px-2 py-1.5 text-right font-medium">{(qd.shipping.total || 0).toFixed(2)} €</td>
+                  </tr>
+                )}
               </tbody>
+              <tfoot><tr className="bg-[#2D5A7B] text-white">
+                <td colSpan={4} className="px-2 py-2.5 text-right font-bold">TOTAL HT</td>
+                <td className="px-2 py-2.5 text-right font-bold text-lg">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
+              </tr></tfoot>
             </table>
           </div>
           
-          {/* Totals */}
-          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">{lang === 'en' ? 'Parts Subtotal' : 'Sous-total Pièces'}</span>
-              <span className="font-medium">{(qd.partsTotal || 0).toFixed(2)} €</span>
-            </div>
-            {qd.shipping && (qd.shippingTotal || qd.shipping.total || 0) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">
-                  {lang === 'en' ? 'Shipping' : 'Transport'}
-                  {qd.shipping.parcels > 0 && ` (${qd.shipping.parcels} colis × ${(qd.shipping.unitPrice || 0).toFixed(2)} €)`}
-                </span>
-                <span className="font-medium">{(qd.shipping.total || 0).toFixed(2)} €</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold text-xl pt-2 border-t-2 border-[#2D5A7B]">
-              <span>TOTAL HT</span>
-              <span className="text-[#00A651]">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span>
-            </div>
+          <div className="px-8 py-3 bg-[#f9fafb] border-t">
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">CONDITIONS</p>
+            <ul className="text-[10px] text-[#505050] space-y-0.5">
+              <li>- Devis valable 30 jours.</li>
+              <li>- Paiement : 30 jours fin de mois.</li>
+              <li>- Livraison : sous réserve de disponibilité.</li>
+            </ul>
           </div>
-        </div>
+          <SignatureBlock name={signName} />
+        </DocShell>
       );
     }
     
     // ============================================
-    // SUPPLEMENT / AVENANT - Full breakdown
+    // SUPPLEMENT
     // ============================================
     if (review.quote_type === 'supplement') {
       const devices = qd.devices || [];
       return (
-        <div className="border rounded-xl overflow-hidden">
-          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
-            <div className="flex justify-between items-start">
-              <div>
-                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
-              </div>
-              <div className="text-right">
-                <p className="text-xl font-bold text-[#2D5A7B]">SUPPLÉMENT AU DEVIS</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.supNumber || review.quote_number || '—'}</p>
-                <p className="text-xs text-gray-500">RMA: {qd.rmaNumber || review.rma_number}</p>
-              </div>
-            </div>
+        <DocShell>
+          <DocHeader title="SUPPLÉMENT AU DEVIS" number={qd.supNumber || review.quote_number} subtitle={`RMA: ${qd.rmaNumber || review.rma_number}`} accent="#e67e22" />
+          <InfoBar items={[
+            { label: 'DATE', value: qDate },
+            { label: 'TYPE', value: 'Travaux supplémentaires' },
+            { label: 'VALIDITÉ', value: '30 jours' }
+          ]} />
+          
+          <div className="px-8 py-2 bg-amber-50 border-b text-xs text-amber-800 font-medium">
+            ⚠ Travaux supplémentaires identifiés lors de l'intervention
           </div>
           
-          <div className="px-6 py-3 border-b">
-            <p className="text-xs text-gray-500 uppercase">Client</p>
-            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
-          </div>
-          
-          <div className="px-6 py-2 bg-amber-50 border-b border-amber-200">
-            <p className="text-sm text-amber-800">⚠ {lang === 'en' ? 'Additional work identified during service' : 'Travaux supplémentaires identifiés lors de l\'intervention'}</p>
-          </div>
-          
-          {/* Per-device breakdown */}
-          <div className="px-6 py-4 space-y-4">
+          <div className="px-8 py-4 space-y-4">
             {devices.map((d, i) => {
-              // Support both new format (additional_work_items array) and old format (additional_work_pricing object)
               let items = (d.additional_work_items || []).filter(item => !item.warranty);
-              
-              // Fallback: convert old additional_work_pricing format if new format is empty
               if (items.length === 0 && d.additional_work_pricing && typeof d.additional_work_pricing === 'object') {
                 items = Object.entries(d.additional_work_pricing).map(([key, val]) => ({
-                  description: val.description || key,
-                  partNumber: val.partNumber || val.part_number || '',
-                  part_number: val.partNumber || val.part_number || '',
-                  quantity: val.quantity || 1,
-                  price: val.price || 0
+                  description: val.description || key, partNumber: val.partNumber || val.part_number || '',
+                  quantity: val.quantity || 1, price: val.price || 0
                 }));
               }
-              
               const deviceTotal = items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1), 0);
+              const warrantyItems = (d.additional_work_items || []).filter(item => item.warranty);
               
               return (
                 <div key={i} className="border rounded-lg overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 flex justify-between items-center border-b">
                     <div className="flex items-center gap-2">
                       {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-5 h-5 object-contain" />}
-                      <span className="font-bold text-[#1a1a2e]">{d.model_name}</span>
-                      <span className="font-mono text-xs text-gray-500">SN: {d.serial_number}</span>
+                      <span className="font-bold text-sm text-[#1a1a2e]">{d.model_name}</span>
+                      <span className="font-mono text-[10px] text-gray-500">SN: {d.serial_number}</span>
                     </div>
-                    <span className="font-bold text-[#2D5A7B]">{deviceTotal.toFixed(2)} €</span>
+                    <span className="font-bold text-sm" style={{ color: accentBlue }}>{deviceTotal.toFixed(2)} €</span>
                   </div>
-                  
                   {d.service_findings && (
-                    <div className="px-4 py-2 bg-blue-50 border-b text-sm">
-                      <span className="text-xs text-gray-500 uppercase font-medium">{lang === 'en' ? 'Findings' : 'Constatations'}:</span>
+                    <div className="px-4 py-2 bg-blue-50 border-b text-xs">
+                      <span className="text-gray-500 uppercase font-medium text-[10px]">Constatations:</span>
                       <p className="text-gray-700 italic">{d.service_findings}</p>
                     </div>
                   )}
-                  
                   {items.length > 0 && (
-                    <table className="w-full text-sm">
-                      <thead className="text-xs text-gray-500">
-                        <tr className="border-b bg-gray-50/50">
-                          <th className="text-left px-4 py-1.5">Description</th>
-                          <th className="text-left px-2 py-1.5">{lang === 'en' ? 'Part #' : 'Réf.'}</th>
-                          <th className="text-center px-2 py-1.5">Qté</th>
-                          <th className="text-right px-4 py-1.5">{lang === 'en' ? 'Price' : 'Prix'} HT</th>
-                        </tr>
-                      </thead>
+                    <table className="w-full text-xs">
+                      <thead><tr className="border-b bg-gray-50/50 text-[10px] text-gray-500">
+                        <th className="text-left px-4 py-1.5">Description</th>
+                        <th className="text-left px-2 py-1.5">Réf.</th>
+                        <th className="text-center px-2 py-1.5">Qté</th>
+                        <th className="text-right px-4 py-1.5">Prix HT</th>
+                      </tr></thead>
                       <tbody>
                         {items.map((item, idx) => (
                           <tr key={idx} className="border-b border-gray-50">
                             <td className="px-4 py-1.5">{item.description || item.type || '—'}</td>
-                            <td className="px-2 py-1.5 font-mono text-xs text-gray-500">{item.partNumber || item.part_number || '—'}</td>
+                            <td className="px-2 py-1.5 font-mono text-[10px] text-gray-500">{item.partNumber || item.part_number || '—'}</td>
                             <td className="px-2 py-1.5 text-center">{item.quantity || 1}</td>
                             <td className="px-4 py-1.5 text-right font-medium">{((parseFloat(item.price) || 0) * (parseInt(item.quantity) || 1)).toFixed(2)} €</td>
                           </tr>
@@ -5362,29 +5438,10 @@ const renderQuotePreview = (review) => {
                       </tbody>
                     </table>
                   )}
-                  
-                  {/* Warranty items shown separately */}
-                  {(d.additional_work_items || []).filter(item => item.warranty).length > 0 && (
+                  {warrantyItems.length > 0 && (
                     <div className="px-4 py-2 bg-green-50 border-t">
-                      <p className="text-xs text-green-700 font-medium mb-1">{lang === 'en' ? 'Under Warranty' : 'Sous Garantie'}</p>
-                      {(d.additional_work_items || []).filter(item => item.warranty).map((item, idx) => (
-                        <p key={idx} className="text-sm text-green-600">✓ {item.description || item.type}</p>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {/* Debug: show raw data if no items found */}
-                  {items.length === 0 && (
-                    <div className="px-4 py-2 bg-yellow-50 border-t text-xs">
-                      <p className="font-medium text-yellow-800 mb-1">⚠ {lang === 'en' ? 'No pricing items found' : 'Aucun élément tarifaire trouvé'}</p>
-                      <details>
-                        <summary className="cursor-pointer text-yellow-600">Debug data</summary>
-                        <pre className="text-xs text-gray-500 mt-1 whitespace-pre-wrap">{JSON.stringify({
-                          additional_work_items: d.additional_work_items,
-                          additional_work_pricing: d.additional_work_pricing,
-                          keys: Object.keys(d)
-                        }, null, 2)}</pre>
-                      </details>
+                      <p className="text-[10px] text-green-700 font-medium mb-0.5">Sous Garantie</p>
+                      {warrantyItems.map((item, idx) => <p key={idx} className="text-xs text-green-600">✓ {item.description || item.type}</p>)}
                     </div>
                   )}
                 </div>
@@ -5392,14 +5449,14 @@ const renderQuotePreview = (review) => {
             })}
           </div>
           
-          {/* Total */}
-          <div className="border-t bg-[#2D5A7B] px-6 py-4">
+          <div className="bg-[#e67e22] px-8 py-3">
             <div className="flex justify-between items-center text-white">
-              <span className="text-lg font-bold">TOTAL SUPPLÉMENT HT</span>
-              <span className="text-2xl font-bold">{(qd.avenantTotal || review.total_amount || 0).toFixed(2)} €</span>
+              <span className="font-bold">TOTAL SUPPLÉMENT HT</span>
+              <span className="text-xl font-bold">{(qd.avenantTotal || review.total_amount || 0).toFixed(2)} €</span>
             </div>
           </div>
-        </div>
+          <SignatureBlock name={signName} />
+        </DocShell>
       );
     }
     
@@ -5408,71 +5465,96 @@ const renderQuotePreview = (review) => {
     // ============================================
     if (review.quote_type === 'contract') {
       const devices = qd.devices || [];
+      const startDate = qd.contractDates?.start_date ? new Date(qd.contractDates.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+      const endDate = qd.contractDates?.end_date ? new Date(qd.contractDates.end_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+      const deviceTypes = [...new Set(devices.map(d => d.deviceType).filter(Boolean))];
+      const hasNettoyage = devices.some(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0);
+      
       return (
-        <div className="border rounded-xl overflow-hidden">
-          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
-            <div className="flex justify-between items-start">
-              <div>
-                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 object-contain" />
-              </div>
-              <div className="text-right">
-                <p className="text-xl font-bold text-[#2D5A7B]">DEVIS CONTRAT</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.contractNumber || review.quote_number || '—'}</p>
-              </div>
+        <DocShell accent={accentGreen}>
+          <DocHeader title="DEVIS CONTRAT" number={qd.contractNumber || review.quote_number} accent={accentGreen} />
+          <InfoBar items={[
+            { label: 'DATE', value: qDate },
+            { label: 'PÉRIODE', value: `${startDate} — ${endDate}` },
+            { label: 'VALIDITÉ', value: '30 jours' }
+          ]} />
+          
+          {/* Billing address */}
+          <div className="px-8 py-3 border-b">
+            <div className="border-2 rounded p-2.5" style={{ borderColor: `${accentGreen}80` }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: accentGreen }}>FACTURER À</p>
+              <p className="font-bold text-sm text-[#1a1a2e]">{review.client_name || 'Client'}</p>
+              {qd.clientAddress && <p className="text-xs text-gray-600">{qd.clientAddress}</p>}
+              {(qd.clientPostalCode || qd.clientCity) && <p className="text-xs text-gray-600">{[qd.clientPostalCode, qd.clientCity].filter(Boolean).join(' ')}</p>}
             </div>
           </div>
           
-          <div className="px-6 py-3 border-b">
-            <p className="text-xs text-gray-500 uppercase">Client</p>
-            <p className="font-bold text-[#1a1a2e]">{review.client_name}</p>
+          {/* Service descriptions */}
+          <div className="px-8 py-4 space-y-3">
+            {deviceTypes.map(type => {
+              const tmpl = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '📦', title: `Étalonnage ${type}`, prestations: [] };
+              return (
+                <div key={type} className="border-l-4 border-blue-500 pl-3">
+                  <h3 className="font-bold text-sm text-[#1a1a2e] mb-1 flex items-center gap-1"><span>{tmpl.icon}</span> {tmpl.title}</h3>
+                  <ul className="text-xs text-gray-600 space-y-0.5">{tmpl.prestations.map((p, i) => <li key={i}>▸ {p}</li>)}</ul>
+                </div>
+              );
+            })}
           </div>
           
-          {qd.contractDates && (
-            <div className="px-6 py-2 bg-blue-50 border-b text-sm flex gap-6">
-              <div><span className="text-gray-500">{lang === 'en' ? 'Start' : 'Début'}: </span><span className="font-medium">{qd.contractDates.start_date}</span></div>
-              <div><span className="text-gray-500">{lang === 'en' ? 'End' : 'Fin'}: </span><span className="font-medium">{qd.contractDates.end_date}</span></div>
-              {qd.totalTokens > 0 && <div><span className="text-gray-500">Tokens: </span><span className="font-medium">{qd.totalTokens}</span></div>}
-            </div>
-          )}
-          
-          {/* Devices */}
-          <div className="px-6 py-4">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-gray-200 text-xs text-gray-500">
-                  <th className="text-left py-2">{lang === 'en' ? 'Device' : 'Appareil'}</th>
-                  <th className="text-left py-2">SN</th>
-                  <th className="text-center py-2">Tokens</th>
-                  <th className="text-left py-2">Services</th>
-                  <th className="text-right py-2">{lang === 'en' ? 'Price' : 'Prix'} HT</th>
-                </tr>
-              </thead>
+          {/* Pricing table */}
+          <div className="px-8 py-4 bg-gray-50">
+            <table className="w-full text-xs">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-2 py-2 text-center w-10">Qté</th>
+                <th className="px-2 py-2 text-left">Désignation</th>
+                <th className="px-2 py-2 text-right w-16">Prix Unit.</th>
+                <th className="px-2 py-2 text-right w-16">Total HT</th>
+              </tr></thead>
               <tbody>
-                {devices.map((d, i) => (
-                  <tr key={i} className="border-b border-gray-100">
-                    <td className="py-2 flex items-center gap-2">
-                      {getDeviceImageUrl(d.model) && <img src={getDeviceImageUrl(d.model)} alt="" className="w-4 h-4 object-contain" />}
-                      {d.model}
-                    </td>
-                    <td className="py-2 font-mono text-xs text-gray-500">{d.serial}</td>
-                    <td className="py-2 text-center">{d.tokens_total || '—'}</td>
-                    <td className="py-2 text-xs text-gray-600">
-                      {d.needsCalibration && <span className="mr-1">🔬 {(d.calibrationPrice || 0).toFixed(0)}€</span>}
-                      {d.needsNettoyage && <span>🧹 {(d.nettoyagePrice || 0).toFixed(0)}€</span>}
-                    </td>
-                    <td className="py-2 text-right font-medium">{(d.calibrationPrice || 0).toFixed(2)} €</td>
-                  </tr>
-                ))}
+                {devices.map((d, i) => {
+                  const rows = [];
+                  if (d.needsCalibration) rows.push(<tr key={`${i}-cal`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-2 py-1.5 text-center">{d.tokens_total || 1}</td>
+                    <td className="px-2 py-1.5">Étalonnage {d.model} <span className="text-[10px] text-gray-400">(SN: {d.serial})</span></td>
+                    <td className="px-2 py-1.5 text-right">{(d.calibrationPrice || 0).toFixed(2)} €</td>
+                    <td className="px-2 py-1.5 text-right font-medium">{((d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
+                  </tr>);
+                  if (d.needsNettoyage && (d.nettoyagePrice || 0) > 0) rows.push(<tr key={`${i}-nett`} className="bg-amber-50">
+                    <td className="px-2 py-1.5 text-center">{d.nettoyageQty || 1}</td>
+                    <td className="px-2 py-1.5"><span className="text-amber-800">Nettoyage cellule</span> <span className="text-[10px] text-amber-600">- si requis ({d.model})</span></td>
+                    <td className="px-2 py-1.5 text-right">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
+                    <td className="px-2 py-1.5 text-right font-medium">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
+                  </tr>);
+                  return rows;
+                })}
+                <tr className="bg-blue-50">
+                  <td className="px-2 py-1.5 text-center">{qd.shipping?.parcels || 1}</td>
+                  <td className="px-2 py-1.5 text-blue-800">Frais de port</td>
+                  <td className="px-2 py-1.5 text-right">{(qd.shipping?.unitPrice || qd.shippingTotal || 0).toFixed(2)} €</td>
+                  <td className="px-2 py-1.5 text-right font-medium">{(qd.shippingTotal || 0).toFixed(2)} €</td>
+                </tr>
               </tbody>
+              <tfoot><tr className="bg-[#00A651] text-white">
+                <td colSpan={3} className="px-2 py-2.5 text-right font-bold">TOTAL HT</td>
+                <td className="px-2 py-2.5 text-right font-bold text-lg">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</td>
+              </tr></tfoot>
             </table>
+            {hasNettoyage && <p className="text-[10px] text-gray-500 mt-2 italic">* Le nettoyage sera facturé si nécessaire selon l'état du capteur.</p>}
           </div>
           
-          <div className="border-t bg-gray-50 px-6 py-4 space-y-1.5">
-            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Services' : 'Services'}</span><span className="font-medium">{(qd.servicesSubtotal || 0).toFixed(2)} €</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-600">{lang === 'en' ? 'Shipping' : 'Transport'}</span><span className="font-medium">{(qd.shippingTotal || 0).toFixed(2)} €</span></div>
-            <div className="flex justify-between font-bold text-xl pt-2 border-t-2 border-[#2D5A7B]"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.grandTotal || review.total_amount || 0).toFixed(2)} €</span></div>
+          <div className="px-8 py-3 bg-[#f9fafb] border-t">
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">CONDITIONS</p>
+            <ul className="text-[10px] text-[#505050] space-y-0.5">
+              <li>- Période du contrat: {startDate} au {endDate}</li>
+              <li>- {qd.totalTokens || 0} étalonnage(s) inclus pendant la période contractuelle</li>
+              <li>- Étalonnages supplémentaires facturés au tarif standard</li>
+              <li>- Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables</li>
+              <li>- Paiement à 30 jours date de facture</li>
+            </ul>
           </div>
-        </div>
+          <SignatureBlock name={signName} />
+        </DocShell>
       );
     }
     
@@ -5483,78 +5565,84 @@ const renderQuotePreview = (review) => {
       const items = qd.quoteItems || qd.items || [];
       const period = qd.rentalPeriod || {};
       const rentalDays = period.days || items[0]?.rental_days || '—';
+      const startDate = period.start ? new Date(period.start).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+      const endDate = period.end ? new Date(period.end).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+      
       return (
-        <div className="border rounded-xl overflow-hidden">
-          <div className="px-6 pt-6 pb-3 border-b-4 border-[#2D5A7B]">
-            <div className="flex justify-between items-start">
-              <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-12 object-contain" />
-              <div className="text-right">
-                <p className="text-xl font-bold text-[#2D5A7B]">DEVIS LOCATION</p>
-                <p className="text-sm font-bold text-[#2D5A7B]">N° {qd.rentalNumber || review.quote_number || '—'}</p>
-              </div>
-            </div>
+        <DocShell accent="#8B5CF6">
+          <DocHeader title="DEVIS LOCATION" number={qd.rentalNumber || review.quote_number} accent="#8B5CF6" />
+          <InfoBar items={[
+            { label: 'DATE', value: qDate },
+            { label: 'PÉRIODE', value: `${startDate} — ${endDate} (${rentalDays}j)` },
+            { label: 'VALIDITÉ', value: '30 jours' }
+          ]} />
+          <AddressBoxes shipLabel={shipLabel} shipContent={shipContent()} billContent={billContent()} accent="#8B5CF6" />
+          
+          {/* Equipment table */}
+          <div className="px-8 py-4">
+            <h3 className="font-bold text-sm text-[#1a1a2e] mb-3">Équipements en Location</h3>
+            <table className="w-full text-xs">
+              <thead><tr className="bg-[#1a1a2e] text-white">
+                <th className="px-2 py-2 text-left">Équipement</th>
+                <th className="px-2 py-2 text-left w-24">S/N</th>
+                <th className="px-2 py-2 text-center w-12">Jours</th>
+                <th className="px-2 py-2 text-right w-16">Tarif/j</th>
+                <th className="px-2 py-2 text-right w-20">Valeur Neuf</th>
+                <th className="px-2 py-2 text-right w-16">Total HT</th>
+              </tr></thead>
+              <tbody>
+                {items.map((item, i) => (
+                  <tr key={i} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100`}>
+                    <td className="px-2 py-1.5 font-medium">{item.item_name || '—'}</td>
+                    <td className="px-2 py-1.5 font-mono text-[10px] text-gray-500">{item.serial_number || '—'}</td>
+                    <td className="px-2 py-1.5 text-center">{item.rental_days || rentalDays}</td>
+                    <td className="px-2 py-1.5 text-right">{(parseFloat(item.applied_rate) || 0).toFixed(2)} €</td>
+                    <td className="px-2 py-1.5 text-right text-gray-500">{(parseFloat(item.retail_value) || 0).toFixed(2)} €</td>
+                    <td className="px-2 py-1.5 text-right font-medium">{(parseFloat(item.line_total) || 0).toFixed(2)} €</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
           
-          <div className="px-6 py-3 border-b bg-gray-50 flex justify-between">
-            <div><p className="text-xs text-gray-500 uppercase">Client</p><p className="font-bold text-[#1a1a2e]">{review.client_name}</p></div>
-            <div className="text-right"><p className="text-xs text-gray-500 uppercase">Validité</p><p className="font-medium">30 jours</p></div>
-          </div>
-          
-          {(period.start || period.end) && (
-            <div className="px-6 py-2 bg-blue-50 border-b text-sm">
-              <span className="font-medium text-blue-800">📅 Période :</span> {period.start ? new Date(period.start).toLocaleDateString('fr-FR') : '—'} au {period.end ? new Date(period.end).toLocaleDateString('fr-FR') : '—'} ({rentalDays} jours)
-            </div>
-          )}
-          
-          {/* Equipment details */}
-          {items.map((item, i) => (
-            <div key={i} className="px-6 py-4 border-b">
-              <p className="font-bold text-[#1a1a2e]">Location {item.item_name || '—'}</p>
-              {item.specs && <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">{item.specs}</p>}
-              <div className="flex justify-between mt-2 pt-2 border-t border-dashed text-sm">
-                <span className="text-gray-600">Prix de location ({rentalDays} jours)</span>
-                <span className="font-bold">{(parseFloat(item.line_total) || 0).toFixed(2)} € HT</span>
-              </div>
-              {(item.retail_value || 0) > 0 && (
-                <div className="flex justify-between text-xs text-gray-400"><span>Valeur neuf</span><span>{parseFloat(item.retail_value).toFixed(2)} € HT</span></div>
-              )}
-            </div>
-          ))}
-
           {/* Totals */}
-          <div className="px-6 py-4 bg-gray-50 space-y-1.5">
+          <div className="px-8 py-3 bg-gray-50 border-t space-y-1">
             {(qd.discount || 0) > 0 && <>
-              <div className="flex justify-between text-sm"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
-              <div className="flex justify-between text-sm text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
+              <div className="flex justify-between text-xs"><span>Sous-total</span><span>{(qd.subtotalBeforeDiscount || 0).toFixed(2)} €</span></div>
+              <div className="flex justify-between text-xs text-green-600"><span>Remise {qd.discountType === 'percent' ? `(${qd.discount}%)` : '(forfait)'}</span><span>-{(qd.discountAmount || 0).toFixed(2)} €</span></div>
             </>}
-            {(qd.shipping || 0) > 0 && <div className="flex justify-between text-sm"><span>Transport</span><span>{(qd.shipping || 0).toFixed(2)} €</span></div>}
-            <div className="flex justify-between font-bold text-lg pt-2 border-t"><span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span></div>
-            <div className="flex justify-between text-sm text-gray-500"><span>TTC ({qd.taxRate || 20}%)</span><span>{(qd.totalTTC || 0).toFixed(2)} €</span></div>
+            {(qd.shipping || 0) > 0 && <div className="flex justify-between text-xs"><span>Transport</span><span>{(qd.shipping || 0).toFixed(2)} €</span></div>}
+            <div className="flex justify-between font-bold text-lg pt-2 border-t-2 border-[#8B5CF6]">
+              <span>TOTAL HT</span><span className="text-[#00A651]">{(qd.totalHT || review.total_amount || 0).toFixed(2)} €</span>
+            </div>
+            {(qd.totalRetailValue || 0) > 0 && <div className="flex justify-between text-xs text-gray-500"><span>Valeur totale à assurer</span><span>{(qd.totalRetailValue).toFixed(2)} € HT</span></div>}
           </div>
-
-          {/* Insurance conditions */}
-          <div className="px-6 py-4 border-t">
-            <p className="font-bold text-xs text-gray-800 mb-1">Conditions d'assurance</p>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client. 
-              L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état. 
+          
+          {/* Insurance & conditions */}
+          <div className="px-8 py-3 bg-[#f9fafb] border-t">
+            <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">CONDITIONS D'ASSURANCE</p>
+            <p className="text-[10px] text-[#505050] leading-relaxed">
+              Pendant la durée de la location, l'appareil reste la propriété de Lighthouse France et devient sous la responsabilité du client.
+              L'appareil doit être entreposé dans ses conditions normales d'exploitation et restitué en parfait état.
               Tout incident doit nous être communiqué sous 48h. Le client s'engage à souscrire une assurance prenant en compte le "Bien Confié".
             </p>
-            {(qd.totalRetailValue || 0) > 0 && <p className="text-xs font-medium text-gray-700 mt-1">Valeur à assurer : {(qd.totalRetailValue).toFixed(2)} € HT</p>}
           </div>
-
-          {/* Terms */}
-          <div className="px-6 py-3 border-t text-xs text-gray-500 flex justify-between">
+          <div className="px-8 py-2 border-t text-xs text-gray-500 flex justify-between">
             <span>Livraison : {qd.deliveryTerms || '—'}</span>
             <span>Paiement : {qd.paymentTerms || '—'}</span>
           </div>
-
-          {qd.notes && <div className="px-6 py-3 bg-amber-50 border-t text-sm"><span className="font-medium">Notes :</span> {qd.notes}</div>}
-        </div>
+          {qd.buybackClause && (
+            <div className="px-8 py-2 bg-purple-50 border-t text-xs text-purple-700">
+              💰 Option de rachat disponible à {qd.buybackPercent || 50}% de la valeur neuf
+            </div>
+          )}
+          {qd.notes && <div className="px-8 py-2 bg-amber-50 border-t text-xs"><span className="font-medium">Notes :</span> {qd.notes}</div>}
+          <SignatureBlock name={signName} />
+        </DocShell>
       );
     }
     
-    // Generic fallback - show raw data
+    // Generic fallback
     return (
       <div className="bg-gray-50 rounded-lg p-4">
         <pre className="text-xs text-gray-600 whitespace-pre-wrap">{JSON.stringify(qd, null, 2)}</pre>
@@ -5656,145 +5744,158 @@ const renderQuotePreview = (review) => {
         </div>
       )}
 
-      {/* Review Detail Modal */}
+      {/* Review Detail Modal - Split Screen like BC Review */}
       {selectedReview && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => { setSelectedReview(null); setRejecting(null); setRejectionNotes(''); }}>
-          <div className="bg-white rounded-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={() => { setSelectedReview(null); setRejecting(null); setRejectionNotes(''); }}>
+          <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div className="px-6 py-4 border-b bg-[#1a1a2e] text-white flex justify-between items-center">
+            <div className="px-6 py-3 bg-[#1a1a2e] text-white flex justify-between items-center flex-shrink-0">
               <div>
                 <h2 className="text-lg font-bold">{lang === 'en' ? 'Quote Review' : 'Vérification du Devis'}</h2>
                 <p className="text-sm text-gray-300">
                   {selectedReview.rma_number} • {selectedReview.client_name} • <span className={`px-2 py-0.5 rounded text-xs ${getTypeColor(selectedReview.quote_type)}`}>{getTypeLabel(selectedReview.quote_type)}</span>
                 </p>
               </div>
-              <button onClick={() => { setSelectedReview(null); setRejecting(null); setRejectionNotes(''); }} className="text-white/60 hover:text-white text-2xl">×</button>
+              <button onClick={() => { setSelectedReview(null); setRejecting(null); setRejectionNotes(''); }} className="text-white/60 hover:text-white text-3xl">&times;</button>
             </div>
             
-            {/* Content */}
-            <div className="p-6 overflow-y-auto flex-1">
-              {/* Submitter info */}
-              <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 rounded-lg">
-                <span className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center text-sm">👤</span>
-                <div>
-                  <p className="font-medium text-blue-800">{lang === 'en' ? 'Submitted by' : 'Soumis par'}: {selectedReview.submitted_by_name}</p>
-                  <p className="text-xs text-blue-600">{selectedReview.submitted_at ? new Date(selectedReview.submitted_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : ''}</p>
-                </div>
+            {/* Split Content */}
+            <div className="flex-1 overflow-hidden flex">
+              {/* LEFT: Full Quote Preview */}
+              <div className="flex-1 bg-gray-200 overflow-y-auto p-6">
+                {renderQuotePreview(selectedReview)}
               </div>
-
-              {/* Rejection notes if already rejected */}
-              {selectedReview.status === 'rejected' && selectedReview.rejection_notes && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="font-medium text-red-800">❌ {lang === 'en' ? 'Rejected' : 'Rejeté'}: {selectedReview.rejection_notes}</p>
-                  <p className="text-xs text-red-600">{lang === 'en' ? 'By' : 'Par'}: {selectedReview.reviewed_by_name} — {selectedReview.reviewed_at ? new Date(selectedReview.reviewed_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : ''}</p>
-                </div>
-              )}
-
-              {/* Approved info */}
-              {selectedReview.status === 'approved' && (
-                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="font-medium text-green-800">✅ {lang === 'en' ? 'Approved' : 'Approuvé'}</p>
-                  <p className="text-xs text-green-600">{lang === 'en' ? 'By' : 'Par'}: {selectedReview.reviewed_by_name} — {selectedReview.reviewed_at ? new Date(selectedReview.reviewed_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : ''}</p>
-                </div>
-              )}
-
-              {/* Quote preview */}
-              {renderQuotePreview(selectedReview)}
               
-              {/* Modification request input */}
-              {rejecting === selectedReview.id && selectedReview.quote_type === 'supplement' ? (
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
-                  <p className="font-medium text-amber-800">✏️ {lang === 'en' ? 'Select devices that need correction:' : 'Sélectionnez les appareils à corriger :'}</p>
+              {/* RIGHT: Review Panel */}
+              <div className="w-[380px] flex flex-col border-l bg-white flex-shrink-0">
+                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                  {/* Summary Card */}
+                  <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2D5A7B] rounded-xl p-4 text-white">
+                    <p className="text-xs text-gray-300 uppercase tracking-wider mb-1">Total du Devis</p>
+                    <p className="text-3xl font-bold">{(selectedReview.total_amount || 0).toFixed(2)} €</p>
+                    <p className="text-xs text-gray-400 mt-1">HT</p>
+                  </div>
                   
-                  {/* Per-device notes */}
-                  {(selectedReview.quote_data?.devices || []).map(d => (
-                    <div key={d.id} className="bg-white rounded-lg border border-amber-200 p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-5 h-5 object-contain" />}
-                        <span className="font-bold text-sm">{d.model_name}</span>
-                        <span className="font-mono text-xs text-gray-500">SN: {d.serial_number}</span>
+                  {/* Info */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                      <span className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center text-sm">👤</span>
+                      <div>
+                        <p className="font-medium text-blue-800 text-sm">{lang === 'en' ? 'Submitted by' : 'Soumis par'}</p>
+                        <p className="text-xs text-blue-600">{selectedReview.submitted_by_name}</p>
+                        <p className="text-[10px] text-blue-500">{selectedReview.submitted_at ? new Date(selectedReview.submitted_at).toLocaleString('fr-FR') : ''}</p>
                       </div>
+                    </div>
+                    
+                    {selectedReview.device_summary && (
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">{lang === 'en' ? 'Devices' : 'Appareils'}</p>
+                        <p className="text-xs text-gray-700">{selectedReview.device_summary}</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Status messages */}
+                  {selectedReview.status === 'approved' && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="font-medium text-green-800 text-sm">✅ {lang === 'en' ? 'Approved' : 'Approuvé'}</p>
+                      <p className="text-xs text-green-600">{lang === 'en' ? 'By' : 'Par'}: {selectedReview.reviewed_by_name}</p>
+                      <p className="text-[10px] text-green-500">{selectedReview.reviewed_at ? new Date(selectedReview.reviewed_at).toLocaleString('fr-FR') : ''}</p>
+                    </div>
+                  )}
+                  
+                  {selectedReview.status === 'rejected' && selectedReview.rejection_notes && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="font-medium text-red-800 text-sm">❌ {lang === 'en' ? 'Rejected' : 'Rejeté'}</p>
+                      <p className="text-xs text-red-700 mt-1">{selectedReview.rejection_notes}</p>
+                      <p className="text-[10px] text-red-500 mt-1">{lang === 'en' ? 'By' : 'Par'}: {selectedReview.reviewed_by_name}</p>
+                    </div>
+                  )}
+                  
+                  {/* Rejection form */}
+                  {rejecting === selectedReview.id && selectedReview.quote_type === 'supplement' ? (
+                    <div className="space-y-3">
+                      <p className="font-medium text-amber-800 text-sm">✏️ {lang === 'en' ? 'Select devices to correct:' : 'Appareils à corriger :'}</p>
+                      {(selectedReview.quote_data?.devices || []).map(d => (
+                        <div key={d.id} className="bg-amber-50 rounded-lg border border-amber-200 p-3 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            {getDeviceImageUrl(d.model_name) && <img src={getDeviceImageUrl(d.model_name)} alt="" className="w-4 h-4 object-contain" />}
+                            <span className="font-bold text-xs">{d.model_name}</span>
+                            <span className="font-mono text-[10px] text-gray-500">SN: {d.serial_number}</span>
+                          </div>
+                          <textarea
+                            value={supplementDeviceNotes[d.id] || ''}
+                            onChange={e => setSupplementDeviceNotes(prev => ({ ...prev, [d.id]: e.target.value }))}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-amber-200 rounded text-xs focus:ring-2 focus:ring-amber-400"
+                            placeholder={lang === 'en' ? 'What needs to change? (blank = skip)' : 'Que modifier ? (vide = ignorer)'}
+                          />
+                        </div>
+                      ))}
+                      <div>
+                        <p className="text-[10px] text-amber-600 mb-1">{lang === 'en' ? 'General note (optional):' : 'Note générale (optionnel) :'}</p>
+                        <textarea
+                          value={rejectionNotes}
+                          onChange={e => setRejectionNotes(e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 border border-amber-300 rounded text-xs focus:ring-2 focus:ring-amber-400"
+                          placeholder={lang === 'en' ? 'General notes...' : 'Notes générales...'}
+                        />
+                      </div>
+                    </div>
+                  ) : rejecting === selectedReview.id && (
+                    <div className="space-y-3">
+                      <p className="font-medium text-amber-800 text-sm">✏️ {lang === 'en' ? 'What needs to change?' : 'Que faut-il modifier ?'}</p>
                       <textarea
-                        value={supplementDeviceNotes[d.id] || ''}
-                        onChange={e => setSupplementDeviceNotes(prev => ({ ...prev, [d.id]: e.target.value }))}
-                        rows={2}
-                        className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-400"
-                        placeholder={lang === 'en' ? 'What needs to change on this device? (leave blank to skip)' : 'Que faut-il modifier sur cet appareil ? (laisser vide pour ignorer)'}
+                        value={rejectionNotes}
+                        onChange={e => setRejectionNotes(e.target.value)}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-amber-300 rounded text-sm focus:ring-2 focus:ring-amber-400"
+                        placeholder={lang === 'en' ? 'Describe corrections needed...' : 'Décrivez les corrections nécessaires...'}
+                        autoFocus
                       />
                     </div>
-                  ))}
-                  
-                  {/* General note */}
-                  <div>
-                    <p className="text-xs text-amber-600 mb-1">{lang === 'en' ? 'General note (optional):' : 'Note générale (optionnel) :'}</p>
-                    <textarea
-                      value={rejectionNotes}
-                      onChange={e => setRejectionNotes(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400"
-                      placeholder={lang === 'en' ? 'General correction notes...' : 'Notes de correction générales...'}
-                    />
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => rejectQuote(selectedReview)}
-                      disabled={processing || (!rejectionNotes.trim() && !Object.values(supplementDeviceNotes).some(n => n?.trim()))}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
-                    >
-                      {processing ? '...' : (lang === 'en' ? '✏️ Send Back to Technician' : '✏️ Renvoyer au Technicien')}
-                    </button>
-                    <button onClick={() => { setRejecting(null); setRejectionNotes(''); setSupplementDeviceNotes({}); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-                      {lang === 'en' ? 'Cancel' : 'Annuler'}
-                    </button>
-                  </div>
+                  )}
                 </div>
-              ) : rejecting === selectedReview.id && (
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
-                  <p className="font-medium text-amber-800">✏️ {lang === 'en' ? 'What needs to be changed?' : 'Que faut-il modifier ?'}</p>
-                  <textarea
-                    value={rejectionNotes}
-                    onChange={e => setRejectionNotes(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400"
-                    placeholder={lang === 'en' ? 'Describe what needs to be corrected...' : 'Décrivez ce qui doit être corrigé...'}
-                    autoFocus
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => rejectQuote(selectedReview)}
-                      disabled={processing || !rejectionNotes.trim()}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
-                    >
-                      {processing ? '...' : (lang === 'en' ? '✏️ Send Back for Correction' : '✏️ Renvoyer pour Correction')}
-                    </button>
-                    <button onClick={() => { setRejecting(null); setRejectionNotes(''); }} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-                      {lang === 'en' ? 'Cancel' : 'Annuler'}
-                    </button>
+                
+                {/* Action Buttons - pinned bottom */}
+                {selectedReview.status === 'pending' && (
+                  <div className="p-4 border-t bg-gray-50 space-y-2 flex-shrink-0">
+                    {rejecting === selectedReview.id ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => rejectQuote(selectedReview)}
+                          disabled={processing || (selectedReview.quote_type === 'supplement' ? (!rejectionNotes.trim() && !Object.values(supplementDeviceNotes).some(n => n?.trim())) : !rejectionNotes.trim())}
+                          className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium text-sm disabled:opacity-50"
+                        >
+                          {processing ? '...' : (lang === 'en' ? '✏️ Send Back' : '✏️ Renvoyer')}
+                        </button>
+                        <button onClick={() => { setRejecting(null); setRejectionNotes(''); setSupplementDeviceNotes({}); }} className="px-4 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">
+                          {lang === 'en' ? 'Cancel' : 'Annuler'}
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => approveQuote(selectedReview)}
+                          disabled={processing}
+                          className="w-full px-6 py-3 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold text-lg disabled:opacity-50"
+                        >
+                          {processing ? (lang === 'en' ? '⏳ Processing...' : '⏳ En cours...') : (lang === 'en' ? '✅ Approve & Send' : '✅ Approuver & Envoyer')}
+                        </button>
+                        <button
+                          onClick={() => setRejecting(selectedReview.id)}
+                          disabled={processing}
+                          className="w-full px-4 py-2.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg font-medium disabled:opacity-50"
+                        >
+                          ✏️ {lang === 'en' ? 'Request Modification' : 'Demander Modification'}
+                        </button>
+                      </>
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
-            
-            {/* Footer actions - only for pending */}
-            {selectedReview.status === 'pending' && rejecting !== selectedReview.id && (
-              <div className="px-6 py-4 border-t bg-gray-50 flex justify-between items-center">
-                <button
-                  onClick={() => setRejecting(selectedReview.id)}
-                  disabled={processing}
-                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50"
-                >
-                  ✏️ {lang === 'en' ? 'Request Modification' : 'Demander Modification'}
-                </button>
-                <button
-                  onClick={() => approveQuote(selectedReview)}
-                  disabled={processing}
-                  className="px-6 py-2.5 bg-[#00A651] hover:bg-[#008f45] text-white rounded-lg font-bold disabled:opacity-50"
-                >
-                  {processing ? (lang === 'en' ? 'Processing...' : 'En cours...') : (lang === 'en' ? '✅ Approve & Send' : '✅ Approuver & Envoyer')}
-                </button>
+                )}
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
@@ -12150,16 +12251,8 @@ function AvenantPreviewModal({ rma, devices, onClose, notify, reload, alreadySen
   const sendAvenant = async () => {
     setSending(true);
     try {
-      // 0. Get SUP document number
+      // NOTE: SUP document number is generated on APPROVAL, not on submit to review
       let supNumber = null;
-      try {
-        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'SUP' });
-        if (!docNumError && docNumData) {
-          supNumber = docNumData;
-        }
-      } catch (e) {
-        console.error('Could not generate SUP number:', e);
-      }
       
       // Calculate total for the supplement
       let avenantTotal = 0;
@@ -14930,6 +15023,13 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, businessSet
   
   const signatory = profile?.full_name || 'Lighthouse France';
   const today = new Date();
+  const returnShipping = order?.return_shipping || 'standard';
+  const isClientReturn = returnShipping === 'own_label' || returnShipping === 'pickup';
+  
+  // Address states for preview
+  const [previewBillingAddr, setPreviewBillingAddr] = useState(null);
+  const [previewShippingAddr, setPreviewShippingAddr] = useState(null);
+  const [previewSubmitter, setPreviewSubmitter] = useState(null);
   
   // Generate quote reference
   useEffect(() => {
@@ -14939,6 +15039,22 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, businessSet
     const random = Math.floor(Math.random() * 900) + 100;
     setQuoteRef(`DEV-${mm}${yy}-${random}`);
   }, []);
+  
+  // Fetch billing/shipping addresses for preview
+  useEffect(() => {
+    const loadAddresses = async () => {
+      if (order.billing_address_id) {
+        try { const { data } = await supabase.from('shipping_addresses').select('*').eq('id', order.billing_address_id).single(); if (data) setPreviewBillingAddr(data); } catch (e) {}
+      }
+      if (order.shipping_address_id) {
+        try { const { data } = await supabase.from('shipping_addresses').select('*').eq('id', order.shipping_address_id).single(); if (data) setPreviewShippingAddr(data); } catch (e) {}
+      }
+      if (order.submitted_by) {
+        try { const { data } = await supabase.from('profiles').select('full_name').eq('id', order.submitted_by).single(); if (data?.full_name) setPreviewSubmitter(data.full_name); } catch (e) {}
+      }
+    };
+    loadAddresses();
+  }, [order.billing_address_id, order.shipping_address_id, order.submitted_by]);
   
   // Load parts pricing from database
   useEffect(() => {
@@ -15114,16 +15230,8 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, businessSet
         }
       }
       
-      // Get next document number for quote (DEV-MMYY-NNN)
+      // NOTE: Quote number (DEV-MMYY-NNN) is generated on APPROVAL, not on submit to review
       let quoteNumber = null;
-      try {
-        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
-        if (!docNumError && docNumData) {
-          quoteNumber = docNumData;
-        }
-      } catch (e) {
-        console.error('Could not generate document number:', e);
-      }
       
       // Build quote_data
       // Fetch billing and shipping addresses if available
@@ -15578,119 +15686,178 @@ function PartsQuoteEditor({ order, onClose, notify, reload, profile, businessSet
           )}
           
           {/* Step 2: Preview */}
-          {step === 2 && (
-            <div className="bg-gray-200 p-6 rounded-lg">
-              <div className="bg-white shadow-lg mx-auto flex flex-col" style={{ width: '210mm', minHeight: '297mm' }}>
-                {/* PDF Preview Header */}
-                <div className="border-b-4 border-[#2D5A7B] p-6">
+          {step === 2 && (() => {
+            const company = order.companies || {};
+            const billingAddr = previewBillingAddr;
+            const shippingAddr = previewShippingAddr;
+            const shipLabel = returnShipping === 'pickup' ? 'RETRAIT CLIENT' : returnShipping === 'own_label' ? 'TRANSPORT CLIENT' : 'LIVRER À';
+            const qDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+            const renderShipTo = () => {
+              if (returnShipping === 'pickup') return (<><p className="font-bold text-[#1a1a2e]">Enlèvement client</p><p className="text-sm text-gray-600">Le client récupérera la commande dans nos locaux.</p></>);
+              if (returnShipping === 'own_label') return (<><p className="font-bold text-[#1a1a2e]">Expédition client</p><p className="text-sm text-gray-600">Le client fournira son propre transporteur.</p></>);
+              const addr = shippingAddr;
+              const name = addr?.company_name || company.name || 'Client';
+              const attn = addr?.attention || previewSubmitter || company.contact_name;
+              return (<>
+                <p className="font-bold text-[#1a1a2e]">{name}</p>
+                {attn && <p className="text-sm text-gray-600">Attn: {attn}</p>}
+                {addr ? (<>
+                  {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
+                  {(addr.postal_code || addr.city) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
+                  {addr.phone && <p className="text-sm text-gray-500">Tél: {addr.phone}</p>}
+                </>) : (<>
+                  {(company.billing_address || company.address) && <p className="text-sm text-gray-600">{company.billing_address || company.address}</p>}
+                  {(company.billing_postal_code || company.postal_code || company.billing_city || company.city) && <p className="text-sm text-gray-600">{[company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ')}</p>}
+                  {company.phone && <p className="text-sm text-gray-500">Tél: {company.phone}</p>}
+                </>)}
+              </>);
+            };
+
+            const renderBillTo = () => {
+              const addr = billingAddr;
+              const name = addr?.company_name || company.name || 'Client';
+              return (<>
+                <p className="font-bold text-[#1a1a2e]">{name}</p>
+                {addr ? (<>
+                  {addr.attention && <p className="text-sm text-gray-600">Contact: {addr.attention}</p>}
+                  {addr.address_line1 && <p className="text-sm text-gray-600">{addr.address_line1}</p>}
+                  {(addr.postal_code || addr.city) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}{addr.country ? `, ${addr.country}` : ''}</p>}
+                  {addr.phone && <p className="text-sm text-gray-500">Tél: {addr.phone}</p>}
+                  {addr.siret && <p className="text-sm font-bold text-[#1a1a2e]">SIRET: {addr.siret}</p>}
+                  {addr.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {addr.tva_number}</p>}
+                  {addr.chorus_invoicing && <p className="text-xs text-blue-600">Chorus Pro{addr.chorus_service_code ? ` — Service: ${addr.chorus_service_code}` : ''}</p>}
+                </>) : (<>
+                  {(company.billing_address || company.address) && <p className="text-sm text-gray-600">{company.billing_address || company.address}</p>}
+                  {(company.billing_postal_code || company.postal_code || company.billing_city || company.city) && <p className="text-sm text-gray-600">{[company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ')}</p>}
+                  {company.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {company.tva_number}</p>}
+                </>)}
+              </>);
+            };
+
+            return (
+            <div className="p-6 bg-gray-200 min-h-full">
+              <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
+                {/* Header */}
+                <div className="px-8 pt-8 pb-4 border-b-2 border-[#2D5A7B]">
                   <div className="flex justify-between items-start">
-                    <div>
-                      <img 
-                        src="/images/logos/Lighthouse-color-logo.jpg" 
-                        alt="Lighthouse France" 
-                        className="h-24 w-auto"
-                        onError={(e) => {
-                          e.target.style.display = 'none';
-                          e.target.nextSibling.style.display = 'block';
-                        }}
-                      />
-                      <div style={{ display: 'none' }}>
-                        <h1 className="text-2xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1>
-                        <p className="text-gray-500">France</p>
-                      </div>
-                    </div>
+                    <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto"
+                      onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+                    <div style={{ display: 'none' }}><h1 className="text-3xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1></div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#2D5A7B]">{lang === 'en' ? 'PARTS QUOTE' : 'DEVIS PIÈCES'}</p>
-                      <p className="text-sm font-bold text-[#2D5A7B]">N° {order.quote_number || quoteRef}</p>
-                      <p className="text-xs text-gray-500">Réf: {order.request_number}</p>
+                      <p className="text-2xl font-bold text-[#2D5A7B]">OFFRE DE PRIX</p>
+                      <p className="font-bold text-[#1a1a2e]">N° {order.quote_number || quoteRef || <span className="text-amber-500 italic text-sm">(attribué à l'approbation)</span>}</p>
+                      <p className="text-xs text-gray-400">Réf: {order.request_number}</p>
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Info Bar */}
-                <div className="bg-gray-100 px-6 py-3 flex justify-between text-sm">
+                <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
                   <div>
-                    <span className="text-gray-500">{lang === 'en' ? 'Date: ' : 'Date: '}</span>
-                    <span className="font-medium">{today.toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>
+                    <p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p>
+                    <p className="font-bold text-[#1a1a2e]">{qDate}</p>
                   </div>
                   <div>
-                    <span className="text-gray-500">{lang === 'en' ? 'Validity: ' : 'Validité: '}</span>
-                    <span className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</span>
+                    <p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p>
+                    <p className="font-bold text-[#1a1a2e]">30 jours</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-[#828282] uppercase tracking-wider">CONDITIONS</p>
+                    <p className="font-bold text-[#1a1a2e]">À réception de facture</p>
                   </div>
                 </div>
-                
-                {/* Client Info */}
-                <div className="px-6 py-4 border-b">
-                  <p className="text-xs text-gray-500 uppercase">{t('client')}</p>
-                  <p className="font-bold text-lg">{order.companies?.name}</p>
-                  {order.companies?.billing_address && <p className="text-gray-600">{order.companies.billing_address}</p>}
-                  <p className="text-gray-600">{order.companies?.billing_postal_code} {order.companies?.billing_city}</p>
+
+                {/* Address Boxes */}
+                <div className="px-8 py-4 grid grid-cols-2 gap-4 border-b">
+                  <div className="border-2 border-[#2D5A7B]/50 rounded p-3">
+                    <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">{shipLabel}</p>
+                    {renderShipTo()}
+                  </div>
+                  <div className="border-2 border-[#2D5A7B]/50 rounded p-3">
+                    <p className="text-[10px] font-bold text-[#2D5A7B] uppercase tracking-wider mb-2">FACTURER À</p>
+                    {renderBillTo()}
+                  </div>
                 </div>
-                
-                {/* Parts Table - flex-1 to push footer down */}
-                <div className="px-6 py-4 flex-1">
-                  <h3 className="font-bold text-[#1a1a2e] mb-3">{lang === 'en' ? 'Parts Summary' : 'Récapitulatif des Pièces'}</h3>
-                  <table className="w-full">
+
+                {/* Pricing Table */}
+                <div className="px-8 py-6">
+                  <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Pièces Commandées</h3>
+                  <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#1a1a2e] text-white">
-                        <th className="px-3 py-2 text-left text-sm w-12">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                        <th className="px-3 py-2 text-left text-sm">{lang === 'en' ? 'Référence' : 'Référence'}</th>
-                        <th className="px-3 py-2 text-left text-sm">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                        <th className="px-3 py-2 text-right text-sm w-20">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
-                        <th className="px-3 py-2 text-right text-sm w-20">{t('totalHT')}</th>
+                        <th className="px-3 py-2.5 text-center w-12">Qté</th>
+                        <th className="px-3 py-2.5 text-left w-24">Réf.</th>
+                        <th className="px-3 py-2.5 text-left">Désignation</th>
+                        <th className="px-3 py-2.5 text-right w-20">P.U.</th>
+                        <th className="px-3 py-2.5 text-right w-20">Total HT</th>
                       </tr>
                     </thead>
                     <tbody>
                       {quoteParts.map((part, idx) => (
                         <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="px-3 py-2 text-center">{part.quantity}</td>
-                          <td className="px-3 py-2 font-mono text-sm">{part.partNumber || '—'}</td>
-                          <td className="px-3 py-2 text-sm">{part.description}</td>
-                          <td className="px-3 py-2 text-right whitespace-nowrap">{part.unitPrice.toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(part.quantity * part.unitPrice).toFixed(2)} €</td>
+                          <td className="px-3 py-2 border-b border-gray-100 text-center">{part.quantity}</td>
+                          <td className="px-3 py-2 border-b border-gray-100 font-mono text-xs">{part.partNumber || '—'}</td>
+                          <td className="px-3 py-2 border-b border-gray-100">{part.description}</td>
+                          <td className="px-3 py-2 border-b border-gray-100 text-right whitespace-nowrap">{part.unitPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 border-b border-gray-100 text-right font-medium whitespace-nowrap">{(part.quantity * part.unitPrice).toFixed(2)} €</td>
                         </tr>
                       ))}
-                      {shippingData.total > 0 && (
+                      {!isClientReturn && shippingData.total > 0 && (
                         <tr className="bg-blue-50">
-                          <td className="px-3 py-2 text-center">{shippingData.parcels}</td>
-                          <td className="px-3 py-2 font-mono text-sm">Shipping1</td>
-                          <td className="px-3 py-2 text-sm text-blue-800">Frais de port ({shippingData.parcels} colis)</td>
-                          <td className="px-3 py-2 text-right whitespace-nowrap">{shippingData.unitPrice.toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingData.total.toFixed(2)} €</td>
+                          <td className="px-3 py-2 border-b border-blue-100 text-center">{shippingData.parcels}</td>
+                          <td className="px-3 py-2 border-b border-blue-100 font-mono text-xs">PORT</td>
+                          <td className="px-3 py-2 border-b border-blue-100 text-blue-800">Frais de port ({shippingData.parcels} colis)</td>
+                          <td className="px-3 py-2 border-b border-blue-100 text-right whitespace-nowrap">{shippingData.unitPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 border-b border-blue-100 text-right font-medium whitespace-nowrap">{shippingData.total.toFixed(2)} €</td>
                         </tr>
                       )}
-                      <tr className="bg-[#2D5A7B] text-white">
-                        <td colSpan={4} className="px-3 py-2 text-right font-bold whitespace-nowrap">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</td>
-                        <td className="px-3 py-2 text-right font-bold whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
-                      </tr>
                     </tbody>
+                    <tfoot>
+                      <tr className="bg-[#2D5A7B] text-white">
+                        <td colSpan={4} className="px-3 py-3 text-right font-bold whitespace-nowrap">TOTAL HT</td>
+                        <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
+                      </tr>
+                    </tfoot>
                   </table>
-                  
-                  {/* Signature - moved inside flex-1 area */}
-                  <div className="mt-12 pt-6 border-t">
-                    <div className="flex justify-between items-end">
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Prepared by' : 'Établi par'}</p>
-                        <p className="font-bold text-lg">{signatory}</p>
-                        <p className="text-gray-500">Lighthouse France</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Approved for agreement' : 'Bon pour accord'}</p>
-                        <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
-                        <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Signature and stamp' : 'Signature et cachet'}</p>
-                      </div>
+                </div>
+
+                {/* Conditions */}
+                <div className="px-8 py-4 border-t bg-[#f9fafb]">
+                  <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+                  <ul className="text-xs text-[#505050] space-y-1">
+                    <li>- Devis valable 30 jours.</li>
+                    <li>- Paiement : 30 jours fin de mois.</li>
+                    <li>- Livraison : sous réserve de disponibilité.</li>
+                  </ul>
+                </div>
+
+                {/* Signature */}
+                <div className="px-8 py-6 border-t flex justify-between items-end">
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+                      <p className="font-bold text-lg text-[#1a1a2e]">{signatory}</p>
+                      <p className="text-[#505050]">Lighthouse France SAS</p>
                     </div>
+                    <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-[#828282] mb-1">Signature client</p>
+                    <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                    <p className="text-xs text-[#828282] mt-1">Lu et approuvé</p>
                   </div>
                 </div>
-                
-                {/* Footer - at bottom */}
-                <div className="bg-[#1a1a2e] text-white px-6 py-3 text-center text-xs">
-                  <p className="font-medium">Lighthouse France SAS</p>
-                  <p>16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+
+                {/* Footer */}
+                <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                  <p className="font-bold">Lighthouse France SAS</p>
+                  <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
                 </div>
               </div>
             </div>
-          )}
+            );
+          })()}
           
           {/* Step 3: Confirm */}
           {step === 3 && (
@@ -21997,408 +22164,170 @@ function ContractQuoteEditor({ contract, profile, notify, onClose, onSent, lang 
 
         {/* Step 2: Preview - Multi-Page A4 Layout */}
         {step === 2 && (() => {
-          // Get unique device types for service description blocks
+          const company = contract.companies || {};
           const deviceTypes = [...new Set(devicePricing.map(d => d.deviceType))];
-          
-          // Service description templates
-          const CAL_TEMPLATES = {
-            particle_counter: {
-              title: "Étalonnage Compteur de Particules Aéroportées",
-              icon: "🔬",
-              prestations: [
-                "Vérification des fonctionnalités du compteur",
-                "Vérification et réglage du débit",
-                "Vérification de la cellule de mesure",
-                "Contrôle et réglage des seuils granulométriques à l'aide de sphères de latex calibrées",
-                "Vérification en nombre par comparaison à un étalon ISO 17025 / ISO 21501-4",
-                "Fourniture d'un rapport de test et de calibration"
-              ]
-            },
-            bio_collector: {
-              title: "Étalonnage Bio Collecteur",
-              icon: "🧫",
-              prestations: [
-                "Vérification des fonctionnalités de l'appareil",
-                "Vérification et réglage du débit",
-                "Vérification de la cellule d'impaction",
-                "Contrôle des paramètres de collecte",
-                "Fourniture d'un rapport de test et de calibration"
-              ]
-            },
-            liquid_counter: {
-              title: "Étalonnage Compteur Particules Liquide",
-              icon: "💧",
-              prestations: [
-                "Vérification des fonctionnalités du compteur",
-                "Vérification et réglage du débit",
-                "Vérification de la cellule de mesure optique",
-                "Contrôle et réglage des seuils granulométriques",
-                "Vérification en nombre par comparaison à un étalon",
-                "Fourniture d'un rapport de test et de calibration"
-              ]
-            },
-            temp_humidity: {
-              title: "Étalonnage Capteur Température/Humidité",
-              icon: "🌡️",
-              prestations: [
-                "Vérification des fonctionnalités du capteur",
-                "Étalonnage température sur points de référence certifiés",
-                "Étalonnage humidité relative",
-                "Vérification de la stabilité des mesures",
-                "Fourniture d'un certificat d'étalonnage"
-              ]
-            },
-            other: {
-              title: "Étalonnage Équipement",
-              icon: "📦",
-              prestations: [
-                "Vérification des fonctionnalités de l'appareil",
-                "Étalonnage selon les spécifications du fabricant",
-                "Tests de fonctionnement",
-                "Fourniture d'un rapport de test"
-              ]
-            }
-          };
+          const qDate = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+          const startDate = new Date(contractDates.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+          const endDate = new Date(contractDates.end_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
-          // Build content blocks for pagination
-          const contentBlocks = [];
-          
-          // Block: Client Info - Full details
-          contentBlocks.push({
-            type: 'client',
-            height: 100,
-            render: () => (
-              <div className="px-6 py-4 mt-2 border-b">
-                <p className="text-xs text-gray-500 uppercase">{t('client')}</p>
-                <p className="font-bold text-lg text-[#1a1a2e]">{contract.companies?.name}</p>
-                {contract.companies?.contact_name && (
-                  <p className="text-gray-700 text-sm">À l'attention de: {contract.companies.contact_name}</p>
-                )}
-                {(contract.companies?.billing_address || contract.companies?.address) && (
-                  <p className="text-gray-600 text-sm">{contract.companies.billing_address || contract.companies.address}</p>
-                )}
-                {(contract.companies?.billing_postal_code || contract.companies?.postal_code || contract.companies?.billing_city || contract.companies?.city) && (
-                  <p className="text-gray-600 text-sm">
-                    {contract.companies?.billing_postal_code || contract.companies?.postal_code} {contract.companies?.billing_city || contract.companies?.city}
-                  </p>
-                )}
-                {contract.companies?.country && (
-                  <p className="text-gray-600 text-sm">{contract.companies.country}</p>
-                )}
-                {contract.companies?.phone && (
-                  <p className="text-gray-600 text-sm">{lang === 'en' ? 'Tel' : 'Tél'}: {contract.companies.phone}</p>
-                )}
-                {contract.companies?.email && (
-                  <p className="text-gray-600 text-sm">{contract.companies.email}</p>
-                )}
+          return (
+          <div className="p-6 bg-gray-200 min-h-full">
+            <div className="max-w-4xl mx-auto bg-white shadow-xl" style={{ fontFamily: 'Arial, sans-serif' }}>
+              {/* Header */}
+              <div className="px-8 pt-8 pb-4 border-b-2 border-[#00A651]">
+                <div className="flex justify-between items-start">
+                  <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto"
+                    onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+                  <div style={{ display: 'none' }}><h1 className="text-3xl font-bold text-[#1a1a2e]">LIGHTHOUSE</h1></div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-[#00A651]">DEVIS CONTRAT</p>
+                    <p className="font-bold text-[#1a1a2e]">N° {contract.contract_number || <span className="text-amber-500 italic text-sm">(Généré à l'envoi)</span>}</p>
+                  </div>
+                </div>
               </div>
-            )
-          });
 
-          // Block: Service descriptions
-          deviceTypes.forEach(type => {
-            const template = CAL_TEMPLATES[type] || CAL_TEMPLATES.particle_counter;
-            contentBlocks.push({
-              type: 'service',
-              deviceType: type,
-              height: 120,
-              render: () => (
-                <div className="px-6 py-3 border-b">
-                  <div className="flex items-start gap-2">
-                    <div className="w-1 bg-blue-500 self-stretch rounded" style={{minHeight: '80px'}}></div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-[#1a1a2e] mb-1 text-sm flex items-center gap-2">
-                        <span>{template.icon}</span>
-                        {template.title}
+              {/* Info Bar */}
+              <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
+                <div>
+                  <p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p>
+                  <p className="font-bold text-[#1a1a2e]">{qDate}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#828282] uppercase tracking-wider">PÉRIODE</p>
+                  <p className="font-bold text-[#1a1a2e]">{startDate} — {endDate}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p>
+                  <p className="font-bold text-[#1a1a2e]">30 jours</p>
+                </div>
+              </div>
+
+              {/* Address Box — Billing only */}
+              <div className="px-8 py-4 border-b">
+                <div className="border-2 border-[#00A651]/50 rounded p-3">
+                  <p className="text-[10px] font-bold text-[#00A651] uppercase tracking-wider mb-2">FACTURER À</p>
+                  <p className="font-bold text-[#1a1a2e]">{company.name || 'Client'}</p>
+                  {company.contact_name && <p className="text-sm text-gray-600">Contact: {company.contact_name}</p>}
+                  {(company.billing_address || company.address) && <p className="text-sm text-gray-600">{company.billing_address || company.address}</p>}
+                  {(company.billing_postal_code || company.postal_code || company.billing_city || company.city) && (
+                    <p className="text-sm text-gray-600">{[company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ')}{company.country ? `, ${company.country}` : ''}</p>
+                  )}
+                  {company.phone && <p className="text-sm text-gray-500">Tél: {company.phone}</p>}
+                  {company.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {company.tva_number}</p>}
+                </div>
+              </div>
+
+              {/* Service Descriptions */}
+              <div className="px-8 py-6 space-y-6">
+                {deviceTypes.map(type => {
+                  const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.other || CALIBRATION_TEMPLATES.particle_counter;
+                  return (
+                    <div key={type} className="border-l-4 border-blue-500 pl-4">
+                      <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2">
+                        <span>{template.icon}</span> {template.title}
                       </h3>
-                      <ul className="text-xs text-gray-600 space-y-0.5">
+                      <ul className="space-y-1">
                         {template.prestations.map((p, i) => (
-                          <li key={i} className="flex items-start gap-1">
-                            <span className="text-gray-400">-</span>
-                            <span>{p}</span>
+                          <li key={i} className="text-gray-700 flex items-start gap-2">
+                            <span className="text-[#1a1a2e] mt-1">▸</span><span>{p}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
-                  </div>
-                </div>
-              )
-            });
-          });
-
-          // Block: Combined Conditions (standard + contract)
-          contentBlocks.push({
-            type: 'conditions',
-            height: 80,
-            render: () => (
-              <div className="px-6 py-3 border-b bg-gray-50">
-                <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Terms' : 'Conditions'}</p>
-                <ul className="text-xs text-gray-600 space-y-0.5">
-                  <li>• Période du contrat: {new Date(contractDates.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} au {new Date(contractDates.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</li>
-                  <li>• {lang === 'en' ? `${totalTokens} calibration(s) included during the contract period` : `${totalTokens} étalonnage(s) inclus pendant la période contractuelle`}</li>
-                  <li>{lang === 'en' ? '• Additional calibrations billed at standard rate' : '• Étalonnages supplémentaires facturés au tarif standard'}</li>
-                  <li>{lang === 'en' ? "• This offer does not include repair or replacement of non-consumable parts" : "• Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables"}</li>
-                  <li>{lang === 'en' ? '• A supplementary quote will be issued if defective parts are found' : '• Un devis complémentaire sera établi si des pièces sont trouvées défectueuses'}</li>
-                  <li>{lang === 'en' ? '• Payment 30 days from invoice date' : '• Paiement à 30 jours date de facture'}</li>
-                </ul>
+                  );
+                })}
               </div>
-            )
-          });
 
-          // Block: Table header
-          contentBlocks.push({
-            type: 'table_header',
-            height: 45,
-            render: () => (
-              <div className="px-6 pt-4">
-                <h3 className="font-bold text-[#1a1a2e] mb-2 text-sm">{lang === 'en' ? 'Price Summary' : 'Récapitulatif des Prix'}</h3>
-                <table className="w-full">
+              {/* Pricing Table */}
+              <div className="px-8 py-6 bg-gray-50">
+                <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-[#1a1a2e] text-white">
-                      <th className="px-3 py-2 text-left text-xs font-bold w-12">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                      <th className="px-3 py-2 text-left text-xs font-bold">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                      <th className="px-3 py-2 text-right text-xs font-bold w-20">{lang === 'en' ? 'Unit Price' : 'Prix Unit.'}</th>
-                      <th className="px-3 py-2 text-right text-xs font-bold w-20">{t('totalHT')}</th>
+                      <th className="px-3 py-2.5 text-center w-12">Qté</th>
+                      <th className="px-3 py-2.5 text-left">Désignation</th>
+                      <th className="px-3 py-2.5 text-right w-24">Prix Unit.</th>
+                      <th className="px-3 py-2.5 text-right w-24">Total HT</th>
                     </tr>
                   </thead>
-                </table>
-              </div>
-            )
-          });
-
-          // Block: Device rows (each device + its nettoyage as one block)
-          devicePricing.forEach((device, idx) => {
-            contentBlocks.push({
-              type: 'device',
-              device: device,
-              index: idx,
-              height: device.needsNettoyage && device.nettoyagePrice > 0 ? 60 : 32,
-              render: () => (
-                <div className="px-6">
-                  <table className="w-full">
-                    <tbody>
-                      {device.needsCalibration && (
-                        <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="px-3 py-2 text-center text-sm w-12">{device.tokens_total}</td>
-                          <td className="px-3 py-2 text-sm">
-                            <span className="font-medium">{lang === 'en' ? 'Calibration' : 'Étalonnage'} {device.model}</span>
-                            <span className="text-gray-500 text-xs ml-1">(SN: {device.serial})</span>
-                          </td>
-                          <td className="px-3 py-2 text-right text-sm w-20">{device.calibrationPrice.toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right text-sm font-medium w-20">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
-                        </tr>
-                      )}
-                      {device.needsNettoyage && device.nettoyagePrice > 0 && (
-                        <tr className="bg-amber-50">
-                          <td className="px-3 py-2 text-center text-sm w-12">{device.nettoyageQty}</td>
-                          <td className="px-3 py-2 text-sm">
-                            <span className="font-medium text-amber-800">{lang === 'en' ? 'Cell cleaning' : 'Nettoyage cellule'}</span>
-                            <span className="text-amber-600 text-xs ml-1">- si requis ({device.model})</span>
-                          </td>
-                          <td className="px-3 py-2 text-right text-sm w-20">{device.nettoyagePrice.toFixed(2)} €</td>
-                          <td className="px-3 py-2 text-right text-sm font-medium w-20">{(device.nettoyageQty * device.nettoyagePrice).toFixed(2)} €</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            });
-          });
-
-          // Block: Shipping
-          contentBlocks.push({
-            type: 'shipping',
-            height: 32,
-            render: () => (
-              <div className="px-6">
-                <table className="w-full">
                   <tbody>
+                    {devicePricing.map((device, i) => {
+                      const rows = [];
+                      if (device.needsCalibration) {
+                        rows.push(<tr key={`${i}-cal`} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 text-center">{device.tokens_total}</td>
+                          <td className="px-3 py-2">Étalonnage {device.model} <span className="text-gray-500 text-xs">(SN: {device.serial})</span></td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">{device.calibrationPrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{(device.tokens_total * device.calibrationPrice).toFixed(2)} €</td>
+                        </tr>);
+                      }
+                      if (device.needsNettoyage && device.nettoyagePrice > 0) {
+                        rows.push(<tr key={`${i}-nett`} className="bg-amber-50">
+                          <td className="px-3 py-2 text-center">{device.nettoyageQty || 1}</td>
+                          <td className="px-3 py-2"><span className="font-medium text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis ({device.model})</span></td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">{device.nettoyagePrice.toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((device.nettoyageQty || 1) * device.nettoyagePrice).toFixed(2)} €</td>
+                        </tr>);
+                      }
+                      return rows;
+                    })}
                     <tr className="bg-blue-50">
-                      <td className="px-3 py-2 text-center text-sm w-12">{shippingData.parcels}</td>
-                      <td className="px-3 py-2 text-sm">
-                        <span className="font-medium text-blue-800">{lang === 'en' ? 'Shipping fees' : 'Frais de port'}</span>
-                        <span className="text-blue-600 text-xs ml-1">({shippingData.parcels} colis)</span>
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm w-20">{shippingData.unitPrice.toFixed(2)} €</td>
-                      <td className="px-3 py-2 text-right text-sm font-medium w-20">{shippingTotal.toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-center">{shippingData.parcels}</td>
+                      <td className="px-3 py-2"><span className="font-medium text-blue-800">Frais de port</span> <span className="text-blue-600 text-xs">({shippingData.parcels} colis)</span></td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">{shippingData.unitPrice.toFixed(2)} €</td>
+                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
                     </tr>
                   </tbody>
-                </table>
-              </div>
-            )
-          });
-
-          // Block: Total
-          contentBlocks.push({
-            type: 'total',
-            height: 35,
-            render: () => (
-              <div className="px-6 pb-4">
-                <table className="w-full">
-                  <tbody>
+                  <tfoot>
                     <tr className="bg-[#00A651] text-white">
-                      <td className="px-3 py-2 w-12"></td>
-                      <td className="px-3 py-2"></td>
-                      <td className="px-3 py-2 text-right font-bold text-sm w-20">{lang === 'en' ? 'TOTAL excl. VAT' : 'TOTAL HT'}</td>
-                      <td className="px-3 py-2 text-right font-bold text-sm w-20">{grandTotal.toFixed(2)} €</td>
+                      <td colSpan={2} className="px-3 py-3"></td>
+                      <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                      <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotal.toFixed(2)} €</td>
                     </tr>
-                  </tbody>
+                  </tfoot>
                 </table>
                 {hasNettoyage && (
-                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 p-2 rounded">
-                    * Le nettoyage sera effectué si nécessaire selon l'état du capteur.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>
                 )}
               </div>
-            )
-          });
 
-          // Block: Signature (always last) - with larger Capcert logo
-          contentBlocks.push({
-            type: 'signature',
-            height: 120,
-            alwaysLast: true,
-            render: () => (
-              <div className="px-6 py-6 border-t">
-                <div className="flex justify-between items-end">
-                  <div className="flex items-end gap-6">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Prepared by' : 'Établi par'}</p>
-                      <p className="font-bold text-lg">{signatory}</p>
-                      <p className="text-gray-500 text-sm">Lighthouse France</p>
-                    </div>
-                    <img 
-                      src="/images/logos/capcert-logo.png" 
-                      alt="Capcert" 
-                      className="h-24 w-auto"
-                      onError={(e) => { e.target.style.display = 'none'; }}
-                    />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-gray-500 uppercase mb-1">{lang === 'en' ? 'Approved for agreement' : 'Bon pour accord'}</p>
-                    <div className="w-44 h-16 border-2 border-dashed border-gray-300 rounded"></div>
-                    <p className="text-xs text-gray-400 mt-1">{lang === 'en' ? 'Signature and stamp' : 'Signature et cachet'}</p>
-                  </div>
-                </div>
+              {/* Conditions */}
+              <div className="px-8 py-4 border-t bg-[#f9fafb]">
+                <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+                <ul className="text-xs text-[#505050] space-y-1">
+                  <li>- Période du contrat: {startDate} au {endDate}</li>
+                  <li>- {totalTokens} étalonnage(s) inclus pendant la période contractuelle</li>
+                  <li>- Étalonnages supplémentaires facturés au tarif standard</li>
+                  <li>- Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables</li>
+                  <li>- Un devis complémentaire sera établi si des pièces sont trouvées défectueuses</li>
+                  <li>- Paiement à 30 jours date de facture</li>
+                </ul>
               </div>
-            )
-          });
 
-          // Paginate content - A4 page height ~1050px usable (excluding header/footer)
-          const PAGE_CONTENT_HEIGHT = 680; // px available per page for content
-          const pages = [];
-          let currentPage = { blocks: [], usedHeight: 0 };
-          
-          // Separate signature block (always goes last)
-          const signatureBlock = contentBlocks.find(b => b.type === 'signature');
-          const otherBlocks = contentBlocks.filter(b => b.type !== 'signature');
-          
-          otherBlocks.forEach(block => {
-            if (currentPage.usedHeight + block.height > PAGE_CONTENT_HEIGHT) {
-              // Start new page
-              pages.push(currentPage);
-              currentPage = { blocks: [], usedHeight: 0 };
-            }
-            currentPage.blocks.push(block);
-            currentPage.usedHeight += block.height;
-          });
-          
-          // Add signature to last page (or new page if no room)
-          if (signatureBlock) {
-            if (currentPage.usedHeight + signatureBlock.height > PAGE_CONTENT_HEIGHT) {
-              pages.push(currentPage);
-              currentPage = { blocks: [signatureBlock], usedHeight: signatureBlock.height };
-            } else {
-              currentPage.blocks.push(signatureBlock);
-            }
-          }
-          pages.push(currentPage);
-          
-          const totalPages = pages.length;
-
-          // Page Header Component - with more spacing after
-          const PageHeader = ({ pageNum }) => (
-            <div className="border-b-4 border-[#00A651] mb-4">
-              <div className="px-6 py-4 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <img 
-                    src="/images/logos/Lighthouse-color-logo.jpg" 
-                    alt="Lighthouse" 
-                    className="h-24 w-auto"
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.nextSibling.style.display = 'block';
-                    }}
-                  />
-                  <div className="hidden">
-                    <span className="text-xl font-bold text-[#1a1a2e]">LIGHTHOUSE</span>
+              {/* Signature */}
+              <div className="px-8 py-6 border-t flex justify-between items-end">
+                <div className="flex items-end gap-6">
+                  <div>
+                    <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+                    <p className="font-bold text-lg text-[#1a1a2e]">{signatory}</p>
+                    <p className="text-[#505050]">Lighthouse France SAS</p>
                   </div>
+                  <img src="/images/logos/capcert-logo.png" alt="Capcert ISO 9001" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-bold text-[#00A651]">{lang === 'en' ? 'CONTRACT QUOTE' : 'DEVIS CONTRAT'}</p>
-                  <p className="text-sm font-bold text-[#2D5A7B]">N° {contract.contract_number || (lang === 'en' ? '(Generated on send)' : "(Généré à l'envoi)")}</p>
+                  <p className="text-xs text-[#828282] mb-1">Signature client</p>
+                  <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                  <p className="text-xs text-[#828282] mt-1">Lu et approuvé</p>
                 </div>
               </div>
-              {pageNum === 1 && (
-                <div className="bg-gray-100 px-6 py-2 flex justify-between text-xs border-t">
-                  <div>
-                    <span className="text-gray-500">{lang === 'en' ? 'Date: ' : 'Date: '}</span>
-                    <span className="font-medium">{today.toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">{lang === 'en' ? 'Period: ' : 'Période: '}</span>
-                    <span className="font-medium">{new Date(contractDates.start_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')} - {new Date(contractDates.end_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">{lang === 'en' ? 'Validity: ' : 'Validité: '}</span>
-                    <span className="font-medium">{lang === 'en' ? '30 days' : '30 jours'}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
 
-          // Page Footer Component - centered
-          const PageFooter = ({ pageNum, totalPages }) => (
-            <div className="bg-[#1a1a2e] text-white px-6 py-3 text-center text-xs">
-              <p>Lighthouse France SAS • 16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
-              <p className="font-medium mt-1">Page {pageNum}/{totalPages}</p>
-            </div>
-          );
-
-          return (
-            <div className="p-6 bg-gray-300 min-h-full">
-              <div className="space-y-8">
-                {pages.map((page, pageIdx) => (
-                  <div 
-                    key={pageIdx} 
-                    className="bg-white shadow-xl mx-auto"
-                    style={{ 
-                      width: '210mm', 
-                      minHeight: '297mm',
-                      display: 'flex',
-                      flexDirection: 'column'
-                    }}
-                  >
-                    {/* Page Header */}
-                    <PageHeader pageNum={pageIdx + 1} />
-                    
-                    {/* Page Content */}
-                    <div className="flex-1">
-                      {page.blocks.map((block, blockIdx) => (
-                        <div key={blockIdx}>
-                          {block.render()}
-                        </div>
-                      ))}
-                    </div>
-                    
-                    {/* Page Footer */}
-                    <PageFooter pageNum={pageIdx + 1} totalPages={totalPages} />
-                  </div>
-                ))}
+              {/* Footer */}
+              <div className="bg-[#1a1a2e] text-white px-8 py-4 text-center text-sm">
+                <p className="font-bold">Lighthouse France SAS</p>
+                <p className="text-gray-400">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
               </div>
             </div>
+          </div>
           );
         })()}
 
@@ -29544,17 +29473,8 @@ function QuoteEditorModal({ request, onClose, notify, reload, profile, businessS
       // Keep same quote number, increment revision
       quoteNumber = request.quote_number;
       newRevisionCount = currentRevisionCount + 1;
-    } else {
-      // New quote - get next document number
-      try {
-        const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'DEV' });
-        if (!docNumError && docNumData) {
-          quoteNumber = docNumData;
-        }
-      } catch (e) {
-        console.error('Could not generate document number:', e);
-      }
     }
+    // NOTE: Quote number (DEV-MMYY-NNN) is generated on APPROVAL, not on submit to review
 
     // Save complete quote data
     // Fetch billing and shipping addresses if available
