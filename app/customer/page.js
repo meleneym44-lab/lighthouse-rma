@@ -5697,8 +5697,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
           {selectedBillingAddr && !showNewBillingForm && (
             <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
               <p className="font-medium text-[#1E3A5F] text-sm">{selectedBillingAddr.company_name || selectedBillingAddr.label}</p>
-              {selectedBillingAddr.attention && <p className="text-xs text-gray-600">Attn: {selectedBillingAddr.attention}</p>}
+              {selectedBillingAddr.attention && <p className="text-xs text-gray-600">À l'attention de : {selectedBillingAddr.attention}</p>}
               <p className="text-xs text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+              {selectedBillingAddr.phone && <p className="text-xs text-gray-500">📞 {selectedBillingAddr.phone}</p>}
               <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-3">
                 <span className={selectedBillingAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
                   SIRET: {selectedBillingAddr.siret ? <span className="font-mono">{selectedBillingAddr.siret}</span> : 'Non renseigné'}
@@ -5857,9 +5858,9 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                 {selectedShippingAddr && (
                   <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
                     <p className="font-medium text-[#1E3A5F] text-sm">{selectedShippingAddr.company_name || selectedShippingAddr.label}</p>
-                    {selectedShippingAddr.attention && <p className="text-xs text-gray-600">Attn: {selectedShippingAddr.attention}</p>}
+                    {selectedShippingAddr.attention && <p className="text-xs text-gray-600">À l'attention de : {selectedShippingAddr.attention}</p>}
                     <p className="text-xs text-gray-600">{selectedShippingAddr.address_line1}, {selectedShippingAddr.postal_code} {selectedShippingAddr.city}</p>
-                    {selectedShippingAddr.phone && <p className="text-xs text-gray-500">Tél: {selectedShippingAddr.phone}</p>}
+                    {selectedShippingAddr.phone && <p className="text-xs text-gray-500">📞 {selectedShippingAddr.phone}</p>}
                   </div>
                 )}
               </div>
@@ -5956,7 +5957,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                   {billingAddr && (
                     <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
                       <p className="font-medium text-[#1E3A5F]">{billingAddr.company_name || billingAddr.label || co.name}</p>
-                      {billingAddr.attention && <p className="text-sm text-gray-600">Attn: {billingAddr.attention}</p>}
+                      {billingAddr.attention && <p className="text-sm text-gray-600">À l'attention de : {billingAddr.attention}</p>}
                       <p className="text-sm text-gray-600">{billingAddr.address_line1}</p>
                       <p className="text-sm text-gray-600">{billingAddr.postal_code} {billingAddr.city}, {billingAddr.country || 'France'}</p>
                       {(billingAddr.siret || billingAddr.tva_number) && (
@@ -6008,7 +6009,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                   ) : shippingAddr && (
                     <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
                       <p className="font-medium text-[#1E3A5F]">{shippingAddr.company_name || shippingAddr.label || co.name}</p>
-                      {shippingAddr.attention && <p className="text-sm text-gray-600">Attn: {shippingAddr.attention}</p>}
+                      {shippingAddr.attention && <p className="text-sm text-gray-600">À l'attention de : {shippingAddr.attention}</p>}
                       <p className="text-sm text-gray-600">{shippingAddr.address_line1}</p>
                       <p className="text-sm text-gray-600">{shippingAddr.postal_code} {shippingAddr.city}, {shippingAddr.country || 'France'}</p>
                       {shippingAddr.phone && <p className="text-sm text-gray-500">📞 {shippingAddr.phone}</p>}
@@ -6468,12 +6469,28 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
             <option value="__new__">+ Nouvelle adresse de facturation...</option>
           </select>
           {selectedBillingAddr && !showNewBillingForm && (
-            <div className="mt-3 p-3 bg-gray-50 rounded-lg border text-sm">
-              <p className="font-medium text-[#1E3A5F]">{selectedBillingAddr.company_name}</p>
-              <p className="text-gray-600">{selectedBillingAddr.address_line1}</p>
-              <p className="text-gray-600">{selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
-              {selectedBillingAddr.siret && <p className="text-green-600 mt-1">SIRET: {selectedBillingAddr.siret} {selectedBillingAddr.tva_number ? ` TVA: ${selectedBillingAddr.tva_number}` : ''}</p>}
-              {selectedBillingAddr.chorus_invoicing && <p className="text-blue-600 mt-1">🏛️ Chorus Pro{selectedBillingAddr.chorus_service_code ? `: ${selectedBillingAddr.chorus_service_code}` : ''}</p>}
+            <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+              <p className="font-medium text-[#1E3A5F] text-sm">{selectedBillingAddr.company_name || selectedBillingAddr.label}</p>
+              {selectedBillingAddr.attention && <p className="text-xs text-gray-600">À l'attention de : {selectedBillingAddr.attention}</p>}
+              <p className="text-xs text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+              {selectedBillingAddr.phone && <p className="text-xs text-gray-500">📞 {selectedBillingAddr.phone}</p>}
+              <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-3">
+                <span className={selectedBillingAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                  SIRET: {selectedBillingAddr.siret ? <span className="font-mono">{selectedBillingAddr.siret}</span> : 'Non renseigné'}
+                </span>
+                <span className={selectedBillingAddr.tva_number ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                  TVA: {selectedBillingAddr.tva_number ? <span className="font-mono">{selectedBillingAddr.tva_number}</span> : 'Non renseigné'}
+                </span>
+              </div>
+              {selectedBillingAddr.chorus_invoicing && (
+                <div className="mt-1">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
+                  {selectedBillingAddr.chorus_service_code && <span className="text-xs text-gray-500 ml-2">Service: <span className="font-mono">{selectedBillingAddr.chorus_service_code}</span></span>}
+                </div>
+              )}
+              {(!selectedBillingAddr.siret || !selectedBillingAddr.tva_number) && (
+                <button type="button" onClick={() => setPage('settings')} className="text-xs text-[#3B7AB4] underline mt-1">Compléter dans les paramètres</button>
+              )}
             </div>
           )}
           {showNewBillingForm && (
@@ -6541,9 +6558,9 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
               {selectedShippingAddr && (
                 <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
                   <p className="font-medium text-[#1E3A5F] text-sm">{selectedShippingAddr.company_name || selectedShippingAddr.label}</p>
-                  {selectedShippingAddr.attention && <p className="text-xs text-gray-600">Attn: {selectedShippingAddr.attention}</p>}
+                  {selectedShippingAddr.attention && <p className="text-xs text-gray-600">À l'attention de : {selectedShippingAddr.attention}</p>}
                   <p className="text-xs text-gray-600">{selectedShippingAddr.address_line1}, {selectedShippingAddr.postal_code} {selectedShippingAddr.city}</p>
-                  {selectedShippingAddr.phone && <p className="text-xs text-gray-500">Tél: {selectedShippingAddr.phone}</p>}
+                  {selectedShippingAddr.phone && <p className="text-xs text-gray-500">📞 {selectedShippingAddr.phone}</p>}
                 </div>
               )}
             </div>
@@ -6617,7 +6634,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
                     <div className="mt-2 bg-gray-50 rounded-lg p-3 border text-sm">
                       <p className="text-xs font-bold text-gray-500 uppercase mb-1">Adresse de livraison</p>
                       <p className="font-medium">{shippingAddr.company_name || shippingAddr.label}</p>
-                      {shippingAddr.attention && <p className="text-gray-600">Attn: {shippingAddr.attention}</p>}
+                      {shippingAddr.attention && <p className="text-gray-600">À l'attention de : {shippingAddr.attention}</p>}
                       <p className="text-gray-600">{shippingAddr.address_line1}, {shippingAddr.postal_code} {shippingAddr.city}</p>
                     </div>
                   )}
@@ -8370,7 +8387,7 @@ function SettingsPage({ profile, addresses, requests, t, notify, refresh, lang, 
                       <div className="flex-1">
                         <h3 className="font-bold text-[#1E3A5F] mb-1">{addr.label}</h3>
                         {addr.company_name && <p className="text-sm text-gray-700 font-medium">{addr.company_name}</p>}
-                        {addr.attention && <p className="text-sm text-gray-600">Attn: {addr.attention}</p>}
+                        {addr.attention && <p className="text-sm text-gray-600">À l'attention de : {addr.attention}</p>}
                         <p className="text-sm text-gray-700">{addr.address_line1}</p>
                         {addr.address_line2 && <p className="text-sm text-gray-700">{addr.address_line2}</p>}
                         <p className="text-sm text-gray-700">{addr.postal_code} {addr.city}, {addr.country || 'France'}</p>
@@ -14488,10 +14505,25 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   <option value="__new__">+ Nouvelle adresse de facturation...</option>
                 </select>
                 {selectedBillingAddr && !showNewBillingForm && (
-                  <div className="mt-2 p-3 bg-gray-50 rounded-lg border text-sm">
-                    <p className="font-medium">{selectedBillingAddr.company_name}</p>
-                    <p className="text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
-                    {selectedBillingAddr.siret && <p className="text-green-600 mt-1">SIRET: {selectedBillingAddr.siret}</p>}
+                  <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                    <p className="font-medium text-[#1E3A5F] text-sm">{selectedBillingAddr.company_name || selectedBillingAddr.label}</p>
+                    {selectedBillingAddr.attention && <p className="text-xs text-gray-600">À l'attention de : {selectedBillingAddr.attention}</p>}
+                    <p className="text-xs text-gray-600">{selectedBillingAddr.address_line1}, {selectedBillingAddr.postal_code} {selectedBillingAddr.city}</p>
+                    {selectedBillingAddr.phone && <p className="text-xs text-gray-500">📞 {selectedBillingAddr.phone}</p>}
+                    <div className="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-3">
+                      <span className={selectedBillingAddr.siret ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                        SIRET: {selectedBillingAddr.siret ? <span className="font-mono">{selectedBillingAddr.siret}</span> : 'Non renseigné'}
+                      </span>
+                      <span className={selectedBillingAddr.tva_number ? 'text-xs text-green-600' : 'text-xs text-amber-500'}>
+                        TVA: {selectedBillingAddr.tva_number ? <span className="font-mono">{selectedBillingAddr.tva_number}</span> : 'Non renseigné'}
+                      </span>
+                    </div>
+                    {selectedBillingAddr.chorus_invoicing && (
+                      <div className="mt-1">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">📋 Chorus Pro</span>
+                        {selectedBillingAddr.chorus_service_code && <span className="text-xs text-gray-500 ml-2">Service: <span className="font-mono">{selectedBillingAddr.chorus_service_code}</span></span>}
+                      </div>
+                    )}
                   </div>
                 )}
                 {showNewBillingForm && (
@@ -14546,9 +14578,9 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                       return selAddr ? (
                         <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
                           <p className="font-medium text-[#1E3A5F] text-sm">{selAddr.company_name || selAddr.label}</p>
-                          {selAddr.attention && <p className="text-xs text-gray-600">Attn: {selAddr.attention}</p>}
+                          {selAddr.attention && <p className="text-xs text-gray-600">À l'attention de : {selAddr.attention}</p>}
                           <p className="text-xs text-gray-600">{selAddr.address_line1}, {selAddr.postal_code} {selAddr.city}</p>
-                          {selAddr.phone && <p className="text-xs text-gray-500">Tél: {selAddr.phone}</p>}
+                          {selAddr.phone && <p className="text-xs text-gray-500">📞 {selAddr.phone}</p>}
                         </div>
                       ) : null;
                     })()}
