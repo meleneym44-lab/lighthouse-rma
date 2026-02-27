@@ -5245,12 +5245,13 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           throw pdfErr;
         }
       } else if (review.quote_type === 'contract') {
-        // === CONTRACT QUOTE: Generate number, PDF, and send ===
+        // === CONTRACT QUOTE: Generate number, PDF, and send (same pattern as rental) ===
         const qd = review.quote_data;
-        const contractId = review.contract_id || qd.contractId;
+        const contractId = review.contract_id || qd?.contractId;
+        console.log('📄 Contract quote approval - contractId:', contractId);
         if (contractId) {
-          // Generate quote number if not already set
-          let contractNumber = qd.contractNumber || review.quote_number;
+          // Generate contract number if not already set
+          let contractNumber = qd?.contractNumber || review.quote_number;
           if (!contractNumber) {
             try {
               const { data: docNumData, error: docNumError } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'CTR' });
@@ -5261,37 +5262,68 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
               contractNumber = `CTR-${year}-???`;
             }
           }
+          console.log('📄 Contract number:', contractNumber);
 
-          // Fetch full contract + company for PDF
+          // Fetch full contract + company for PDF generation
           let quoteUrl = null;
           try {
-            const { data: contractData } = await supabase.from('contracts')
-              .select('*, companies(*)')
+            const { data: contractData, error: fetchErr } = await supabase.from('contracts')
+              .select('*, companies(*), contract_devices(*)')
               .eq('id', contractId).single();
+            console.log('📄 Contract data fetched:', !!contractData, 'error:', fetchErr);
             
             if (contractData) {
+              console.log('📄 Generating contract PDF with businessSettings:', !!businessSettings);
               const pdfBlob = await generateContractQuotePDF(
                 { ...contractData, contract_number: contractNumber },
                 qd,
                 businessSettings
               );
+              console.log('📄 Contract PDF blob generated, size:', pdfBlob?.size);
               const fileName = `${contractNumber}_devis_${Date.now()}.pdf`;
-              quoteUrl = await uploadPDFToStorage(pdfBlob, `contracts/${contractId}`, fileName);
+              quoteUrl = await uploadPDFToStorage(pdfBlob, `quotes/${contractNumber || contractId}`, fileName);
+              console.log('📄 Contract PDF uploaded, URL:', quoteUrl);
             }
           } catch (pdfErr) {
-            console.error('Contract PDF generation error:', pdfErr);
+            console.error('❌ Contract PDF generation error:', pdfErr);
+            notify('⚠️ Erreur PDF contrat: ' + (pdfErr.message || pdfErr), 'error');
           }
 
-          const updateData = {
-            status: 'quote_sent',
+          // Update contract — save quote_url inside quote_data JSON (reliable)
+          const existingQD = qd || {};
+          const approvalQuoteData = {
+            ...existingQD,
             quote_sent_at: new Date().toISOString(),
-            contract_number: contractNumber,
+            contractNumber: contractNumber,
             quote_review_id: null,
             quote_rejection_notes: null
           };
-          if (quoteUrl) updateData.quote_url = quoteUrl;
+          if (quoteUrl) approvalQuoteData.quote_url = quoteUrl;
+          console.log('📄 Updating contract with quote_data keys:', Object.keys(approvalQuoteData));
 
-          await supabase.from('contracts').update(updateData).eq('id', contractId);
+          const { error: updateErr } = await supabase.from('contracts').update({
+            status: 'quote_sent',
+            quote_sent_at: new Date().toISOString(),
+            contract_number: contractNumber,
+            quote_data: approvalQuoteData,
+            quote_review_id: null,
+            quote_rejection_notes: null
+          }).eq('id', contractId);
+          if (updateErr) console.error('❌ Contract update error:', updateErr);
+
+          // Save PDF as attachment (same pattern as rental)
+          if (quoteUrl) {
+            await supabase.from('request_attachments').insert({
+              contract_id: contractId,
+              file_name: `${contractNumber}_Devis_Contrat.pdf`,
+              file_url: quoteUrl,
+              file_type: 'application/pdf',
+              uploaded_by: profile?.id,
+              category: 'devis'
+            }).then(({ error: attErr }) => {
+              if (attErr) console.error('Attachment insert error (non-fatal):', attErr);
+            });
+          }
         }
       } else if (review.quote_type === 'rental') {
         // === RENTAL QUOTE: Generate PDF and set status to quote_sent ===
@@ -5959,14 +5991,27 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
       const totalRows = devices.length + devices.filter(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0).length + (shippingTotal > 0 ? 1 : 0);
       const needsSecondPage = totalRows > 4 || deviceTypes.length > 1;
 
-      // Shared page header (small, for continuation pages)
-      const PageHeader = ({ pageNum, totalPages }) => (
-        <div className="px-8 pt-6 pb-3 flex justify-between items-center border-b" style={{ borderColor: accent }}>
-          <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse" className="h-10 w-auto" onError={e => { e.target.style.display = 'none'; }} />
-          <div className="text-right">
-            <p className="text-sm font-bold" style={{ color: accent }}>OFFRE DE PRIX — N° {contractNumber || '(en attente)'}</p>
-            <p className="text-xs text-gray-400">Contrat: {contractNumber}</p>
+      // Shared page header (identical on all pages)
+      const PageHeader = () => (
+        <div className="px-8 pt-8 pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
+          <div className="flex justify-between items-start">
+            <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+            <div className="text-right">
+              <p className="text-2xl font-bold" style={{ color: accent }}>OFFRE DE PRIX</p>
+              <p className="font-bold text-[#1a1a2e]">N° {contractNumber || <span className="text-amber-500 italic text-sm">(attribué à l'approbation)</span>}</p>
+              <p className="text-xs text-gray-400">Contrat: {contractNumber}</p>
+            </div>
           </div>
+        </div>
+      );
+
+      // Info bar (DATE / DÉBUT / FIN / VALIDITÉ)
+      const InfoBar = () => (
+        <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
+          <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p><p className="font-bold text-[#1a1a2e]">{qDate}</p></div>
+          <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DÉBUT</p><p className="font-bold text-[#1a1a2e]">{startDate}</p></div>
+          <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">FIN</p><p className="font-bold text-[#1a1a2e]">{endDate}</p></div>
+          <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
         </div>
       );
 
@@ -5987,25 +6032,8 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
         <div className="space-y-6">
           {/* ===== PAGE 1: Header + Info + Address + Service Descriptions ===== */}
           <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: needsSecondPage ? '1100px' : 'auto' }}>
-            {/* Full Header */}
-            <div className="px-8 pt-8 pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
-              <div className="flex justify-between items-start">
-                <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
-                <div className="text-right">
-                  <p className="text-2xl font-bold" style={{ color: accent }}>OFFRE DE PRIX</p>
-                  <p className="font-bold text-[#1a1a2e]">N° {contractNumber || <span className="text-amber-500 italic text-sm">(attribué à l'approbation)</span>}</p>
-                  <p className="text-xs text-gray-400">Contrat: {contractNumber}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Info Bar (DATE / DÉBUT / FIN / VALIDITÉ) */}
-            <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
-              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p><p className="font-bold text-[#1a1a2e]">{qDate}</p></div>
-              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DÉBUT</p><p className="font-bold text-[#1a1a2e]">{startDate}</p></div>
-              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">FIN</p><p className="font-bold text-[#1a1a2e]">{endDate}</p></div>
-              <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
-            </div>
+            <PageHeader />
+            <InfoBar />
 
             {/* Address Box (billing only) */}
             <div className="px-8 py-4 border-b">
@@ -6101,7 +6129,8 @@ function QuoteReviewSheet({ requests = [], clients = [], notify, reload, profile
           {/* ===== PAGE 2: Pricing Table + Conditions + Signature (only if multi-page) ===== */}
           {needsSecondPage && (
             <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: '1100px' }}>
-              <PageHeader pageNum={2} totalPages={totalPages} />
+              <PageHeader />
+              <InfoBar />
 
               {/* Pricing Table */}
               <div className="px-8 py-6 bg-gray-50">
@@ -23454,6 +23483,7 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
               <div className="flex border-b">
                 {[
                   { id: 'details', label: 'Détails', icon: '📋' },
+                  ...(contract.quote_data?.devices ? [{ id: 'devis', label: 'Devis', icon: '💰' }] : []),
                   { id: 'messages', label: 'Messages', icon: '💬' },
                   { id: 'documents', label: 'Documents', icon: '📄' },
                   { id: 'history', label: 'Historique', icon: '📜' }
@@ -23714,6 +23744,185 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                   </div>
                 )}
 
+                {/* Devis (Quote Preview) Tab — same HTML as review tab */}
+                {activeTab === 'devis' && (() => {
+                  const qd = contract.quote_data || {};
+                  const devs = qd.devices || [];
+                  const devTypes = [...new Set(devs.map(d => d.deviceType).filter(Boolean))];
+                  if (devTypes.length === 0) devTypes.push('particle_counter');
+                  const hasNett = devs.some(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0);
+                  const sDate = qd.contractDates?.start_date ? new Date(qd.contractDates.start_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+                  const eDate = qd.contractDates?.end_date ? new Date(qd.contractDates.end_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+                  const shipT = qd.shippingTotal || 0;
+                  const gTotal = qd.grandTotal || contract.quote_total || 0;
+                  const totTokens = qd.totalTokens || devs.reduce((s, d) => s + (d.tokens_total || d.calibrationQty || 1), 0);
+                  const cNum = contract.contract_number || qd.contractNumber || '';
+                  const cDate = (qd.createdAt || contract.quote_sent_at) ? (() => { try { return new Date(qd.createdAt || contract.quote_sent_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); } catch { return '—'; } })() : new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+                  const cConditions = [
+                    'Devis valable 30 jours à compter de la date d\'émission.',
+                    `Période du contrat : du ${sDate} au ${eDate}.`,
+                    `${totTokens} étalonnage(s) inclus pendant la période contractuelle.`,
+                    'Étalonnages supplémentaires facturés au tarif standard.',
+                    "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
+                    'Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.',
+                    'Les mesures stockées dans les appareils seront éventuellement perdues.',
+                    'Paiement à 30 jours date de facture.'
+                  ];
+                  const bAddr = qd.billingAddress || null;
+                  const cName = bAddr?.company_name || company.name || contract.client_name || 'Client';
+                  const totalRows = devs.length + devs.filter(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0).length + (shipT > 0 ? 1 : 0);
+                  const multiPage = totalRows > 4 || devTypes.length > 1;
+                  const tPages = multiPage ? 2 : 1;
+                  const signName = qd.createdBy || profile?.full_name || 'Lighthouse France';
+
+                  const accent = '#2D5A7B';
+
+                  const QHeader = () => (
+                    <div className="px-8 pt-8 pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
+                      <div className="flex justify-between items-start">
+                        <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                        <div className="text-right">
+                          <p className="text-2xl font-bold" style={{ color: accent }}>OFFRE DE PRIX</p>
+                          <p className="font-bold text-[#1a1a2e]">N° {cNum || '—'}</p>
+                          <p className="text-xs text-gray-400">Contrat: {cNum}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+
+                  const QInfoBar = () => (
+                    <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
+                      <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p><p className="font-bold text-[#1a1a2e]">{cDate}</p></div>
+                      <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DÉBUT</p><p className="font-bold text-[#1a1a2e]">{sDate}</p></div>
+                      <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">FIN</p><p className="font-bold text-[#1a1a2e]">{eDate}</p></div>
+                      <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
+                    </div>
+                  );
+
+                  const QFooter = ({ pageNum }) => (
+                    <div className="bg-[#1a1a2e] text-white px-8 py-3 flex items-end justify-between mt-auto">
+                      <div className="text-center flex-1">
+                        <p className="font-bold text-sm">Lighthouse France SAS</p>
+                        <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                      </div>
+                      <p className="text-xs text-gray-400 font-bold ml-4">Page {pageNum}/{tPages}</p>
+                    </div>
+                  );
+                  const PricingBlock = () => (
+                    <>
+                      <div className="px-8 py-6 bg-gray-50">
+                        <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                        <table className="w-full text-sm">
+                          <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-24">Prix Unit.</th><th className="px-3 py-2.5 text-right w-24">Total HT</th></tr></thead>
+                          <tbody>
+                            {devs.map((d, i) => (<Fragment key={i}>
+                              <tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                <td className="px-3 py-2 text-center">{d.calibrationQty || d.tokens_total || 1}</td>
+                                <td className="px-3 py-2">Étalonnage {d.model} <span className="text-gray-500 text-xs">(SN: {d.serial})</span></td>
+                                <td className="px-3 py-2 text-right whitespace-nowrap">{(d.calibrationPrice || 0).toFixed(2)} €</td>
+                                <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.calibrationQty || d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
+                              </tr>
+                              {d.needsNettoyage && (d.nettoyagePrice || 0) > 0 && (<tr className="bg-amber-50">
+                                <td className="px-3 py-2 text-center">{d.nettoyageQty || 1}</td>
+                                <td className="px-3 py-2"><span className="text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis</span></td>
+                                <td className="px-3 py-2 text-right whitespace-nowrap">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
+                                <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
+                              </tr>)}
+                            </Fragment>))}
+                            {shipT > 0 && (<tr className="bg-blue-50">
+                              <td className="px-3 py-2 text-center">{qd.shipping?.parcels || 1}</td>
+                              <td className="px-3 py-2 text-blue-800">Frais de port</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">{(qd.shipping?.unitPrice || shipT).toFixed(2)} €</td>
+                              <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shipT.toFixed(2)} €</td>
+                            </tr>)}
+                          </tbody>
+                          <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl">{gTotal.toFixed(2)} €</td></tr></tfoot>
+                        </table>
+                        {hasNett && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
+                      </div>
+                      <div className="px-8 py-4 border-t bg-[#f9fafb]">
+                        <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+                        <ul className="text-xs text-[#505050] space-y-1">{cConditions.map((d, i) => <li key={i}>– {d}</li>)}</ul>
+                      </div>
+                    </>
+                  );
+
+                  const SignatureBlock = () => (
+                    <div className="px-8 py-6 border-t flex justify-between items-end">
+                      <div className="flex items-end gap-6">
+                        <div>
+                          <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+                          <p className="font-bold text-lg text-[#1a1a2e]">{signName}</p>
+                          <p className="text-[#505050]">Lighthouse France SAS</p>
+                        </div>
+                        <img src="/images/logos/capcert-logo.png" alt="Capcert" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-[#828282] mb-1">Bon pour accord</p>
+                        <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                        <p className="text-xs text-[#828282] mt-1">Signature et cachet</p>
+                      </div>
+                    </div>
+                  );
+
+                  return (
+                    <div className="space-y-6 -m-4">
+                      {/* PDF download link if available */}
+                      {(qd.quote_url || contract.quote_data?.quote_url) && (
+                        <div className="mx-4 mt-4 flex justify-end">
+                          <a href={qd.quote_url || contract.quote_data?.quote_url} target="_blank" rel="noopener noreferrer"
+                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                            📥 Télécharger PDF
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Page 1 */}
+                      <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: multiPage ? '1100px' : 'auto' }}>
+                        <QHeader />
+                        <QInfoBar />
+                        <div className="px-8 py-4 border-b">
+                          <div className="border-2 rounded p-3" style={{ borderColor: `${accent}80` }}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>FACTURER À</p>
+                            <p className="font-bold text-[#1a1a2e]">{cName}</p>
+                            {bAddr ? (<>
+                              {bAddr.attention && <p className="text-sm text-gray-600">Contact: {bAddr.attention}</p>}
+                              {bAddr.address_line1 && <p className="text-sm text-gray-600">{bAddr.address_line1}</p>}
+                              {(bAddr.postal_code || bAddr.city) && <p className="text-sm text-gray-600">{[bAddr.postal_code, bAddr.city].filter(Boolean).join(' ')}{bAddr.country ? `, ${bAddr.country}` : ''}</p>}
+                            </>) : null}
+                          </div>
+                        </div>
+                        <div className="px-8 py-6 space-y-6 flex-1">
+                          {devTypes.map(type => {
+                            const template = (typeof CALIBRATION_TEMPLATES !== 'undefined' && CALIBRATION_TEMPLATES[type]) || { icon: '🔬', title: `Étalonnage ${type}`, prestations: [] };
+                            return (<div key={type} className="border-l-4 border-blue-500 pl-4">
+                              <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
+                              <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 flex items-start gap-2"><span className="text-[#1a1a2e] mt-1">▸</span><span>{p}</span></li>))}</ul>
+                            </div>);
+                          })}
+                        </div>
+                        {multiPage ? <QFooter pageNum={1} /> : (<>
+                          <PricingBlock />
+                          <SignatureBlock />
+                          <QFooter pageNum={1} />
+                        </>)}
+                      </div>
+
+                      {/* Page 2 (only if multi-page) */}
+                      {multiPage && (
+                        <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: '1100px' }}>
+                          <QHeader />
+                          <QInfoBar />
+                          <PricingBlock />
+                          <div className="flex-1"></div>
+                          <SignatureBlock />
+                          <QFooter pageNum={2} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Messages Tab */}
                 {activeTab === 'messages' && (
                   <div className="space-y-3">
@@ -23753,14 +23962,26 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                 {activeTab === 'documents' && (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
-                      {/* Quote/Devis */}
-                      {contract.signed_quote_url && (
-                        <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                      {/* Generated Quote PDF (from approval) */}
+                      {(contract.quote_data?.quote_url || contract.signed_quote_url) && (
+                        <a href={contract.quote_data?.quote_url || contract.signed_quote_url} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
                           <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">💰</div>
                           <div>
                             <p className="font-medium text-gray-800">Devis</p>
                             <p className="text-sm text-blue-600">{contract.contract_number || '—'}</p>
+                          </div>
+                        </a>
+                      )}
+
+                      {/* Signed quote (customer uploaded) */}
+                      {contract.signed_quote_url && contract.quote_data?.quote_url && contract.signed_quote_url !== contract.quote_data?.quote_url && (
+                        <a href={contract.signed_quote_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-4 p-4 border rounded-lg hover:bg-green-50 transition-colors border-green-200">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center text-2xl shrink-0">✅</div>
+                          <div>
+                            <p className="font-medium text-gray-800">Devis Signé</p>
+                            <p className="text-sm text-green-600">Signé par client</p>
                           </div>
                         </a>
                       )}
@@ -23778,7 +23999,7 @@ function ContractDetailView({ contract: contractProp, clients, notify, onClose, 
                       )}
                     </div>
 
-                    {!contract.signed_quote_url && !contract.bc_file_url && (
+                    {!contract.signed_quote_url && !contract.bc_file_url && !contract.quote_data?.quote_url && (
                       <div className="text-center text-gray-400 py-8">
                         <p className="text-3xl mb-2">📄</p>
                         <p>Aucun document disponible</p>
