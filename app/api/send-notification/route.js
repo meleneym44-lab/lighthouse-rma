@@ -364,6 +364,89 @@ function noBcEmail(data) {
 // ============================================
 // TEMPLATE ROUTER
 // ============================================
+// ============================================
+// 9. SHIPPING DOCS REQUIRED (own_label return)
+// ============================================
+function shippingDocsRequiredEmail(data) {
+  const { rmaNumber, devices } = data;
+  const count = (devices || []).length;
+  const content = `
+    <h2 style="color:#1E3A5F;font-size:18px;margin:0 0 8px;">📦 Documents de transport requis</h2>
+    <p style="color:#6b7280;font-size:14px;line-height:1.6;margin:0 0 20px;">
+      Bonjour,<br><br>
+      ${count > 1
+        ? `Les appareils suivants sous le <strong style="color:#1E3A5F;">RMA# ${rmaNumber}</strong> sont <strong>prêts pour expédition</strong>.`
+        : `L'appareil suivant sous le <strong style="color:#1E3A5F;">RMA# ${rmaNumber}</strong> est <strong>prêt pour expédition</strong>.`}
+    </p>
+    <div style="background:#f0f4f8;border:1px solid #d1dbe6;border-radius:8px;padding:16px;margin:0 0 20px;">
+      ${deviceTableHtml(devices)}
+    </div>
+    <div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <p style="color:#92400e;font-size:14px;font-weight:600;margin:0 0 8px;">⚠️ Action requise — Étiquette de transport</p>
+      <p style="color:#92400e;font-size:13px;line-height:1.5;margin:0;">
+        Vous avez choisi de fournir votre propre étiquette de retour. Veuillez vous connecter à votre portail client pour soumettre :<br>
+        • Votre <strong>étiquette de transport</strong> (PDF ou image)<br>
+        • Le nom de votre <strong>transporteur</strong><br>
+        • La <strong>date d'enlèvement</strong> prévue
+      </p>
+    </div>
+    <p style="color:#6b7280;font-size:13px;line-height:1.5;margin:0 0 4px;">
+      Une fois vos documents soumis, notre équipe les vérifiera et confirmera l'enlèvement.
+    </p>
+    ${ctaButton('Soumettre mes documents →')}`;
+  return {
+    subject: `Lighthouse France — RMA# ${rmaNumber} — ⚠️ Documents de transport requis`,
+    html: baseLayout(content)
+  };
+}
+
+// ============================================
+// 10. PICKUP READY (customer picks up device)
+// ============================================
+function pickupReadyEmail(data) {
+  const { rmaNumber, devices } = data;
+  const count = (devices || []).length;
+  const content = `
+    <h2 style="color:#1E3A5F;font-size:18px;margin:0 0 8px;">✅ Votre appareil est prêt</h2>
+    <p style="color:#6b7280;font-size:14px;line-height:1.6;margin:0 0 20px;">
+      Bonjour,<br><br>
+      ${count > 1
+        ? `Les appareils suivants sous le <strong style="color:#1E3A5F;">RMA# ${rmaNumber}</strong> sont prêts et peuvent être récupérés à notre atelier.`
+        : `L'appareil suivant sous le <strong style="color:#1E3A5F;">RMA# ${rmaNumber}</strong> est prêt et peut être récupéré à notre atelier.`}
+    </p>
+    <div style="background:#f0f4f8;border:1px solid #d1dbe6;border-radius:8px;padding:16px;margin:0 0 20px;">
+      ${deviceTableHtml(devices)}
+    </div>
+    <div style="background:#ecfdf5;border:2px solid #10b981;border-radius:8px;padding:16px;margin:0 0 20px;">
+      <p style="color:#065f46;font-size:14px;font-weight:700;margin:0 0 10px;">🏢 Retrait sur place</p>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding:4px 0;color:#065f46;font-size:13px;width:90px;vertical-align:top;font-weight:600;">Adresse</td>
+          <td style="padding:4px 0;color:#065f46;font-size:13px;">Lighthouse France<br>16 Rue Paul Séjourné<br>94000 Créteil</td>
+        </tr>
+        <tr>
+          <td style="padding:4px 0;color:#065f46;font-size:13px;font-weight:600;">Horaires</td>
+          <td style="padding:4px 0;color:#065f46;font-size:13px;">
+            <strong>Matin :</strong> 9h00 – 12h30<br>
+            <strong>Après-midi :</strong> 14h00 – 17h30
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 0;color:#065f46;font-size:13px;font-weight:600;">Téléphone</td>
+          <td style="padding:4px 0;color:#065f46;font-size:13px;">+33 (0)1 43 77 28 07</td>
+        </tr>
+      </table>
+    </div>
+    <p style="color:#6b7280;font-size:13px;line-height:1.5;margin:0 0 4px;">
+      Merci de vous munir d'une pièce d'identité lors du retrait. Pour toute question, contactez-nous via le portail client.
+    </p>
+    ${ctaButton('Voir les détails →')}`;
+  return {
+    subject: `Lighthouse France — RMA# ${rmaNumber} — ✅ Prêt pour retrait`,
+    html: baseLayout(content)
+  };
+}
+
 const TEMPLATES = {
   rma_created: rmaCreatedEmail,
   device_received: deviceReceivedEmail,
@@ -373,6 +456,8 @@ const TEMPLATES = {
   invoice_sent: invoiceSentEmail,
   no_rma: noRmaEmail,
   no_bc: noBcEmail,
+  shipping_docs_required: shippingDocsRequiredEmail,
+  pickup_ready: pickupReadyEmail,
 };
 
 const BILLING_ONLY_EVENTS = ['invoice_sent'];
