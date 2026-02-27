@@ -4463,6 +4463,7 @@ export default function AdminPortal() {
               setFilter={setDashboardFilter}
               pendingArrivalsCount={pendingArrivalsCount}
               pendingShippingDocs={pendingShippingDocs}
+              profile={profile}
               onShowReceptions={() => setShowReceptions(true)}
             />}
             {activeSheet === 'quote_review' && <QuoteReviewSheet requests={requests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
@@ -6221,8 +6222,9 @@ function KPISheet({ requests = [], clients = [], t = k=>k, lang = 'fr' }) {
   );
 }
 
-function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter, pendingArrivalsCount = 0, pendingShippingDocs = [], onShowReceptions, t = k=>k, lang = 'fr' }) {
+function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSelectDevice, filter, setFilter, pendingArrivalsCount = 0, pendingShippingDocs = [], onShowReceptions, profile, t = k=>k, lang = 'fr' }) {
   const [reviewingBC, setReviewingBC] = useState(null);
+  const [reviewingShipDoc, setReviewingShipDoc] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState('rma'); // 'rma' or 'device'
   const [searchQuery, setSearchQuery] = useState('');
@@ -6543,11 +6545,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      if (linkedRMA) {
-                        onSelectRMA(linkedRMA);
-                      }
-                    }}
+                    onClick={() => setReviewingShipDoc(doc)}
                     className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
                   >
                     🔍 {lang === 'en' ? 'Review' : 'Examiner'}
@@ -6954,6 +6952,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
       
       {/* BC Review Modal */}
       {reviewingBC && <BCReviewModal rma={reviewingBC} onClose={() => setReviewingBC(null)} notify={notify} reload={reload} lang={lang} />}
+      {reviewingShipDoc && <ShippingDocReviewModal doc={reviewingShipDoc} requests={requests} onClose={() => { setReviewingShipDoc(null); reload(); }} notify={notify} reload={reload} profile={profile} lang={lang} />}
     </div>
   );
 }
@@ -7386,6 +7385,326 @@ function BCReviewModal({ rma, onClose, notify, reload, lang = 'fr' }) {
               </button>
               <button onClick={onClose} className="w-full px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
                 Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// SHIPPING DOCUMENT REVIEW MODAL — Same layout as BCReviewModal
+// Left: document preview | Right: details + tracking + approve/reject
+// ============================================
+function ShippingDocReviewModal({ doc, requests, onClose, notify, reload, profile, lang = 'fr' }) {
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [adminNotes, setAdminNotes] = useState('');
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+
+  const linkedRMA = requests.find(r => r.id === doc.request_id);
+  const devices = linkedRMA?.request_devices || [];
+  const carrier = doc.carrier_name || '';
+
+  const generateTrackingUrl = (carrierName, tracking) => {
+    const c = carrierName.toLowerCase();
+    if (c.includes('dhl')) return `https://www.dhl.com/fr-fr/home/tracking.html?tracking-id=${tracking}`;
+    if (c.includes('fedex')) return `https://www.fedex.com/fedextrack/?trknbr=${tracking}`;
+    if (c.includes('ups')) return `https://www.ups.com/track?tracknum=${tracking}`;
+    if (c.includes('gls')) return `https://gls-group.com/FR/fr/suivi-colis?match=${tracking}`;
+    if (c.includes('chronopost')) return `https://www.chronopost.fr/tracking-no-cms/suivi-page?listeNumerosLT=${tracking}`;
+    if (c.includes('tnt')) return `https://www.tnt.com/express/fr_fr/site/outils-expedition/suivi.html?searchType=con&cons=${tracking}`;
+    return `https://www.google.com/search?q=${encodeURIComponent(carrierName)}+tracking+${tracking}`;
+  };
+
+  const approveDoc = async () => {
+    if (!trackingNumber.trim()) {
+      notify(lang === 'en' ? 'Please enter a tracking number' : 'Veuillez entrer un numéro de suivi', 'error');
+      return;
+    }
+    setApproving(true);
+    try {
+      const trackingUrl = generateTrackingUrl(carrier, trackingNumber.trim());
+      const { error } = await supabase.from('shipping_documents').update({
+        status: 'approved',
+        tracking_number: trackingNumber.trim(),
+        tracking_url: trackingUrl,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: profile?.id,
+        updated_at: new Date().toISOString()
+      }).eq('id', doc.id);
+      if (error) throw error;
+
+      // Send message to customer
+      await supabase.from('messages').insert({
+        request_id: doc.request_id,
+        sender_id: profile?.id,
+        sender_type: 'admin',
+        sender_name: profile?.full_name || 'Lighthouse France',
+        content: `✅ Documents de transport approuvés\nNuméro de suivi : ${trackingNumber.trim()}\nTransporteur : ${carrier}`
+      });
+
+      notify(lang === 'en' ? '✅ Shipping docs approved!' : '✅ Documents de transport approuvés !');
+      reload();
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setApproving(false);
+  };
+
+  const rejectDoc = async () => {
+    if (!adminNotes.trim()) {
+      notify(lang === 'en' ? 'Please enter the rejection reason' : 'Veuillez indiquer la raison du refus', 'error');
+      return;
+    }
+    setRejecting(true);
+    try {
+      const { error } = await supabase.from('shipping_documents').update({
+        status: 'rejected',
+        admin_notes: adminNotes.trim(),
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: profile?.id,
+        updated_at: new Date().toISOString()
+      }).eq('id', doc.id);
+      if (error) throw error;
+
+      await supabase.from('messages').insert({
+        request_id: doc.request_id,
+        sender_id: profile?.id,
+        sender_type: 'admin',
+        sender_name: profile?.full_name || 'Lighthouse France',
+        content: `❌ Documents de transport rejetés\nMotif : ${adminNotes.trim()}`
+      });
+
+      notify(lang === 'en' ? '❌ Shipping docs rejected' : '❌ Documents rejetés');
+      reload();
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setRejecting(false);
+  };
+
+  const requestModification = async () => {
+    if (!adminNotes.trim()) {
+      notify(lang === 'en' ? 'Please describe changes needed' : 'Veuillez décrire les modifications', 'error');
+      return;
+    }
+    setRequesting(true);
+    try {
+      const { error } = await supabase.from('shipping_documents').update({
+        status: 'modification_requested',
+        admin_notes: adminNotes.trim(),
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: profile?.id,
+        updated_at: new Date().toISOString()
+      }).eq('id', doc.id);
+      if (error) throw error;
+
+      await supabase.from('messages').insert({
+        request_id: doc.request_id,
+        sender_id: profile?.id,
+        sender_type: 'admin',
+        sender_name: profile?.full_name || 'Lighthouse France',
+        content: `✏️ Modification demandée pour vos documents de transport\nMotif : ${adminNotes.trim()}`
+      });
+
+      notify(lang === 'en' ? '✏️ Modification requested' : '✏️ Modification demandée');
+      reload();
+      onClose();
+    } catch (err) {
+      notify('Erreur: ' + err.message, 'error');
+    }
+    setRequesting(false);
+  };
+
+  const displayUrl = doc.document_url;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 flex" onClick={onClose}>
+      <div className="bg-white w-full h-full max-w-[98vw] max-h-[98vh] m-auto rounded-xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header — amber gradient like avenant BC */}
+        <div className="px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex justify-between items-center flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-bold">📦 {lang === 'en' ? 'Shipping Document Verification' : 'Vérification des Documents de Transport'}</h2>
+            <p className="text-amber-100">
+              {linkedRMA?.request_number || doc.request_type.toUpperCase()} • {doc.companies?.name || linkedRMA?.companies?.name}
+              {' • '}{carrier}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-3xl">&times;</button>
+        </div>
+        
+        {/* Content — same flex layout as BC review */}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left: Document Preview - Takes most of the space */}
+          <div className="flex-1 flex flex-col bg-gray-800 p-4">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-bold text-white text-lg">📄 {lang === 'en' ? 'Shipping Label / Document' : 'Étiquette de Transport / Document'}</h3>
+              <div className="flex gap-2">
+                {displayUrl && (
+                  <a href={displayUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">
+                    📄 {doc.document_name || (lang === 'en' ? 'Open Document' : 'Ouvrir le document')} ↗
+                  </a>
+                )}
+              </div>
+            </div>
+            
+            {/* Document viewer — same approach as BC review */}
+            {displayUrl ? (
+              <div className="flex-1 rounded-lg overflow-hidden bg-white">
+                {displayUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                  <img src={displayUrl} alt="Shipping Document" className="w-full h-full object-contain" />
+                ) : displayUrl.match(/\.pdf$/i) || displayUrl.includes('pdf') ? (
+                  <object
+                    data={`${displayUrl}#view=Fit`}
+                    type="application/pdf"
+                    className="w-full h-full"
+                    style={{ minHeight: '100%' }}
+                  >
+                    <iframe 
+                      src={`${displayUrl}#view=Fit`} 
+                      className="w-full h-full" 
+                      title="Shipping Document PDF"
+                    />
+                  </object>
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <a href={displayUrl} target="_blank" rel="noopener noreferrer" className="px-8 py-4 bg-blue-500 text-white rounded-lg text-lg font-medium">
+                      📥 {lang === 'en' ? 'Download File' : 'Télécharger le fichier'}
+                    </a>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 border-2 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-gray-400 text-lg">
+                {lang === 'en' ? 'No document uploaded' : 'Aucun document uploadé'}
+              </div>
+            )}
+          </div>
+          
+          {/* Right: Shipping Details - Sidebar */}
+          <div className="w-96 flex-shrink-0 bg-gray-50 overflow-y-auto p-4 space-y-4">
+            <h3 className="font-bold text-gray-800 text-lg">📋 {lang === 'en' ? 'Shipping Details' : 'Détails de l\'Expédition'}</h3>
+            
+            {/* Request Info */}
+            <div className="bg-white rounded-lg p-4 border">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-gray-500">{lang === 'en' ? 'Request' : 'Demande'}</p>
+                  <p className="font-mono font-bold text-[#00A651]">{linkedRMA?.request_number || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">{lang === 'en' ? 'Client' : 'Client'}</p>
+                  <p className="font-medium">{doc.companies?.name || linkedRMA?.companies?.name || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">{lang === 'en' ? 'Type' : 'Type'}</p>
+                  <p className="font-medium capitalize">{doc.request_type === 'rma' ? 'RMA' : doc.request_type === 'parts' ? 'Pièces' : 'Location'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">{lang === 'en' ? 'Submitted' : 'Soumis le'}</p>
+                  <p className="font-medium">{doc.submitted_at ? new Date(doc.submitted_at).toLocaleString(lang === 'en' ? 'en-US' : 'fr-FR') : new Date(doc.created_at).toLocaleString('fr-FR')}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Carrier & Pickup Info */}
+            <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+              <h4 className="font-medium text-amber-800 mb-2">🚛 {lang === 'en' ? 'Transport Info' : 'Info Transport'}</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-amber-700">{lang === 'en' ? 'Carrier' : 'Transporteur'}</span>
+                  <span className="font-bold text-amber-900">{carrier}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-amber-700">{lang === 'en' ? 'Pickup Date' : 'Date d\'enlèvement'}</span>
+                  <span className="font-bold text-amber-900">{doc.pickup_date ? new Date(doc.pickup_date).toLocaleDateString('fr-FR') : '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Customer Notes */}
+            {doc.customer_notes && (
+              <div className="bg-white rounded-lg p-4 border">
+                <h4 className="font-medium text-gray-700 mb-2">💬 {lang === 'en' ? 'Customer Notes' : 'Notes du client'}</h4>
+                <p className="text-sm text-gray-600">{doc.customer_notes}</p>
+              </div>
+            )}
+            
+            {/* Devices */}
+            {devices.length > 0 && (
+              <div className="bg-white rounded-lg p-4 border">
+                <h4 className="font-medium text-gray-700 mb-2">📦 {lang === 'en' ? 'Devices' : 'Appareils'} ({devices.length})</h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {devices.map((d, i) => (
+                    <div key={i} className="bg-gray-50 rounded p-2 text-sm">
+                      <p className="font-medium">{d.model_name}</p>
+                      <p className="text-gray-500">SN: {d.serial_number}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Tracking Number Input — same style as BC number input */}
+            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <h4 className="font-medium text-green-800 mb-2">📍 {lang === 'en' ? 'Tracking Number' : 'Numéro de Suivi'}</h4>
+              <p className="text-xs text-green-600 mb-3">
+                {lang === 'en' ? 'Enter the tracking number for this shipment. This will be shared with the customer.' : 'Entrez le numéro de suivi pour cet envoi. Il sera partagé avec le client.'}
+              </p>
+              <input
+                type="text"
+                value={trackingNumber}
+                onChange={e => setTrackingNumber(e.target.value)}
+                placeholder="Ex: 1Z999AA10123456784"
+                className="w-full px-3 py-2.5 border border-green-300 rounded-lg font-mono text-center text-lg"
+              />
+              {trackingNumber && (
+                <p className="text-xs text-green-600 mt-1">✓ {lang === 'en' ? 'Tracking URL will be auto-generated for' : 'URL de suivi auto-générée pour'} {carrier}</p>
+              )}
+            </div>
+            
+            {/* Reject / Modification Reason */}
+            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+              <h4 className="font-medium text-red-800 mb-2">{lang === 'en' ? 'Reject or request changes?' : 'Refuser ou demander modification ?'}</h4>
+              <textarea
+                value={adminNotes}
+                onChange={e => setAdminNotes(e.target.value)}
+                placeholder={lang === 'en' ? 'Reason for rejection or changes needed...' : 'Raison du refus ou modifications demandées...'}
+                className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm h-20 resize-none"
+              />
+            </div>
+            
+            {/* Actions — same style as BC approve/reject */}
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={approveDoc}
+                disabled={approving}
+                className="w-full px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold disabled:opacity-50"
+              >
+                {approving ? (lang === 'en' ? 'Approving...' : 'Approbation...') : (lang === 'en' ? '✅ Approve & Save Tracking' : '✅ Approuver et enregistrer le suivi')}
+              </button>
+              <button
+                onClick={requestModification}
+                disabled={requesting}
+                className="w-full px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {requesting ? '...' : (lang === 'en' ? '✏️ Request Changes' : '✏️ Demander modification')}
+              </button>
+              <button
+                onClick={rejectDoc}
+                disabled={rejecting}
+                className="w-full px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {rejecting ? 'Refus...' : (lang === 'en' ? '❌ Reject' : '❌ Rejeter')}
+              </button>
+              <button onClick={onClose} className="w-full px-6 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium">
+                {lang === 'en' ? 'Cancel' : 'Annuler'}
               </button>
             </div>
           </div>
