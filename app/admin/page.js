@@ -8173,6 +8173,14 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
   const [docUploading, setDocUploading] = useState(false);
   const [docToDelete, setDocToDelete] = useState(null);
   
+  // Shipping document review state (own_label)
+  const [shippingDoc, setShippingDoc] = useState(null);
+  const [showShipDocReview, setShowShipDocReview] = useState(false);
+  const [shipDocTrackingNumber, setShipDocTrackingNumber] = useState('');
+  const [shipDocAdminNotes, setShipDocAdminNotes] = useState('');
+  const [shipDocAction, setShipDocAction] = useState('');
+  const [shipDocProcessing, setShipDocProcessing] = useState(false);
+  
   // Fetch attachments for this RMA
   useEffect(() => {
     const fetchAttachments = async () => {
@@ -8186,6 +8194,81 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
     };
     fetchAttachments();
   }, [rma?.id]);
+  
+  // Fetch shipping document for own_label returns
+  useEffect(() => {
+    const fetchShippingDoc = async () => {
+      if (!rma?.id || rma.return_shipping !== 'own_label') return;
+      const reqType = rma.request_type === 'parts' ? 'parts' : 'rma';
+      const { data } = await supabase.from('shipping_documents').select('*').eq('request_id', rma.id).eq('request_type', reqType).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      setShippingDoc(data || null);
+    };
+    fetchShippingDoc();
+  }, [rma?.id, rma?.return_shipping]);
+  
+  // Shipping doc review actions
+  const handleShipDocAction = async (action) => {
+    if (action === 'approve' && !shipDocTrackingNumber.trim()) {
+      notify(lang === 'en' ? 'Enter tracking number' : 'Veuillez entrer le numéro de suivi', 'error');
+      return;
+    }
+    if ((action === 'reject' || action === 'modification') && !shipDocAdminNotes.trim()) {
+      notify(lang === 'en' ? 'Enter reason' : 'Veuillez entrer le motif', 'error');
+      return;
+    }
+    setShipDocProcessing(true);
+    try {
+      const carrier = shippingDoc.carrier_name || '';
+      const trackingUrl = action === 'approve' ? (
+        carrier.toLowerCase().includes('dhl') ? `https://www.dhl.com/fr-fr/home/tracking.html?tracking-id=${shipDocTrackingNumber.trim()}` :
+        carrier.toLowerCase().includes('fedex') ? `https://www.fedex.com/fedextrack/?trknbr=${shipDocTrackingNumber.trim()}` :
+        carrier.toLowerCase().includes('ups') ? `https://www.ups.com/track?tracknum=${shipDocTrackingNumber.trim()}` :
+        carrier.toLowerCase().includes('gls') ? `https://gls-group.com/FR/fr/suivi-colis?match=${shipDocTrackingNumber.trim()}` :
+        carrier.toLowerCase().includes('chronopost') ? `https://www.chronopost.fr/tracking-no-cms/suivi-page?listeNumerosLT=${shipDocTrackingNumber.trim()}` :
+        carrier.toLowerCase().includes('tnt') ? `https://www.tnt.com/express/fr_fr/site/outils-expedition/suivi.html?searchType=con&cons=${shipDocTrackingNumber.trim()}` :
+        `https://www.google.com/search?q=${encodeURIComponent(carrier)}+tracking+${shipDocTrackingNumber.trim()}`
+      ) : null;
+      
+      const updateData = {
+        status: action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'modification_requested',
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: profile?.id,
+        admin_notes: action !== 'approve' ? shipDocAdminNotes.trim() : null,
+        updated_at: new Date().toISOString()
+      };
+      if (action === 'approve') {
+        updateData.tracking_number = shipDocTrackingNumber.trim();
+        updateData.tracking_url = trackingUrl;
+      }
+      
+      const { error } = await supabase.from('shipping_documents').update(updateData).eq('id', shippingDoc.id);
+      if (error) throw error;
+      
+      const msgContent = action === 'approve' 
+        ? `✅ Documents de transport approuvés\nNuméro de suivi : ${shipDocTrackingNumber.trim()}\nTransporteur : ${carrier}`
+        : action === 'reject'
+        ? `❌ Documents de transport rejetés\nMotif : ${shipDocAdminNotes.trim()}`
+        : `✏️ Modification demandée pour vos documents de transport\nMotif : ${shipDocAdminNotes.trim()}`;
+      
+      await supabase.from('messages').insert({
+        request_id: rma.id,
+        sender_id: profile?.id,
+        sender_type: 'admin',
+        sender_name: profile?.full_name || 'Lighthouse France',
+        content: msgContent
+      });
+      
+      const labels = { approve: '✅ Approuvé', reject: '❌ Rejeté', modification: '✏️ Modification demandée' };
+      notify(labels[action]);
+      setShowShipDocReview(false);
+      setShipDocTrackingNumber('');
+      setShipDocAdminNotes('');
+      reload();
+    } catch (err) {
+      notify(`Erreur: ${err.message}`, 'error');
+    }
+    setShipDocProcessing(false);
+  };
   
   // Fetch shipping addresses for devices and RMA
   useEffect(() => {
@@ -9596,6 +9679,128 @@ function RMAFullPage({ rma, onBack, notify, reload, profile, initialDevice, busi
           saving={saving}
           setSaving={setSaving}
         />
+      )}
+
+      {/* ====== SHIPPING DOCUMENT REVIEW (own_label) ====== */}
+      {shippingDoc && shippingDoc.status === 'submitted' && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-amber-200 flex items-center justify-center text-2xl">📦</div>
+              <div>
+                <p className="font-bold text-amber-900 text-lg">
+                  {lang === 'en' ? '📦 Shipping Documents — Review Required' : '📦 Documents de transport — Vérification requise'}
+                </p>
+                <p className="text-sm text-amber-700">
+                  {lang === 'en' ? 'Customer has submitted their own shipping label for review' : 'Le client a soumis son étiquette de transport pour vérification'}
+                </p>
+                <div className="flex flex-wrap gap-3 mt-2 text-xs">
+                  <span className="bg-white px-2 py-1 rounded border border-amber-200">🚛 {shippingDoc.carrier_name}</span>
+                  <span className="bg-white px-2 py-1 rounded border border-amber-200">📅 {new Date(shippingDoc.pickup_date).toLocaleDateString('fr-FR')}</span>
+                  {shippingDoc.submitted_at && <span className="bg-white px-2 py-1 rounded border border-amber-200">⏰ {new Date(shippingDoc.submitted_at).toLocaleDateString('fr-FR')}</span>}
+                </div>
+              </div>
+            </div>
+            <button onClick={() => { setShipDocAction(''); setShipDocTrackingNumber(''); setShipDocAdminNotes(''); setShowShipDocReview(true); }} className="px-5 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600 whitespace-nowrap">
+              👁️ {lang === 'en' ? 'Review' : 'Vérifier'}
+            </button>
+          </div>
+        </div>
+      )}
+      {shippingDoc && shippingDoc.status === 'approved' && (
+        <div className="bg-green-50 border border-green-300 rounded-xl p-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-lg">✅</span>
+            <div>
+              <p className="font-medium text-green-800 text-sm">{lang === 'en' ? 'Shipping docs approved' : 'Documents de transport approuvés'} — {shippingDoc.carrier_name}</p>
+              <p className="text-xs text-green-600 font-mono">📍 {shippingDoc.tracking_number} • {lang === 'en' ? 'Pickup' : 'Enlèvement'}: {new Date(shippingDoc.pickup_date).toLocaleDateString('fr-FR')}</p>
+            </div>
+          </div>
+          <button onClick={() => { setShipDocAction(''); setShowShipDocReview(true); }} className="text-xs text-green-600 underline">{lang === 'en' ? 'Details' : 'Détails'}</button>
+        </div>
+      )}
+
+      {/* Shipping Document Review Modal */}
+      {showShipDocReview && shippingDoc && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowShipDocReview(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-[#1E3A5F] text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">📦 {lang === 'en' ? 'Shipping Document Review' : 'Vérification Documents Transport'}</h2>
+                <p className="text-white/60 text-sm">{rma.request_number}</p>
+              </div>
+              <button onClick={() => setShowShipDocReview(false)} className="text-white/80 hover:text-white text-2xl">×</button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className={`inline-flex px-3 py-1.5 rounded-full text-sm font-bold ${shippingDoc.status === 'submitted' ? 'bg-amber-100 text-amber-800' : shippingDoc.status === 'approved' ? 'bg-green-100 text-green-800' : shippingDoc.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                {shippingDoc.status === 'submitted' ? '⏳ En attente' : shippingDoc.status === 'approved' ? '✅ Approuvé' : shippingDoc.status === 'rejected' ? '❌ Rejeté' : '✏️ Modification demandée'}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 rounded-lg p-3 border"><p className="text-xs text-gray-400 uppercase font-bold">{lang === 'en' ? 'Carrier' : 'Transporteur'}</p><p className="font-bold text-[#1E3A5F]">{shippingDoc.carrier_name}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3 border"><p className="text-xs text-gray-400 uppercase font-bold">{lang === 'en' ? 'Pickup Date' : 'Date d\'enlèvement'}</p><p className="font-bold text-[#1E3A5F]">{new Date(shippingDoc.pickup_date).toLocaleDateString('fr-FR')}</p></div>
+              </div>
+              {shippingDoc.document_url && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-400 uppercase font-bold mb-1">📎 Document</p>
+                  <a href={shippingDoc.document_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium text-sm flex items-center gap-1">📄 {shippingDoc.document_name || 'Voir le document'} ↗</a>
+                </div>
+              )}
+              {shippingDoc.customer_notes && (
+                <div className="bg-gray-50 rounded-lg p-3 border"><p className="text-xs text-gray-400 uppercase font-bold">{lang === 'en' ? 'Customer Notes' : 'Notes du client'}</p><p className="text-sm text-gray-700 mt-1">{shippingDoc.customer_notes}</p></div>
+              )}
+              {shippingDoc.tracking_number && (
+                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                  <p className="text-xs text-green-400 uppercase font-bold">{lang === 'en' ? 'Tracking Number' : 'Numéro de suivi'}</p>
+                  <p className="font-mono font-bold text-green-800">{shippingDoc.tracking_number}</p>
+                  {shippingDoc.tracking_url && <a href={shippingDoc.tracking_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">{lang === 'en' ? 'Track' : 'Suivre'} ↗</a>}
+                </div>
+              )}
+              {shippingDoc.status === 'submitted' && (<>
+                <hr className="my-2" />
+                <p className="font-bold text-[#1E3A5F] text-sm uppercase">Action</p>
+                <div className="flex gap-2">
+                  {[
+                    { id: 'approve', label: '✅ Approuver', color: 'bg-green-100 text-green-800 border-green-300', active: 'bg-green-500 text-white' },
+                    { id: 'modification', label: '✏️ Modifier', color: 'bg-blue-100 text-blue-800 border-blue-300', active: 'bg-blue-500 text-white' },
+                    { id: 'reject', label: '❌ Rejeter', color: 'bg-red-100 text-red-800 border-red-300', active: 'bg-red-500 text-white' }
+                  ].map(a => (
+                    <button key={a.id} onClick={() => setShipDocAction(a.id)} className={`flex-1 py-2.5 rounded-lg text-sm font-bold border transition-colors ${shipDocAction === a.id ? a.active : a.color}`}>{a.label}</button>
+                  ))}
+                </div>
+                {shipDocAction === 'approve' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">📍 {lang === 'en' ? 'Tracking Number' : 'Numéro de suivi'} *</label>
+                      <input type="text" value={shipDocTrackingNumber} onChange={e => setShipDocTrackingNumber(e.target.value)} placeholder="Ex: 1Z999AA10123456784" className="w-full px-3 py-2.5 border-2 border-green-300 rounded-lg text-sm font-mono focus:border-green-500 focus:ring-1 focus:ring-green-500" />
+                    </div>
+                    <button onClick={() => handleShipDocAction('approve')} disabled={shipDocProcessing} className="w-full py-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 disabled:opacity-50">
+                      {shipDocProcessing ? '...' : lang === 'en' ? '✅ Approve & Save Tracking' : '✅ Approuver et enregistrer le suivi'}
+                    </button>
+                  </div>
+                )}
+                {(shipDocAction === 'reject' || shipDocAction === 'modification') && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-1">
+                        {shipDocAction === 'reject' ? (lang === 'en' ? '❌ Rejection reason' : '❌ Motif du rejet') : (lang === 'en' ? '✏️ Modifications needed' : '✏️ Modifications demandées')} *
+                      </label>
+                      <textarea value={shipDocAdminNotes} onChange={e => setShipDocAdminNotes(e.target.value)} rows={3}
+                        placeholder={shipDocAction === 'reject' ? (lang === 'en' ? 'Explain why...' : 'Expliquez pourquoi...') : (lang === 'en' ? 'Describe changes needed...' : 'Décrivez les modifications...')}
+                        className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm ${shipDocAction === 'reject' ? 'border-red-300' : 'border-blue-300'}`} />
+                    </div>
+                    <button onClick={() => handleShipDocAction(shipDocAction)} disabled={shipDocProcessing}
+                      className={`w-full py-3 text-white rounded-lg font-bold disabled:opacity-50 ${shipDocAction === 'reject' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'}`}>
+                      {shipDocProcessing ? '...' : shipDocAction === 'reject' ? (lang === 'en' ? '❌ Reject' : '❌ Rejeter') : (lang === 'en' ? '✏️ Request Changes' : '✏️ Demander modification')}
+                    </button>
+                  </div>
+                )}
+              </>)}
+            </div>
+            <div className="p-4 border-t bg-gray-50 rounded-b-2xl">
+              <button onClick={() => setShowShipDocReview(false)} className="w-full py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300">{lang === 'en' ? 'Close' : 'Fermer'}</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Quote Review Status */}
@@ -12128,6 +12333,14 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
   const [partsBillingAddr, setPartsBillingAddr] = useState(null);
   const [partsShippingAddr, setPartsShippingAddr] = useState(null);
   
+  // Shipping document review state (own_label)
+  const [partsShippingDoc, setPartsShippingDoc] = useState(null);
+  const [showPartsShipDocReview, setShowPartsShipDocReview] = useState(false);
+  const [partsShipDocTracking, setPartsShipDocTracking] = useState('');
+  const [partsShipDocNotes, setPartsShipDocNotes] = useState('');
+  const [partsShipDocAction, setPartsShipDocAction] = useState('');
+  const [partsShipDocProcessing, setPartsShipDocProcessing] = useState(false);
+  
   // Sync with parent prop changes
   useEffect(() => { setOrder(orderProp); }, [orderProp]);
   
@@ -12188,9 +12401,40 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
         .in('status', ['sent', 'paid', 'overdue', 'partially_paid'])
         .order('created_at', { ascending: false });
       setOrderInvoices(invs || []);
+      
+      // Fetch shipping document for own_label
+      if (order.return_shipping === 'own_label') {
+        const { data: sdoc } = await supabase.from('shipping_documents').select('*').eq('request_id', order.id).eq('request_type', 'parts').order('created_at', { ascending: false }).limit(1).maybeSingle();
+        setPartsShippingDoc(sdoc || null);
+      }
     };
     fetchData();
   }, [order.id]);
+  
+  // Parts shipping doc review action
+  const handlePartsShipDocAction = async (action) => {
+    if (action === 'approve' && !partsShipDocTracking.trim()) { notify(lang === 'en' ? 'Enter tracking number' : 'Veuillez entrer le numéro de suivi', 'error'); return; }
+    if ((action === 'reject' || action === 'modification') && !partsShipDocNotes.trim()) { notify(lang === 'en' ? 'Enter reason' : 'Veuillez entrer le motif', 'error'); return; }
+    setPartsShipDocProcessing(true);
+    try {
+      const carrier = partsShippingDoc.carrier_name || '';
+      const trackingUrl = action === 'approve' ? `https://www.google.com/search?q=${encodeURIComponent(carrier)}+tracking+${partsShipDocTracking.trim()}` : null;
+      const updateData = {
+        status: action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'modification_requested',
+        reviewed_at: new Date().toISOString(), reviewed_by: profile?.id,
+        admin_notes: action !== 'approve' ? partsShipDocNotes.trim() : null,
+        updated_at: new Date().toISOString()
+      };
+      if (action === 'approve') { updateData.tracking_number = partsShipDocTracking.trim(); updateData.tracking_url = trackingUrl; }
+      await supabase.from('shipping_documents').update(updateData).eq('id', partsShippingDoc.id);
+      const msgContent = action === 'approve' ? `✅ Documents approuvés — Suivi: ${partsShipDocTracking.trim()}` : action === 'reject' ? `❌ Documents rejetés: ${partsShipDocNotes.trim()}` : `✏️ Modification demandée: ${partsShipDocNotes.trim()}`;
+      await supabase.from('messages').insert({ request_id: order.id, sender_id: profile?.id, sender_type: 'admin', sender_name: profile?.full_name || 'Lighthouse', content: msgContent });
+      notify(action === 'approve' ? '✅ Approuvé' : action === 'reject' ? '❌ Rejeté' : '✏️ Modification demandée');
+      setShowPartsShipDocReview(false);
+      reload();
+    } catch (err) { notify(`Erreur: ${err.message}`, 'error'); }
+    setPartsShipDocProcessing(false);
+  };
   
   // Refresh attachments
   const refreshAttachments = async () => {
@@ -12530,6 +12774,75 @@ const STATUS_STYLES = {
         </div>
       </div>
       
+      {/* Shipping Doc Review Banner (own_label) */}
+      {partsShippingDoc && partsShippingDoc.status === 'submitted' && (
+        <div className="mx-6 mt-4 bg-amber-50 border-2 border-amber-400 rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-amber-200 flex items-center justify-center text-2xl">📦</div>
+              <div>
+                <p className="font-bold text-amber-900">{lang === 'en' ? '📦 Shipping Documents — Review Required' : '📦 Documents de transport — Vérification requise'}</p>
+                <div className="flex gap-2 mt-1 text-xs">
+                  <span className="bg-white px-2 py-1 rounded border border-amber-200">🚛 {partsShippingDoc.carrier_name}</span>
+                  <span className="bg-white px-2 py-1 rounded border border-amber-200">📅 {new Date(partsShippingDoc.pickup_date).toLocaleDateString('fr-FR')}</span>
+                </div>
+              </div>
+            </div>
+            <button onClick={() => { setPartsShipDocAction(''); setPartsShipDocTracking(''); setPartsShipDocNotes(''); setShowPartsShipDocReview(true); }} className="px-5 py-3 bg-amber-500 text-white rounded-lg font-bold hover:bg-amber-600">👁️ {lang === 'en' ? 'Review' : 'Vérifier'}</button>
+          </div>
+        </div>
+      )}
+      {partsShippingDoc && partsShippingDoc.status === 'approved' && (
+        <div className="mx-6 mt-4 bg-green-50 border border-green-300 rounded-xl p-3 flex items-center gap-2">
+          <span>✅</span>
+          <span className="text-sm text-green-800 font-medium">{lang === 'en' ? 'Shipping docs approved' : 'Documents approuvés'} — {partsShippingDoc.carrier_name} • 📍 {partsShippingDoc.tracking_number}</span>
+        </div>
+      )}
+      {/* Parts Shipping Doc Review Modal */}
+      {showPartsShipDocReview && partsShippingDoc && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowPartsShipDocReview(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-[#1E3A5F] text-white px-6 py-4 rounded-t-2xl flex justify-between items-center">
+              <h2 className="text-xl font-bold">📦 {lang === 'en' ? 'Shipping Document Review' : 'Documents de transport'}</h2>
+              <button onClick={() => setShowPartsShipDocReview(false)} className="text-white/80 hover:text-white text-2xl">×</button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className={`inline-flex px-3 py-1.5 rounded-full text-sm font-bold ${partsShippingDoc.status === 'submitted' ? 'bg-amber-100 text-amber-800' : partsShippingDoc.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {partsShippingDoc.status === 'submitted' ? '⏳ En attente' : partsShippingDoc.status === 'approved' ? '✅ Approuvé' : '❌ Rejeté'}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 rounded-lg p-3 border"><p className="text-xs text-gray-400 uppercase font-bold">{lang === 'en' ? 'Carrier' : 'Transporteur'}</p><p className="font-bold text-[#1E3A5F]">{partsShippingDoc.carrier_name}</p></div>
+                <div className="bg-gray-50 rounded-lg p-3 border"><p className="text-xs text-gray-400 uppercase font-bold">{lang === 'en' ? 'Pickup' : 'Enlèvement'}</p><p className="font-bold text-[#1E3A5F]">{new Date(partsShippingDoc.pickup_date).toLocaleDateString('fr-FR')}</p></div>
+              </div>
+              {partsShippingDoc.document_url && <div className="bg-blue-50 border border-blue-200 rounded-lg p-3"><a href={partsShippingDoc.document_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium text-sm">📄 {partsShippingDoc.document_name || (lang === 'en' ? 'View document' : 'Voir le document')} ↗</a></div>}
+              {partsShippingDoc.customer_notes && <div className="bg-gray-50 rounded-lg p-3 border"><p className="text-xs text-gray-400 uppercase font-bold">{lang === 'en' ? 'Notes' : 'Notes'}</p><p className="text-sm mt-1">{partsShippingDoc.customer_notes}</p></div>}
+              {partsShippingDoc.tracking_number && <div className="bg-green-50 rounded-lg p-3 border border-green-200"><p className="text-xs text-green-400 uppercase font-bold">{lang === 'en' ? 'Tracking' : 'Suivi'}</p><p className="font-mono font-bold text-green-800">{partsShippingDoc.tracking_number}</p></div>}
+              {partsShippingDoc.status === 'submitted' && (<>
+                <hr />
+                <div className="flex gap-2">
+                  {[{id:'approve',label:'✅ Approuver',c:'bg-green-100 text-green-800 border-green-300',a:'bg-green-500 text-white'},{id:'modification',label:'✏️ Modifier',c:'bg-blue-100 text-blue-800 border-blue-300',a:'bg-blue-500 text-white'},{id:'reject',label:'❌ Rejeter',c:'bg-red-100 text-red-800 border-red-300',a:'bg-red-500 text-white'}].map(a=>(
+                    <button key={a.id} onClick={()=>setPartsShipDocAction(a.id)} className={`flex-1 py-2.5 rounded-lg text-sm font-bold border transition-colors ${partsShipDocAction===a.id?a.a:a.c}`}>{a.label}</button>
+                  ))}
+                </div>
+                {partsShipDocAction === 'approve' && (
+                  <div className="space-y-3">
+                    <input type="text" value={partsShipDocTracking} onChange={e=>setPartsShipDocTracking(e.target.value)} placeholder={lang === 'en' ? 'Tracking number...' : 'Numéro de suivi...'} className="w-full px-3 py-2.5 border-2 border-green-300 rounded-lg text-sm font-mono" />
+                    <button onClick={()=>handlePartsShipDocAction('approve')} disabled={partsShipDocProcessing} className="w-full py-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 disabled:opacity-50">{partsShipDocProcessing?'...':'✅ Approuver'}</button>
+                  </div>
+                )}
+                {(partsShipDocAction === 'reject' || partsShipDocAction === 'modification') && (
+                  <div className="space-y-3">
+                    <textarea value={partsShipDocNotes} onChange={e=>setPartsShipDocNotes(e.target.value)} rows={3} placeholder={lang === 'en' ? 'Reason...' : 'Motif...'} className={`w-full px-3 py-2.5 border-2 rounded-lg text-sm ${partsShipDocAction==='reject'?'border-red-300':'border-blue-300'}`} />
+                    <button onClick={()=>handlePartsShipDocAction(partsShipDocAction)} disabled={partsShipDocProcessing} className={`w-full py-3 text-white rounded-lg font-bold disabled:opacity-50 ${partsShipDocAction==='reject'?'bg-red-500':'bg-blue-500'}`}>{partsShipDocProcessing?'...':partsShipDocAction==='reject'?'❌ Rejeter':'✏️ Modifier'}</button>
+                  </div>
+                )}
+              </>)}
+            </div>
+            <div className="p-4 border-t bg-gray-50 rounded-b-2xl"><button onClick={()=>setShowPartsShipDocReview(false)} className="w-full py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300">{lang === 'en' ? 'Close' : 'Fermer'}</button></div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="p-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
