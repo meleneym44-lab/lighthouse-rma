@@ -4158,6 +4158,7 @@ export default function AdminPortal() {
   const [pendingArrivalsCount, setPendingArrivalsCount] = useState(0);
   const [showReceptions, setShowReceptions] = useState(false);
   const [pendingQuoteReviewCount, setPendingQuoteReviewCount] = useState(0);
+  const [pendingShippingDocs, setPendingShippingDocs] = useState([]);
   const [selectedRMA, setSelectedRMA] = useState(null); // Full-page RMA view
   const [lang, setLang] = useState('fr');
   const t = useCallback((k) => AT[lang]?.[k] || AT.fr?.[k] || k, [lang]);
@@ -4220,6 +4221,12 @@ export default function AdminPortal() {
       const { count: qrCount } = await supabase.from('quote_reviews').select('id', { count: 'exact', head: true }).eq('status', 'pending');
       setPendingQuoteReviewCount(qrCount || 0);
     } catch { setPendingQuoteReviewCount(0); }
+    
+    // Load pending shipping documents (own_label returns awaiting review)
+    try {
+      const { data: shipDocs } = await supabase.from('shipping_documents').select('*, companies(name)').eq('status', 'submitted').order('submitted_at', { ascending: true });
+      setPendingShippingDocs(shipDocs || []);
+    } catch { setPendingShippingDocs([]); }
     
     // Load rental requests
     const { data: rentalsData, error: rentalsError } = await supabase.from('rental_requests')
@@ -6297,6 +6304,7 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
   const stats = [
     { id: 'all', label: lang === 'en' ? 'Active RMAs' : 'RMAs Actifs', value: activeRMAs.length, color: 'bg-blue-500', icon: '📋' },
     { id: 'bc', label: lang === 'en' ? 'PO to Review' : 'BC à vérifier', value: needsReview.length, color: 'bg-red-500', icon: '⚠️' },
+    { id: 'shipping_docs', label: lang === 'en' ? 'Shipping Docs' : 'Docs Transport', value: pendingShippingDocs.length, color: 'bg-amber-500', icon: '📦' },
     { id: 'supplement', label: lang === 'en' ? 'Supplement' : 'Supplément', value: supplementActive.length, color: 'bg-amber-500', icon: '📄' },
     { id: 'waiting_bc', label: lang === 'en' ? 'Awaiting PO' : 'Attente BC', value: waitingBC.length, color: 'bg-orange-500', icon: '📝' },
     { id: 'waiting_device', label: lang === 'en' ? 'Awaiting Device' : 'Attente Appareil', value: waitingDevice.length, color: 'bg-cyan-500', icon: '📦' },
@@ -6505,6 +6513,47 @@ function DashboardSheet({ requests, notify, reload, isAdmin, onSelectRMA, onSele
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Pending Shipping Documents — own_label returns */}
+      {pendingShippingDocs.length > 0 && (!filter || filter === 'shipping_docs') && !searchQuery.trim() && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl shadow-lg">
+          <div className="px-6 py-4 border-b border-amber-200 bg-amber-100 rounded-t-xl">
+            <h2 className="font-bold text-amber-800 text-lg">{lang === 'en' ? '📦 Shipping Documents to Review' : '📦 Documents de Transport à Vérifier'} ({pendingShippingDocs.length})</h2>
+            <p className="text-sm text-amber-600">{lang === 'en' ? 'Customers have submitted shipping labels for review' : 'Des clients ont soumis leurs étiquettes de transport pour vérification'}</p>
+          </div>
+          <div className="p-4 space-y-3">
+            {pendingShippingDocs.map(doc => {
+              const linkedRMA = requests.find(r => r.id === doc.request_id);
+              return (
+                <div key={doc.id} className="bg-white rounded-lg p-4 flex items-center justify-between shadow-sm border border-amber-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center text-2xl">📦</div>
+                    <div>
+                      <span className="font-mono font-bold text-[#00A651] text-lg">{linkedRMA?.request_number || doc.request_type.toUpperCase()}</span>
+                      <p className="font-medium text-gray-800">{doc.companies?.name || linkedRMA?.companies?.name || '—'}</p>
+                      <div className="flex gap-3 mt-1 text-xs text-gray-500">
+                        <span>🚛 {doc.carrier_name}</span>
+                        <span>📅 {lang === 'en' ? 'Pickup' : 'Enlèvement'}: {new Date(doc.pickup_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>
+                        {doc.submitted_at && <span>⏰ {new Date(doc.submitted_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR')}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (linkedRMA) {
+                        setSelectedRMA(linkedRMA);
+                      }
+                    }}
+                    className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium flex items-center gap-2"
+                  >
+                    🔍 {lang === 'en' ? 'Review' : 'Examiner'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -12595,6 +12644,15 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
     } else {
       setOrder(prev => ({ ...prev, status: newStatus }));
       notify(lang === 'en' ? 'Status updated!' : 'Statut mis à jour!');
+      // Send shipping docs / pickup email when marking ready_to_ship
+      if (newStatus === 'ready_to_ship' && order.company_id) {
+        const deviceList = [{ model: order.request_number || 'Commande pièces', serial: '' }];
+        if (order.return_shipping === 'own_label') {
+          sendNotification('shipping_docs_required', order.company_id, { rmaNumber: order.request_number, devices: deviceList });
+        } else if (order.return_shipping === 'pickup') {
+          sendNotification('pickup_ready', order.company_id, { rmaNumber: order.request_number, devices: deviceList });
+        }
+      }
       reload();
     }
     setSaving(false);
@@ -20427,6 +20485,18 @@ function QCReviewModal({ device, rma, onBack, notify, profile, lang = 'fr' }) {
           rmaNumber: rma.request_number,
           devices: allDeviceList
         });
+        // Send shipping docs required or pickup ready email
+        if (rma.return_shipping === 'own_label') {
+          sendNotification('shipping_docs_required', rma.company_id, {
+            rmaNumber: rma.request_number,
+            devices: allDeviceList
+          });
+        } else if (rma.return_shipping === 'pickup') {
+          sendNotification('pickup_ready', rma.company_id, {
+            rmaNumber: rma.request_number,
+            devices: allDeviceList
+          });
+        }
       }
       onBack();
     } catch (err) {
