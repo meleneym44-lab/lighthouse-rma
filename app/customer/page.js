@@ -5800,7 +5800,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
                 <p className="text-xs text-gray-500 mt-0.5">
                   {hasPerDeviceAddress
                     ? 'Non disponible — vous avez défini une adresse de retour spécifique pour un appareil'
-                    : 'Vous nous enverrez votre étiquette de transport pour le retour'}
+                    : 'Vous êtes responsable de la création de l\'étiquette et de la planification de l\'enlèvement. Vous recevrez un e-mail lorsque votre appareil sera prêt, avec les instructions pour soumettre vos documents de transport.'}
                 </p>
               </div>
             </label>
@@ -5894,7 +5894,7 @@ function ServiceRequestForm({ profile, addresses, t, notify, refresh, setPage, g
         const serviceLabels = { calibration: 'Étalonnage', repair: 'Réparation', calibration_repair: 'Étalonnage + Réparation', other: 'Autre' };
         const returnShippingLabels = {
           standard: '🚚 Retour standard par Lighthouse',
-          own_label: '🏷️ Le client fournit sa propre étiquette de retour',
+          own_label: '🏷️ Transporteur client — étiquette et enlèvement à organiser',
           pickup: '🏢 Le client récupère les appareils sur place'
         };
 
@@ -6510,7 +6510,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
               <input type="radio" name="parts_delivery" checked={deliveryMethod === 'own_label'} onChange={() => setDeliveryMethod('own_label')} className="mt-1 w-4 h-4 text-amber-500" />
               <div>
                 <span className="font-medium text-[#1E3A5F]">🏷️ Mon propre transporteur</span>
-                <p className="text-xs text-gray-500 mt-0.5">Vous nous enverrez votre étiquette ou organiserez l'enlèvement</p>
+                <p className="text-xs text-gray-500 mt-0.5">Vous êtes responsable de la création de l'étiquette et de la planification de l'enlèvement. Vous recevrez un e-mail lorsque votre commande sera prête, avec les instructions pour soumettre vos documents de transport.</p>
               </div>
             </label>
             <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${deliveryMethod === 'pickup' ? 'border-green-400 bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}>
@@ -6572,7 +6572,7 @@ function PartsOrderForm({ profile, addresses, t, notify, refresh, setPage, goBac
       {showReviewModal && (() => {
         const billingAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === billingAddressId);
         const shippingAddr = shippingSameAsBilling ? billingAddr : (shipping.showNewForm ? shipping.newAddress : addresses.find(a => a.id === shipping.address_id));
-        const deliveryLabels = { standard: '🚚 Livraison standard par Lighthouse', own_label: '🏷️ Le client fournit son propre transporteur', pickup: '🏢 Récupération sur place à Créteil' };
+        const deliveryLabels = { standard: '🚚 Livraison standard par Lighthouse', own_label: '🏷️ Transporteur client — étiquette et enlèvement à organiser', pickup: '🏢 Récupération sur place à Créteil' };
         return (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowReviewModal(false)}>
             <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -14517,7 +14517,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                   </label>
                   <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer ${rentalDeliveryMethod === 'own_label' ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
                     <input type="radio" name="rental_delivery" checked={rentalDeliveryMethod === 'own_label'} onChange={() => setRentalDeliveryMethod('own_label')} className="mt-0.5" />
-                    <div><p className="font-medium">🏷️ Mon propre transporteur</p><p className="text-xs text-gray-500">Vous organisez l'enlèvement</p></div>
+                    <div><p className="font-medium">🏷️ Mon propre transporteur</p><p className="text-xs text-gray-500">Vous êtes responsable de la création de l'étiquette et de la planification de l'enlèvement. Vous recevrez un e-mail lorsque votre commande sera prête, avec les instructions pour soumettre vos documents de transport.</p></div>
                   </label>
                   <label className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer ${rentalDeliveryMethod === 'pickup' ? 'border-green-400 bg-green-50' : 'border-gray-200'}`}>
                     <input type="radio" name="rental_delivery" checked={rentalDeliveryMethod === 'pickup'} onChange={() => setRentalDeliveryMethod('pickup')} className="mt-0.5" />
@@ -14581,7 +14581,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
             {showRentalReview && (() => {
               const bilAddr = showNewBillingForm ? newBillingAddress : billingAddresses.find(a => a.id === billingAddressId);
               const shipAddr = shippingAddressId === '__billing__' ? bilAddr : addresses.find(a => a.id === shippingAddressId);
-              const deliveryLabels = { standard: '🚚 Livraison standard', own_label: '🏷️ Étiquette client', pickup: '🏢 Retrait sur place' };
+              const deliveryLabels = { standard: '🚚 Livraison standard', own_label: '🏷️ Transporteur client', pickup: '🏢 Retrait sur place' };
               return (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowRentalReview(false)}>
                   <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
