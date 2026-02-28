@@ -298,11 +298,11 @@ export async function POST(request) {
         console.warn('Contact update warning:', updateErr);
       }
 
-      // Step 3: Create and send a test invoice
+      // Step 3: Create test invoice (don't auto-send — sending requires transport config)
       const invoiceRes = await fetch(`${B2B_API_URL}/accounts/${B2B_ACCOUNT_ID}/invoices`, {
         method: 'POST', headers: headers(),
         body: JSON.stringify({
-          send_after_import: true,
+          send_after_import: false,
           invoice: {
             type: 'IssuedInvoice',
             contact_id: contactId,
