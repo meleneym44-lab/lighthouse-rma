@@ -11281,9 +11281,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
             createdBy: 'M. Meleney'
           };
           const supConditions = [
-            "Ce devis complémentaire est valable 30 jours à compter de sa date d'émission.",
-            "Les travaux seront effectués après réception de votre accord écrit (signature ou bon de commande).",
-            "Conditions de règlement : 30 jours fin de mois."
+            "Ce devis complémentaire doit être approuvé avant poursuite des travaux.",
+            "Paiement : 30 jours fin de mois."
           ];
           
           return (
@@ -11325,30 +11324,41 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                   </tr>
                 </thead>
                 <tbody>
-                  {devices.map((device, i) => (
-                    <Fragment key={i}>
+                  {devices.map((device, i) => {
+                    let items = (device.additional_work_items || []).filter(item => !item.warranty);
+                    if (items.length === 0 && device.additional_work_pricing && typeof device.additional_work_pricing === 'object') {
+                      items = Object.entries(device.additional_work_pricing).map(([key, val]) => ({
+                        description: val.description || key, partNumber: val.partNumber || val.part_number || '',
+                        quantity: val.quantity || 1, price: val.price || 0
+                      }));
+                    }
+                    return (<Fragment key={i}>
                       <tr className="bg-gray-100 border-t">
                         <td colSpan={4} className="px-3 py-2 font-bold text-[#1a1a2e]">
                           {device.model_name} (SN: {device.serial_number})
                         </td>
                       </tr>
                       {device.service_findings && (
-                        <tr>
-                          <td colSpan={4} className="px-3 py-1 text-xs text-gray-500 italic">
-                            Constat: {device.service_findings}
-                          </td>
-                        </tr>
+                        <tr><td colSpan={4} className="px-3 py-1 text-xs text-gray-500 italic">Constat: {device.service_findings}</td></tr>
                       )}
-                      {(device.additional_work_items || []).map((item, j) => (
+                      {items.map((item, j) => (
                         <tr key={j} className={j % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                           <td className="px-3 py-2 text-center">{parseInt(item.quantity) || 1}</td>
-                          <td className="px-3 py-2">{item.partNumber ? `[${item.partNumber}] ` : ''}{item.description || item.name}</td>
+                          <td className="px-3 py-2">{item.partNumber ? `[${item.partNumber}] ` : ''}{item.description || item.type || '—'}</td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">{parseFloat(item.price || 0).toFixed(2)} €</td>
                           <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((parseInt(item.quantity) || 1) * parseFloat(item.price || 0)).toFixed(2)} €</td>
                         </tr>
                       ))}
-                    </Fragment>
-                  ))}
+                      {(device.additional_work_items || []).filter(item => item.warranty).map((item, j) => (
+                        <tr key={`w-${j}`} className="bg-green-50">
+                          <td className="px-3 py-2 text-center">1</td>
+                          <td className="px-3 py-2 text-green-700">✓ {item.description || item.type} <span className="text-xs">(Sous garantie)</span></td>
+                          <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">0.00 €</td>
+                          <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">0.00 €</td>
+                        </tr>
+                      ))}
+                    </Fragment>);
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="bg-[#2D5A7B] text-white">
@@ -11542,11 +11552,11 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                         <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{isContract ? <span className="text-emerald-600">Contrat</span> : `${lineTotal.toFixed(2)} €`}</td>
                       </tr>);
                     }
-                    if (device.needsNettoyage && !device.isContractCovered && device.nettoyagePrice > 0) {
+                    if (device.needsNettoyage && !device.isContractCovered && (device.nettoyagePrice || 0) > 0) {
                       const qty = device.nettoyageQty || 1; const unitPrice = parseFloat(device.nettoyagePrice) || 0; const lineTotal = qty * unitPrice;
-                      rows.push(<tr key={`${i}-nett`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      rows.push(<tr key={`${i}-nett`} className="bg-amber-50">
                         <td className="px-3 py-2 text-center">{qty}</td>
-                        <td className="px-3 py-2">Nettoyage cellule - si requis selon l'état du capteur</td>
+                        <td className="px-3 py-2"><span className="text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis</span></td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">{unitPrice.toFixed(2)} €</td>
                         <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{lineTotal.toFixed(2)} €</td>
                       </tr>);
@@ -11561,7 +11571,7 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                       </tr>);
                     }
                     (device.additionalParts || []).forEach((part, pi) => {
-                      const qty = parseInt(part.quantity) || 1; const unitPrice = parseFloat(part.price) || 0; const lineTotal = qty * unitPrice;
+                      const qty = parseInt(part.quantity) || 1; const unitPrice = parseFloat(part.unitPrice || part.price) || 0; const lineTotal = qty * unitPrice;
                       rows.push(<tr key={`${i}-p-${pi}`} className={rows.length % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-3 py-2 text-center">{qty}</td>
                         <td className="px-3 py-2">{part.partNumber && <span className="text-gray-500 mr-1">[{part.partNumber}]</span>}{part.description || 'Pièce/Service'}</td>
@@ -11572,11 +11582,18 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                     return rows;
                   })}
                   {!isClientReturn && (
-                    <tr className={isFullyContractCovered ? "bg-emerald-50" : "bg-gray-100"}>
+                    <tr className={isFullyContractCovered ? "bg-emerald-50" : "bg-blue-50"}>
                       <td className="px-3 py-2 text-center">{quoteData.shipping?.parcels || request.parcels_count || 1}</td>
                       <td className="px-3 py-2">Frais de port ({quoteData.shipping?.parcels || request.parcels_count || 1} colis)</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">{isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${(quoteData.shipping?.unitPrice || 45).toFixed(2)} €`}</td>
                       <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{isFullyContractCovered ? <span className="text-emerald-600">Contrat</span> : `${shippingTotal.toFixed(2)} €`}</td>
+                    </tr>
+                  )}
+                  {quoteData.discount?.enabled && (
+                    <tr className="bg-green-50">
+                      <td colSpan={2} className="px-3 py-2"></td>
+                      <td className="px-3 py-2 text-right text-green-700 whitespace-nowrap">Remise{quoteData.discount.type === 'percentage' ? ` (${quoteData.discount.value}%)` : ''}</td>
+                      <td className="px-3 py-2 text-right font-medium text-green-700 whitespace-nowrap">-{(quoteData.discountAmount || quoteData.discount.amount || 0).toFixed(2)} €</td>
                     </tr>
                   )}
                 </tbody>
@@ -13999,75 +14016,220 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
           }));
           const deviceTypes = [...new Set(pricingDevices.map(d => d.deviceType || 'particle_counter'))];
           const company = contract.companies || {};
-          const qDocData = { billingAddress: null, submitterName: company.contact_name || null, createdBy: quoteData.createdBy || 'M. Meleney' };
+          const qDocData = { billingAddress: quoteData.billingAddress || null, shippingAddress: quoteData.shippingAddress || null, submitterName: quoteData.submitterName || company.contact_name || null, returnShipping: quoteData.returnShipping || 'standard', createdBy: quoteData.createdBy || 'M. Meleney' };
           const bcInfo = contract.bc_submitted_at ? { signedBy: contract.bc_signed_by || 'Client', signedDate: contract.bc_signature_date || contract.bc_submitted_at, signatureUrl: contract.bc_signature_url } : null;
           const contractConditions = [
+            'Devis valable 30 jours à compter de la date d\'émission.',
             `Période du contrat : du ${formatDateWrittenFR(contractDates.start_date)} au ${formatDateWrittenFR(contractDates.end_date)}.`,
             `${totalTokensFromQuote} étalonnage(s) inclus pendant la période contractuelle.`,
             "Étalonnages supplémentaires facturés au tarif standard.",
             "Cette offre n'inclut pas la réparation ou l'échange de pièces non consommables.",
             "Un devis complémentaire sera établi si des pièces sont trouvées défectueuses.",
+            "Les mesures stockées dans les appareils seront éventuellement perdues.",
             "Paiement à 30 jours date de facture."
           ];
-          const contractInfoBar = (<>
-            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Début</p><p className="font-bold text-[#1a1a2e]">{formatDateWrittenFR(contractDates.start_date)}</p></div>
-            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Fin</p><p className="font-bold text-[#1a1a2e]">{formatDateWrittenFR(contractDates.end_date)}</p></div>
-            <div><p className="text-[10px] text-gray-400 uppercase tracking-wider">Validité</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
-          </>);
           return (<>
-          <QuoteDocumentView
-            title="OFFRE DE PRIX" docNumber={contract.contract_number} reference={contract.contract_number} refLabel="Contrat"
-            date={contract.quote_sent_at} company={company} quoteData={qDocData} conditions={contractConditions}
-            addressMode="billing_only" extraInfoBar={contractInfoBar}
-            onClose={() => setShowQuoteModal(false)}
-            showApprove={contract.status === 'quote_sent' && !contract.bc_submitted_at}
-            onApprove={() => { setShowQuoteModal(false); setShowBCModal(true); }}
-            bcData={bcInfo}
-            extraFooterLeft={contract.status === 'quote_sent' ? <button onClick={() => setShowRevisionModal(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">Demander modification</button> : null}
-          >
-            <div className="px-8 py-2"><p className="text-sm text-gray-500 italic">Contrat de tarification / d'étalonnage</p></div>
-            <div className="px-8 py-4 space-y-5">
-              {deviceTypes.map(type => {
-                const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
-                return (<div key={type} className="border-l-4 border-blue-500 pl-4">
-                  <h3 className="font-bold text-[#1a1a2e] mb-2 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
-                  <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 text-sm flex items-start gap-2"><span className="text-[#1a1a2e] mt-0.5">▸</span><span>{p}</span></li>))}</ul>
-                </div>);
-              })}
+          {/* Contract Quote Modal — 2-page layout matching admin review */}
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl w-full max-w-4xl max-h-[95vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="sticky top-0 bg-[#1a1a2e] text-white px-6 py-4 flex justify-between items-center z-10 rounded-t-xl">
+                <div><h2 className="text-xl font-bold">OFFRE DE PRIX</h2><p className="text-gray-300">{contract.contract_number || ''}</p></div>
+                <button onClick={() => setShowQuoteModal(false)} className="text-gray-300 hover:text-white text-2xl">&times;</button>
+              </div>
+
+              {(() => {
+                const accent = '#2D5A7B';
+                const billingAddr = qDocData.billingAddress;
+                const clientName = billingAddr?.company_name || company.name || 'Client';
+                const signName = qDocData.createdBy || 'M. Meleney';
+                const qDate = contract.quote_sent_at ? formatDateWrittenFR(new Date(contract.quote_sent_at)) : formatDateWrittenFR(new Date());
+                const startDateStr = formatDateWrittenFR(contractDates.start_date);
+                const endDateStr = formatDateWrittenFR(contractDates.end_date);
+                const totalRows = pricingDevices.length + pricingDevices.filter(d => d.needsNettoyage && (d.nettoyagePrice || 0) > 0).length + (shippingTotal > 0 ? 1 : 0);
+                const needsSecondPage = totalRows > 4 || deviceTypes.length > 1;
+                const totalPages = needsSecondPage ? 2 : 1;
+
+                const PageHeader = () => (
+                  <div className="px-8 pt-8 pb-4" style={{ borderBottom: `2px solid ${accent}` }}>
+                    <div className="flex justify-between items-start">
+                      <img src="/images/logos/Lighthouse-color-logo.jpg" alt="Lighthouse France" className="h-20 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                      <div className="text-right">
+                        <p className="text-2xl font-bold" style={{ color: accent }}>OFFRE DE PRIX</p>
+                        <p className="font-bold text-[#1a1a2e]">N° {contract.contract_number || '—'}</p>
+                        <p className="text-xs text-gray-400">Contrat: {contract.contract_number}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+                const InfoBar = () => (
+                  <div className="bg-[#f5f5f5] px-8 py-3 flex justify-between text-sm border-b">
+                    <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DATE</p><p className="font-bold text-[#1a1a2e]">{qDate}</p></div>
+                    <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">DÉBUT</p><p className="font-bold text-[#1a1a2e]">{startDateStr}</p></div>
+                    <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">FIN</p><p className="font-bold text-[#1a1a2e]">{endDateStr}</p></div>
+                    <div><p className="text-[10px] text-[#828282] uppercase tracking-wider">VALIDITÉ</p><p className="font-bold text-[#1a1a2e]">30 jours</p></div>
+                  </div>
+                );
+                const PageFooter = ({ pageNum, tPages }) => (
+                  <div className="bg-[#1a1a2e] text-white px-8 py-3 flex items-end justify-between mt-auto">
+                    <div className="text-center flex-1">
+                      <p className="font-bold text-sm">Lighthouse France SAS</p>
+                      <p className="text-gray-400 text-xs">16, rue Paul Séjourné • 94000 CRÉTEIL • Tél. 01 43 77 28 07</p>
+                    </div>
+                    <p className="text-xs text-gray-400 font-bold ml-4">Page {pageNum}/{tPages}</p>
+                  </div>
+                );
+
+                const PricingTable = () => (
+                  <div className="px-8 py-6 bg-gray-50">
+                    <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-24">Prix Unit.</th><th className="px-3 py-2.5 text-right w-24">Total HT</th></tr></thead>
+                      <tbody>
+                        {pricingDevices.map((d, i) => (<Fragment key={i}>
+                          {d.needsCalibration !== false && (<tr className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-3 py-2 text-center">{d.calibrationQty || d.tokens_total || 1}</td>
+                            <td className="px-3 py-2">Étalonnage {d.model || d.model_name} <span className="text-gray-500 text-xs">(SN: {d.serial || d.serial_number})</span></td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">{(d.calibrationPrice || 0).toFixed(2)} €</td>
+                            <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.calibrationQty || d.tokens_total || 1) * (d.calibrationPrice || 0)).toFixed(2)} €</td>
+                          </tr>)}
+                          {d.needsNettoyage && (d.nettoyagePrice || 0) > 0 && (<tr className="bg-amber-50">
+                            <td className="px-3 py-2 text-center">{d.nettoyageQty || 1}</td>
+                            <td className="px-3 py-2"><span className="text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis</span></td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">{(d.nettoyagePrice || 0).toFixed(2)} €</td>
+                            <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((d.nettoyageQty || 1) * (d.nettoyagePrice || 0)).toFixed(2)} €</td>
+                          </tr>)}
+                        </Fragment>))}
+                        {shippingTotal > 0 && (<tr className="bg-blue-50">
+                          <td className="px-3 py-2 text-center">{shipping.parcels || 1}</td>
+                          <td className="px-3 py-2 text-blue-800">Frais de port</td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">{(shipping.unitPrice || shippingTotal).toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
+                        </tr>)}
+                      </tbody>
+                      <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td><td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotalFromQuote.toFixed(2)} €</td></tr></tfoot>
+                    </table>
+                    {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
+                  </div>
+                );
+
+                const ConditionsBlock = () => (
+                  <div className="px-8 py-4 border-t bg-[#f9fafb]">
+                    <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-2 font-bold">CONDITIONS</p>
+                    <ul className="text-xs text-[#505050] space-y-1">{contractConditions.map((d, i) => <li key={i}>– {d}</li>)}</ul>
+                  </div>
+                );
+
+                const SignatureBlock = () => (
+                  <div className="px-8 py-6 border-t flex justify-between items-end">
+                    <div className="flex items-end gap-6">
+                      <div>
+                        <p className="text-[10px] text-[#828282] uppercase tracking-wider mb-1 font-bold">ÉTABLI PAR</p>
+                        <p className="font-bold text-lg text-[#1a1a2e]">{signName}</p>
+                        <p className="text-[#505050]">Lighthouse France SAS</p>
+                      </div>
+                      <img src="/images/logos/capcert-logo.png" alt="Capcert" className="h-24 w-auto" onError={e => { e.target.style.display = 'none'; }} />
+                    </div>
+                    {bcInfo ? (
+                      <div className="text-right">
+                        <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                          <p className="text-xs text-green-600 uppercase mb-1">Approuvé</p>
+                          <p className="font-bold text-green-800">{bcInfo.signedBy || 'Client'}</p>
+                          <p className="text-sm text-green-700">{bcInfo.signedDate ? formatDateWrittenFR(new Date(bcInfo.signedDate)) : ''}</p>
+                          {bcInfo.signatureUrl && <img src={bcInfo.signatureUrl} alt="Signature" className="max-h-16 mt-2" />}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-right">
+                        <p className="text-xs text-[#828282] mb-1">Bon pour accord</p>
+                        <div className="w-48 h-20 border-2 border-dashed border-gray-300 rounded"></div>
+                        <p className="text-xs text-[#828282] mt-1">Signature et cachet</p>
+                      </div>
+                    )}
+                  </div>
+                );
+
+                return (
+                  <div className="space-y-6 p-6 bg-gray-200">
+                    {/* ===== PAGE 1: Header + Info + Address + Service Descriptions ===== */}
+                    <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: needsSecondPage ? '1100px' : 'auto' }}>
+                      <PageHeader />
+                      <InfoBar />
+
+                      {/* Billing Address Box */}
+                      <div className="px-8 py-4 border-b">
+                        <div className="border-2 rounded p-3" style={{ borderColor: `${accent}80` }}>
+                          <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: accent }}>FACTURER À</p>
+                          <p className="font-bold text-[#1a1a2e]">{clientName}</p>
+                          {billingAddr ? (<>
+                            {billingAddr.attention && <p className="text-sm text-gray-600">Contact: {billingAddr.attention}</p>}
+                            {billingAddr.address_line1 && <p className="text-sm text-gray-600">{billingAddr.address_line1}</p>}
+                            {(billingAddr.postal_code || billingAddr.city) && <p className="text-sm text-gray-600">{[billingAddr.postal_code, billingAddr.city].filter(Boolean).join(' ')}{billingAddr.country ? `, ${billingAddr.country}` : ''}</p>}
+                            {billingAddr.phone && <p className="text-sm text-gray-500">Tél: {billingAddr.phone}</p>}
+                            {billingAddr.siret && <p className="text-sm font-bold text-[#1a1a2e]">SIRET: {billingAddr.siret}</p>}
+                            {billingAddr.tva_number && <p className="text-sm font-bold text-[#1a1a2e]">TVA: {billingAddr.tva_number}</p>}
+                            {billingAddr.chorus_invoicing && <p className="text-xs text-blue-600">Chorus Pro{billingAddr.chorus_service_code ? ` — Service: ${billingAddr.chorus_service_code}` : ''}</p>}
+                          </>) : (<>
+                            {(company.billing_address || company.address) && <p className="text-sm text-gray-600">{company.billing_address || company.address}</p>}
+                            {(company.billing_postal_code || company.postal_code || company.billing_city || company.city) && <p className="text-sm text-gray-600">{[company.billing_postal_code || company.postal_code, company.billing_city || company.city].filter(Boolean).join(' ')}</p>}
+                          </>)}
+                        </div>
+                      </div>
+
+                      {/* Service Descriptions */}
+                      <div className="px-8 py-6 space-y-6 flex-1">
+                        {deviceTypes.map(type => {
+                          const template = CALIBRATION_TEMPLATES[type] || CALIBRATION_TEMPLATES.particle_counter;
+                          return (
+                            <div key={type} className="border-l-4 border-blue-500 pl-4">
+                              <h3 className="font-bold text-lg text-[#1a1a2e] mb-3 flex items-center gap-2"><span>{template.icon}</span> {template.title}</h3>
+                              <ul className="space-y-1">{template.prestations.map((p, i) => (<li key={i} className="text-gray-700 flex items-start gap-2"><span className="text-[#1a1a2e] mt-1">▸</span><span>{p}</span></li>))}</ul>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {needsSecondPage && <PageFooter pageNum={1} tPages={totalPages} />}
+
+                      {/* Single page: pricing + conditions + signature inline */}
+                      {!needsSecondPage && (<>
+                        <PricingTable />
+                        <ConditionsBlock />
+                        <SignatureBlock />
+                        <PageFooter pageNum={1} tPages={1} />
+                      </>)}
+                    </div>
+
+                    {/* ===== PAGE 2: Pricing + Conditions + Signature (only if multi-page) ===== */}
+                    {needsSecondPage && (
+                      <div className="bg-white w-full max-w-4xl mx-auto shadow-lg flex flex-col" style={{ minHeight: '1100px' }}>
+                        <PageHeader />
+                        <InfoBar />
+                        <PricingTable />
+                        <ConditionsBlock />
+                        <div className="flex-1"></div>
+                        <SignatureBlock />
+                        <PageFooter pageNum={2} tPages={totalPages} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Modal Footer with Actions */}
+              <div className="sticky bottom-0 bg-gray-100 px-6 py-4 border-t flex justify-between items-center">
+                <div className="flex gap-2">
+                  <button onClick={() => setShowQuoteModal(false)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">Fermer</button>
+                  {contract.status === 'quote_sent' && <button onClick={() => setShowRevisionModal(true)} className="px-5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium">Demander modification</button>}
+                </div>
+                {contract.status === 'quote_sent' && !contract.bc_submitted_at && (
+                  <button onClick={() => { setShowQuoteModal(false); setShowBCModal(true); }} className="px-6 py-3 bg-[#00A651] text-white rounded-lg font-bold hover:bg-[#008f45]">
+                    ✅ Approuver et soumettre BC
+                  </button>
+                )}
+              </div>
             </div>
-            {/* Visual page separator */}
-            <div className="relative my-2"><div className="border-t-2 border-dashed border-gray-300 mx-8" /><span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-[10px] text-gray-400 font-medium">— suite —</span></div>
-            <div className="px-8 py-6 bg-gray-50">
-              <h3 className="font-bold text-lg text-[#1a1a2e] mb-4">Récapitulatif des Prix</h3>
-              <table className="w-full text-sm">
-                <thead><tr className="bg-[#1a1a2e] text-white"><th className="px-3 py-2.5 text-center w-12">Qté</th><th className="px-3 py-2.5 text-left">Désignation</th><th className="px-3 py-2.5 text-right w-20">Prix Unit.</th><th className="px-3 py-2.5 text-right w-20">Total HT</th></tr></thead>
-                <tbody>
-                  {pricingDevices.map((device, idx) => (<Fragment key={idx}>
-                    {device.needsCalibration !== false && (<tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-3 py-2 text-center">{device.tokens_total || 1}</td>
-                      <td className="px-3 py-2"><span className="font-medium">Étalonnage {device.model || device.model_name}</span> <span className="text-gray-500 text-xs">(SN: {device.serial || device.serial_number})</span></td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">{(device.calibrationPrice || 0).toFixed(2)} €</td>
-                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((device.tokens_total || 1) * (device.calibrationPrice || 0)).toFixed(2)} €</td>
-                    </tr>)}
-                    {device.needsNettoyage && device.nettoyagePrice > 0 && (<tr className="bg-amber-50">
-                      <td className="px-3 py-2 text-center">{device.nettoyageQty || 1}</td>
-                      <td className="px-3 py-2"><span className="font-medium text-amber-800">Nettoyage cellule</span> <span className="text-amber-600 text-xs">- si requis ({device.model || device.model_name})</span></td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">{(device.nettoyagePrice || 0).toFixed(2)} €</td>
-                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{((device.nettoyageQty || 1) * (device.nettoyagePrice || 0)).toFixed(2)} €</td>
-                    </tr>)}
-                  </Fragment>))}
-                  {shippingTotal > 0 && (<tr className="bg-blue-50">
-                    <td className="px-3 py-2 text-center">{shipping.parcels || 1}</td>
-                    <td className="px-3 py-2"><span className="font-medium text-blue-800">Frais de port</span> <span className="text-blue-600 text-xs">({shipping.parcels || 1} colis)</span></td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">{(shipping.unitPrice || 45).toFixed(2)} €</td>
-                    <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
-                  </tr>)}
-                </tbody>
-                <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td><td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotalFromQuote.toFixed(2)} €</td></tr></tfoot>
-              </table>
-              {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
-            </div>
-          </QuoteDocumentView>
+          </div>
           {showRevisionModal && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-60 p-4">
               <div className="bg-white rounded-xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
@@ -15872,12 +16034,12 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
           const totalRetailValue = qd.totalRetailValue || items.reduce((s, i) => s + (parseFloat(i.retail_value) || 0), 0);
           const shipAddr = rental.shipping_address || null;
           const rentalQDocData = {
-            billingAddress: null,
+            billingAddress: qd.billingAddress || null,
             shippingAddress: shipAddr ? {
               company_name: shipAddr.company_name, attention: shipAddr.attention,
               address_line1: shipAddr.address_line1, city: shipAddr.city,
               postal_code: shipAddr.postal_code, country: shipAddr.country, phone: shipAddr.phone
-            } : null,
+            } : (qd.shippingAddress || null),
             submitterName: company.contact_name || null,
             returnShipping: rental.return_shipping || 'standard',
             createdBy: qd.businessSettings?.quote_signatory || 'M. Meleney'
