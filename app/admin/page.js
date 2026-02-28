@@ -2142,8 +2142,56 @@ const generateBCPDF = async (poData, businessSettings) => {
   const lightLine = [210, 215, 220];
   const { poNumber, supplierName, supplierRef, poType, expectedDate, notes, lines, subtotalHT } = poData;
   const frenchMonths = ['janvier','f\u00E9vrier','mars','avril','mai','juin','juillet','ao\u00FBt','septembre','octobre','novembre','d\u00E9cembre'];
-  const formatDateFull = (dateStr) => { if (!dateStr) return '\u2014'; const d = new Date(dateStr); return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear(); };
+  const fmtD = (ds) => { if (!ds) return '\u2014'; const d = new Date(ds); return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear(); };
 
+  // Pre-load capcert logo
+  let capcertLogoBC = null;
+  try {
+    capcertLogoBC = await loadImageAsBase64('/images/logos/capcert-logo.png');
+  } catch(e) {}
+
+  const footerHeight = 38;
+  const getUsableHeight = () => pageHeight - footerHeight - margin;
+
+  // ---- FOOTER FUNCTION (called on every page) ----
+  const drawFooter = () => {
+    const footerTopY = pageHeight - footerHeight;
+    // CAPCERT logo
+    if (capcertLogoBC) {
+      try {
+        const fmt2 = capcertLogoBC.includes('image/png') ? 'PNG' : 'JPEG';
+        pdf.addImage(capcertLogoBC, fmt2, margin, footerTopY - 3, 28, 26);
+      } catch(e) {}
+    }
+
+    pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.4);
+    pdf.line(margin + 34, footerTopY + 1, pageWidth - margin, footerTopY + 1);
+
+    const cx = pageWidth / 2 - 2;
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+    pdf.text(biz.company_name || 'Lighthouse France SAS', cx, footerTopY + 7, { align: 'center' });
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(...darkGray);
+    pdf.text(
+      (biz.address || '16 rue Paul S\u00E9journ\u00E9') + ', ' + (biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL') + ' | T\u00E9l. ' + (biz.phone || '01 43 77 28 07'),
+      cx, footerTopY + 12, { align: 'center' }
+    );
+    pdf.setFontSize(7.5);
+    pdf.text(
+      'SIRET ' + (biz.siret || '50178134800013') + ' | TVA ' + (biz.tva || 'FR 86501781348') + ' | Capital ' + (biz.capital || '10 000') + ' \u20AC',
+      cx, footerTopY + 17, { align: 'center' }
+    );
+    pdf.setFontSize(7); pdf.setTextColor(...medGray);
+    pdf.text(
+      (biz.email || 'France@golighthouse.com') + ' | ' + (biz.website || 'www.golighthouse.fr'),
+      cx, footerTopY + 22, { align: 'center' }
+    );
+    // Page number
+    const pg = pdf.internal.getNumberOfPages();
+    pdf.setFontSize(7); pdf.setTextColor(...medGray);
+    pdf.text('Page ' + pdf.internal.getCurrentPageInfo().pageNumber + '/' + pg, pageWidth - margin, footerTopY + 22, { align: 'right' });
+  };
+
+  // ---- LOGO ----
   let y = 10;
   try {
     const logoImg = new Image(); logoImg.crossOrigin = 'anonymous';
@@ -2156,9 +2204,9 @@ const generateBCPDF = async (poData, businessSettings) => {
     pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
     pdf.text('WORLDWIDE SOLUTIONS \u2014 FRANCE', 10, 23);
   }
-  y = 30;
+  y = 32;
 
-  // Title bar
+  // ---- TITLE BAR ----
   pdf.setFillColor(...navy);
   pdf.roundedRect(margin, y, contentWidth, 14, 2, 2, 'F');
   pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
@@ -2167,56 +2215,73 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.text('N\u00B0 ' + (poNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
   y += 20;
 
-  // References (left) | Supplier box (right)
+  // ---- OUR INFO (left) | SUPPLIER (right) ----
   const blockY = y;
-  let refY = blockY;
-  const addRef = (label, value, bold) => {
-    if (!value) return;
-    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-    pdf.text(label, margin, refY);
-    pdf.setFont('helvetica', bold ? 'bold' : 'normal'); pdf.setTextColor(...darkGray);
-    pdf.text(String(value), margin + 38, refY);
-    refY += 6;
-  };
-  addRef('Date :', formatDateFull(new Date().toISOString()), false);
-  if (expectedDate) addRef('Livraison :', formatDateFull(expectedDate), true);
-  refY += 2;
+
+  // Left: Our company info box
+  const ourBoxW = contentWidth * 0.48;
+  pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
+  pdf.roundedRect(margin, blockY, ourBoxW, 40, 2, 2, 'FD');
+
+  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
+  pdf.text('\u00C9METTEUR', margin + 4, blockY + 5);
+
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text(biz.company_name || 'Lighthouse France SAS', margin + 4, blockY + 12);
+
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+  let oy = blockY + 17;
+  pdf.text(biz.address || '16 rue Paul S\u00E9journ\u00E9', margin + 4, oy); oy += 3.8;
+  pdf.text((biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL'), margin + 4, oy); oy += 3.8;
+  pdf.text('T\u00E9l: ' + (biz.phone || '+33 (0)1 43 77 28 07'), margin + 4, oy); oy += 3.8;
+  pdf.setFontSize(7); pdf.setTextColor(...medGray);
+  pdf.text('SIRET: ' + (biz.siret || '50178134800013') + ' | TVA: ' + (biz.tva_number || biz.tva || 'FR 86501781348'), margin + 4, oy);
+
+  // Right: Supplier box
+  const supBoxX = margin + contentWidth * 0.52;
+  const supBoxW = contentWidth * 0.48;
+  pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
+  pdf.roundedRect(supBoxX, blockY, supBoxW, 40, 2, 2, 'FD');
+
+  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
+  pdf.text('FOURNISSEUR', supBoxX + 4, blockY + 5);
+
+  pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text(supplierName || '', supBoxX + 4, blockY + 13);
+
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+  let sy = blockY + 19;
+  if (supplierRef) { pdf.text('R\u00E9f: ' + supplierRef, supBoxX + 4, sy); sy += 4; }
+
+  y = blockY + 44;
+
+  // ---- DETAILS ROW ----
   const typeLabel = { parts: 'Pi\u00E8ces / Mat\u00E9riel', service: 'Service / Prestation', intercompany: 'Inter-soci\u00E9t\u00E9', general: 'G\u00E9n\u00E9ral' };
-  addRef('Type :', typeLabel[poType] || 'G\u00E9n\u00E9ral', false);
-  if (supplierRef) addRef('R\u00E9f. devis :', supplierRef, false);
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+  const details = ['Date: ' + fmtD(new Date().toISOString())];
+  if (expectedDate) details.push('Livraison: ' + fmtD(expectedDate));
+  if (poType && typeLabel[poType]) details.push('Type: ' + typeLabel[poType]);
+  pdf.text(details.join('   |   '), margin, y);
+  y += 7;
 
-  // Supplier box
-  const boxX = pageWidth / 2 + 8; const boxW = pageWidth / 2 - margin - 8; const boxH = 32;
-  pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.4);
-  pdf.roundedRect(boxX, blockY - 3, boxW, boxH, 2, 2, 'FD');
-  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
-  pdf.text('FOURNISSEUR', boxX + 5, blockY + 3);
-  pdf.setFontSize(12); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  pdf.text(supplierName || '', boxX + 5, blockY + 12);
-  if (supplierRef) { pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray); pdf.text('R\u00E9f: ' + supplierRef, boxX + 5, blockY + 18); }
-
-  // Company info below refs
-  refY += 4;
-  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-  [biz.company_name || 'Lighthouse France SAS', biz.address || '16, rue Paul S\u00E9journ\u00E9', `${biz.postal_code || '94000'} ${biz.city || 'CR\u00C9TEIL'}`, `T\u00E9l: ${biz.phone || '+33 (0)1 43 68 09 28'}`]
-    .forEach(cl => { pdf.text(cl, margin, refY); refY += 3.5; });
-  y = Math.max(refY, blockY + boxH) + 8;
-
-  // Line items table
+  // ---- LINE ITEMS TABLE ----
   const colQty = margin + 1; const colDesc = margin + 18;
   const colPU = pageWidth - margin - 48; const colTotal = pageWidth - margin - 2;
-  pdf.setFillColor(...navy);
-  pdf.roundedRect(margin, y, contentWidth, 8, 1, 1, 'F');
-  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
-  pdf.text('QT\u00C9', colQty + 2, y + 5.5);
-  pdf.text('D\u00C9SIGNATION', colDesc, y + 5.5);
-  pdf.text('P.U. HT', colPU, y + 5.5, { align: 'right' });
-  pdf.text('TOTAL HT', colTotal, y + 5.5, { align: 'right' });
-  y += 11;
 
-  (lines || []).forEach((line, idx) => {
-    if (y > 255) { pdf.addPage(); y = 20; }
-    if (idx % 2 === 0) { pdf.setFillColor(248, 250, 252); pdf.rect(margin, y - 3, contentWidth, 8, 'F'); }
+  pdf.setFillColor(...navy);
+  pdf.roundedRect(margin, y, contentWidth, 9, 1.5, 1.5, 'F');
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
+  pdf.text('QT\u00C9', colQty + 2, y + 6);
+  pdf.text('D\u00C9SIGNATION', colDesc, y + 6);
+  pdf.text('P.U. HT', colPU, y + 6, { align: 'right' });
+  pdf.text('TOTAL HT', colTotal, y + 6, { align: 'right' });
+  y += 12;
+
+  let rowAlt = false;
+  (lines || []).forEach((line) => {
+    if (y > getUsableHeight() - 10) { drawFooter(); pdf.addPage(); y = margin + 10; }
+    if (rowAlt) { pdf.setFillColor(248, 250, 252); pdf.rect(margin, y - 3, contentWidth, 8, 'F'); }
+    rowAlt = !rowAlt;
     pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
     pdf.text(String(line.quantity || 1), colQty + 5, y + 1, { align: 'center' });
     const descLines = pdf.splitTextToSize(line.description || '', colPU - colDesc - 15);
@@ -2225,11 +2290,12 @@ const generateBCPDF = async (poData, businessSettings) => {
     pdf.setFont('helvetica', 'bold');
     pdf.text((parseFloat(line.total || line.total_ht || 0)).toFixed(2) + ' \u20AC', colTotal, y + 1, { align: 'right' });
     y += Math.max(8, descLines.length * 4 + 4);
-    pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.15); pdf.line(margin, y - 2, margin + contentWidth, y - 2);
+    pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.15);
+    pdf.line(margin, y - 2, margin + contentWidth, y - 2);
   });
 
-  // Total
-  y += 4;
+  // ---- TOTAL BOX ----
+  y += 5;
   const totBoxX = margin + contentWidth * 0.5; const totBoxW = contentWidth * 0.5;
   pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
   pdf.roundedRect(totBoxX, y, totBoxW, 12, 2, 2, 'FD');
@@ -2239,34 +2305,42 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.text((subtotalHT || 0).toFixed(2) + ' \u20AC', totBoxX + totBoxW - 8, y + 8, { align: 'right' });
   y += 18;
 
-  // Notes
+  // ---- NOTES ----
   if (notes) {
+    if (y > getUsableHeight() - 20) { drawFooter(); pdf.addPage(); y = margin + 10; }
     pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
-    pdf.roundedRect(margin, y, contentWidth, 20, 2, 2, 'S');
+    pdf.roundedRect(margin, y, contentWidth, 16, 2, 2, 'S');
     pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-    pdf.text('NOTES', margin + 5, y + 5);
-    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray); pdf.setFontSize(8);
-    pdf.splitTextToSize(notes, contentWidth - 10).slice(0, 3).forEach((nl, i) => { pdf.text(nl, margin + 5, y + 10 + i * 3.5); });
-    y += 24;
+    pdf.text('NOTES', margin + 4, y + 5);
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray); pdf.setFontSize(7.5);
+    pdf.splitTextToSize(notes, contentWidth - 8).slice(0, 2).forEach((nl, i) => { pdf.text(nl, margin + 4, y + 10 + i * 3.5); });
+    y += 20;
   }
 
-  // Signature lines
-  y = Math.max(y + 10, 230);
-  pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
-  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-  pdf.text('Bon pour accord :', margin, y);
-  pdf.line(margin, y + 15, margin + contentWidth * 0.4, y + 15);
-  pdf.text('Date et signature', margin, y + 20);
-  pdf.text('Lighthouse France :', margin + contentWidth * 0.6, y);
-  pdf.line(margin + contentWidth * 0.6, y + 15, margin + contentWidth, y + 15);
-  pdf.text('Date et signature', margin + contentWidth * 0.6, y + 20);
-
-  // Footer
-  const footerY = 280;
-  pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3); pdf.line(margin, footerY, pageWidth - margin, footerY);
+  // ---- LEGAL / CONDITIONS ----
+  if (y > getUsableHeight() - 25) { drawFooter(); pdf.addPage(); y = margin + 10; }
+  y += 4;
+  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text('CONDITIONS', margin, y);
+  y += 4;
   pdf.setFontSize(6.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-  pdf.text(`${biz.company_name || 'Lighthouse France SAS'} \u2014 ${biz.address || '16, rue Paul S\u00E9journ\u00E9'} \u2014 ${biz.postal_code || '94000'} ${biz.city || 'CR\u00C9TEIL'}`, pageWidth / 2, footerY + 4, { align: 'center' });
-  pdf.text(`SIRET: ${biz.siret || '90779513300010'} \u2014 TVA: ${biz.tva_number || 'FR42907795133'} \u2014 APE: ${biz.ape || '3320C'}`, pageWidth / 2, footerY + 8, { align: 'center' });
+  const legalLines = [
+    'Ce bon de commande engage la soci\u00E9t\u00E9 \u00E9mettrice selon les conditions convenues avec le fournisseur.',
+    'Toute livraison doit \u00EAtre accompagn\u00E9e d\u0027un bon de livraison mentionnant le num\u00E9ro de commande.',
+    'La facturation doit reprendre le num\u00E9ro de commande ' + (poNumber || '') + '. Tout litige doit \u00EAtre signal\u00E9 sous 8 jours.',
+    biz.company_name + ' \u2014 SAS au capital de ' + (biz.capital || '10 000') + ' \u20AC \u2014 RCS Cr\u00E9teil \u2014 SIRET: ' + (biz.siret || '50178134800013') + ' \u2014 TVA: ' + (biz.tva_number || biz.tva || 'FR 86501781348')
+  ];
+  legalLines.forEach(ll => {
+    pdf.text(ll, margin, y);
+    y += 3;
+  });
+
+  // ---- DRAW FOOTER ON ALL PAGES ----
+  const totalPages = pdf.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    pdf.setPage(i);
+    drawFooter();
+  }
 
   return pdf.output('blob');
 };
@@ -28473,32 +28547,39 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             if (poPaymentDate) updateData.payment_date = poPaymentDate;
             else updateData.payment_date = new Date().toISOString().split('T')[0];
             if (poPaymentMethod) updateData.payment_method = poPaymentMethod;
+
+            // 1. Update status FIRST
             const { error } = await supabase.from('supplier_purchase_orders').update(updateData).eq('id', po.id);
             if (error) throw error;
 
-            // Upload receipt if provided
-            if (poPaymentReceipt) {
-              try {
-                const ext = poPaymentReceipt.name.split('.').pop();
-                const fileName = `po_receipt_${po.id}_${Date.now()}.${ext}`;
-                const filePath = `purchase_orders/${fileName}`;
-                const { error: upErr } = await supabase.storage.from('documents').upload(filePath, poPaymentReceipt, { contentType: poPaymentReceipt.type });
-                if (!upErr) {
-                  const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
-                  await supabase.from('po_attachments').insert({
-                    po_id: po.id, file_name: `Justificatif paiement - ${updateData.payment_date}`,
-                    file_url: urlData?.publicUrl, file_type: poPaymentReceipt.type,
-                    category: 'general', uploaded_by: profile?.id
-                  });
-                }
-              } catch (receiptErr) { console.error('Receipt upload error:', receiptErr); }
-            }
+            // 2. Capture receipt ref before clearing state
+            const receiptFile = poPaymentReceipt;
+            const payDate = updateData.payment_date;
+            const poId = po.id;
 
+            // 3. Clear state and close view IMMEDIATELY
             setPoPaymentAmount(''); setPoPaymentDate(''); setPoPaymentMethod('virement');
             setPoPaymentReceipt(null); setPoShowPaymentForm(false);
             setPoViewId(null);
             notify('✅ Payé! Dossier archivé.');
             loadPurchaseOrders();
+
+            // 4. Upload receipt in background (non-blocking)
+            if (receiptFile) {
+              const ext = receiptFile.name.split('.').pop();
+              const fileName = `po_receipt_${poId}_${Date.now()}.${ext}`;
+              const filePath = `purchase_orders/${fileName}`;
+              supabase.storage.from('documents').upload(filePath, receiptFile, { contentType: receiptFile.type }).then(({ error: upErr }) => {
+                if (!upErr) {
+                  const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+                  supabase.from('po_attachments').insert({
+                    po_id: poId, file_name: 'Justificatif paiement - ' + payDate,
+                    file_url: urlData?.publicUrl, file_type: receiptFile.type,
+                    category: 'general', uploaded_by: profile?.id
+                  }).then(() => notify('📎 Justificatif enregistré'));
+                } else { console.error('Receipt upload failed:', upErr); }
+              }).catch(e => console.error('Receipt upload error:', e));
+            }
           } catch (err) { notify('Erreur: ' + (err.message || JSON.stringify(err)), 'error'); console.error('PO paid error:', err); }
         };
 
