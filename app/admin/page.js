@@ -4910,7 +4910,7 @@ export default function AdminPortal() {
               profile={profile}
               businessSettings={businessSettings}
             />}
-            {activeSheet === 'accounting' && <AccountingSheet notify={notify} profile={profile} t={t} lang={lang} />}
+            {activeSheet === 'accounting' && <AccountingSheet notify={notify} profile={profile} clients={clients} requests={requests} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} requests={requests} clients={clients} t={t} lang={lang} setLang={setLang} />}
           </>
         )}
@@ -27560,28 +27560,53 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 
 
 // ============================================
-// ACCOUNTING SHEET — B2BRouter e-Invoicing Integration
+// ACCOUNTING SHEET — Full Accounting Module v2.5
+// B2BRouter e-Invoicing + KPIs + Invoice Management
 // ============================================
-function AccountingSheet({ notify, profile, t = k=>k, lang = 'fr' }) {
-  const [activeTab, setActiveTab] = useState('connection');
-  const [connectionStatus, setConnectionStatus] = useState(null); // null = untested, 'loading', 'success', 'error'
-  const [accountData, setAccountData] = useState(null);
-  const [transports, setTransports] = useState(null);
-  const [contacts, setContacts] = useState(null);
-  const [issuedInvoices, setIssuedInvoices] = useState(null);
-  const [receivedInvoices, setReceivedInvoices] = useState(null);
-  const [events, setEvents] = useState(null);
-  const [docTypes, setDocTypes] = useState(null);
-  const [transportTypes, setTransportTypes] = useState(null);
-  const [schemes, setSchemes] = useState(null);
-  const [loading, setLoading] = useState({});
-  const [error, setError] = useState(null);
-  const [testInvoiceResult, setTestInvoiceResult] = useState(null);
-  const [sendingTest, setSendingTest] = useState(false);
-  const [rawResponse, setRawResponse] = useState(null);
+function AccountingSheet({ notify, profile, clients = [], requests = [], businessSettings, t = k=>k, lang = 'fr' }) {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // Global data
+  const [invoices, setInvoices] = useState([]);
+  const [creditNotes, setCreditNotes] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
+  
+  // B2BRouter state
+  const [b2bConnected, setB2bConnected] = useState(null);
+  const [b2bAccount, setB2bAccount] = useState(null);
+  const [b2bIssuedInvoices, setB2bIssuedInvoices] = useState(null);
+  const [b2bReceivedInvoices, setB2bReceivedInvoices] = useState(null);
+  const [b2bTransports, setB2bTransports] = useState(null);
+  const [b2bEvents, setB2bEvents] = useState(null);
+  
+  // UI state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showRaw, setShowRaw] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const [loading, setLoading] = useState({});
 
-  // Generic fetch helper
+  const biz = businessSettings || {};
+
+  // ===== DATA LOADING =====
+  const loadInvoices = async () => {
+    const { data } = await supabase.from('invoices')
+      .select('*, companies(name, email, tva_number, siret, chorus_invoicing), service_requests(request_number, status, quote_data, request_type), invoice_lines(*)')
+      .order('created_at', { ascending: false });
+    if (data) setInvoices(data);
+  };
+
+  const loadAll = async () => {
+    setLoadingData(true);
+    await Promise.all([loadInvoices()]);
+    setLoadingData(false);
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // ===== B2BRouter helpers =====
   const b2bFetch = async (action, params = {}) => {
     const qs = new URLSearchParams({ action, ...params }).toString();
     const res = await fetch(`/api/b2brouter?${qs}`);
@@ -27597,549 +27622,819 @@ function AccountingSheet({ notify, profile, t = k=>k, lang = 'fr' }) {
     return data;
   };
 
-  // Test connection
   const testConnection = async () => {
-    setConnectionStatus('loading');
-    setError(null);
+    setLoading(p => ({ ...p, connection: true }));
+    setConnectionError(null);
     try {
       const data = await b2bFetch('test');
-      setConnectionStatus('success');
-      setAccountData(data.account);
-      setRawResponse(data);
+      setB2bConnected(true);
+      setB2bAccount(data.account);
     } catch (err) {
-      setConnectionStatus('error');
-      setError(err.message);
+      setB2bConnected(false);
+      setConnectionError(err.message);
     }
+    setLoading(p => ({ ...p, connection: false }));
   };
 
-  // Load various data
-  const loadTransports = async () => {
+  const loadB2bIssued = async () => {
+    setLoading(p => ({ ...p, b2bIssued: true }));
+    try { const d = await b2bFetch('issued_invoices', { limit: '50' }); setB2bIssuedInvoices(d); } catch (e) { notify?.(e.message, 'error'); }
+    setLoading(p => ({ ...p, b2bIssued: false }));
+  };
+
+  const loadB2bReceived = async () => {
+    setLoading(p => ({ ...p, b2bReceived: true }));
+    try { const d = await b2bFetch('received_invoices', { limit: '50' }); setB2bReceivedInvoices(d); } catch (e) { notify?.(e.message, 'error'); }
+    setLoading(p => ({ ...p, b2bReceived: false }));
+  };
+
+  const loadB2bTransports = async () => {
     setLoading(p => ({ ...p, transports: true }));
-    try { const data = await b2bFetch('transports'); setTransports(data.transports || data); }
-    catch (err) { notify?.(err.message, 'error'); }
+    try { const d = await b2bFetch('transports'); setB2bTransports(d.transports || d); } catch (e) { notify?.(e.message, 'error'); }
     setLoading(p => ({ ...p, transports: false }));
   };
 
-  const loadContacts = async () => {
-    setLoading(p => ({ ...p, contacts: true }));
-    try { const data = await b2bFetch('contacts', { limit: '50' }); setContacts(data); }
-    catch (err) { notify?.(err.message, 'error'); }
-    setLoading(p => ({ ...p, contacts: false }));
-  };
-
-  const loadIssuedInvoices = async () => {
-    setLoading(p => ({ ...p, issued: true }));
-    try { const data = await b2bFetch('issued_invoices', { limit: '25' }); setIssuedInvoices(data); }
-    catch (err) { notify?.(err.message, 'error'); }
-    setLoading(p => ({ ...p, issued: false }));
-  };
-
-  const loadReceivedInvoices = async () => {
-    setLoading(p => ({ ...p, received: true }));
-    try { const data = await b2bFetch('received_invoices', { limit: '25' }); setReceivedInvoices(data); }
-    catch (err) { notify?.(err.message, 'error'); }
-    setLoading(p => ({ ...p, received: false }));
-  };
-
-  const loadEvents = async () => {
+  const loadB2bEvents = async () => {
     setLoading(p => ({ ...p, events: true }));
-    try { const data = await b2bFetch('events', { limit: '50' }); setEvents(data); }
-    catch (err) { notify?.(err.message, 'error'); }
+    try { const d = await b2bFetch('events', { limit: '50' }); setB2bEvents(d); } catch (e) { notify?.(e.message, 'error'); }
     setLoading(p => ({ ...p, events: false }));
   };
 
-  const loadCodeLists = async () => {
-    setLoading(p => ({ ...p, codes: true }));
-    try {
-      const [dt, tt, sc] = await Promise.all([
-        b2bFetch('document_types'),
-        b2bFetch('transport_types'),
-        b2bFetch('schemes')
-      ]);
-      setDocTypes(dt);
-      setTransportTypes(tt);
-      setSchemes(sc);
-    } catch (err) { notify?.(err.message, 'error'); }
-    setLoading(p => ({ ...p, codes: false }));
+  // ===== KPI COMPUTATIONS =====
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+  
+  const activeInvoices = invoices.filter(i => i.status !== 'cancelled');
+  const thisMonthInvoices = activeInvoices.filter(i => { const d = new Date(i.invoice_date); return d.getMonth() === thisMonth && d.getFullYear() === thisYear; });
+  const thisYearInvoices = activeInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear);
+  
+  const totalRevenueYear = thisYearInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const totalRevenueMonth = thisMonthInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const totalHTYear = thisYearInvoices.reduce((s, i) => s + (parseFloat(i.subtotal_ht) || 0), 0);
+  const totalTVAYear = thisYearInvoices.reduce((s, i) => s + (parseFloat(i.tva_amount) || 0), 0);
+  
+  const unpaidInvoices = activeInvoices.filter(i => !['paid', 'cancelled'].includes(i.status));
+  const overdueInvoices = unpaidInvoices.filter(i => i.due_date && new Date(i.due_date) < now);
+  const totalOutstanding = unpaidInvoices.reduce((s, i) => s + ((parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0)), 0);
+  const totalOverdue = overdueInvoices.reduce((s, i) => s + ((parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0)), 0);
+  
+  const paidInvoices = activeInvoices.filter(i => i.status === 'paid');
+  const totalCollected = paidInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  
+  // Service vs parts breakdown
+  const serviceInvoices = activeInvoices.filter(i => i.service_requests?.request_type !== 'parts');
+  const partsInvoices = activeInvoices.filter(i => i.service_requests?.request_type === 'parts');
+  const serviceRevenue = serviceInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  const partsRevenue = partsInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
+  
+  // Monthly chart data
+  const monthlyData = Array.from({ length: 12 }, (_, m) => {
+    const mi = thisYearInvoices.filter(i => new Date(i.invoice_date).getMonth() === m);
+    return { month: ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'][m], revenue: mi.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0), count: mi.length };
+  });
+  const maxMonthly = Math.max(...monthlyData.map(d => d.revenue), 1);
+  
+  // B2BRouter synced count
+  const syncedCount = activeInvoices.filter(i => i.b2brouter_invoice_id).length;
+
+  // ===== FILTER HELPERS =====
+  const filterBySearch = (items, fields) => {
+    if (!searchTerm) return items;
+    const s = searchTerm.toLowerCase();
+    return items.filter(i => fields.some(f => { const v = f.split('.').reduce((o, k) => o?.[k], i); return v && String(v).toLowerCase().includes(s); }));
   };
 
-  // Send test invoice
-  const sendTestInvoice = async () => {
-    setSendingTest(true);
-    setTestInvoiceResult(null);
-    try {
-      const data = await b2bPost({ action: 'send_test_invoice' });
-      setTestInvoiceResult(data);
-      notify?.('Test invoice created successfully!', 'success');
-    } catch (err) {
-      setTestInvoiceResult({ error: err.message });
-      notify?.(err.message, 'error');
-    }
-    setSendingTest(false);
+  const filterByDate = (items, dateField) => {
+    if (!dateFrom && !dateTo) return items;
+    return items.filter(i => {
+      const d = i[dateField];
+      if (!d) return false;
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo + 'T23:59:59') return false;
+      return true;
+    });
   };
 
+  // ===== SHARED COMPONENTS =====
+  const StatusBadge = ({ status, type = 'invoice' }) => {
+    const colors = {
+      created: 'bg-gray-100 text-gray-600', draft: 'bg-gray-100 text-gray-600',
+      sent: 'bg-blue-100 text-blue-700', new: 'bg-blue-100 text-blue-700',
+      paid: 'bg-green-100 text-green-700', partially_paid: 'bg-yellow-100 text-yellow-700',
+      overdue: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-400 line-through',
+      accepted: 'bg-emerald-100 text-emerald-700', refused: 'bg-red-100 text-red-700',
+      sending: 'bg-yellow-100 text-yellow-700', error: 'bg-red-100 text-red-700',
+      received: 'bg-indigo-100 text-indigo-700',
+      approved: 'bg-green-100 text-green-700', pending: 'bg-amber-100 text-amber-700',
+      ordered: 'bg-blue-100 text-blue-700', delivered: 'bg-teal-100 text-teal-700',
+    };
+    const labels = {
+      created: 'Créée', draft: 'Brouillon', sent: 'Envoyée', new: 'Nouveau',
+      paid: 'Payée', partially_paid: 'Partiel', cancelled: 'Annulée',
+      accepted: 'Acceptée', refused: 'Refusée', sending: 'Envoi...', error: 'Erreur',
+      received: 'Reçue', approved: 'Approuvé', pending: 'En attente',
+      ordered: 'Commandé', delivered: 'Livré', overdue: 'En retard',
+    };
+    return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-600'}`}>{labels[status] || status}</span>;
+  };
+
+  const KPICard = ({ icon, label, value, sub, color = 'blue', trend }) => (
+    <div className="bg-white rounded-xl border shadow-sm p-5 hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-2xl">{icon}</span>
+        {trend && <span className={`text-xs font-medium ${trend > 0 ? 'text-green-600' : trend < 0 ? 'text-red-600' : 'text-gray-400'}`}>{trend > 0 ? '↑' : trend < 0 ? '↓' : '—'}</span>}
+      </div>
+      <p className={`text-2xl font-bold text-${color}-700`}>{value}</p>
+      <p className="text-sm text-gray-500 mt-1">{label}</p>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+
+  const SectionHeader = ({ title, icon, actions }) => (
+    <div className="flex items-center justify-between mb-4">
+      <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">{icon} {title}</h2>
+      <div className="flex items-center gap-2">{actions}</div>
+    </div>
+  );
+
+  const SearchBar = ({ placeholder }) => (
+    <div className="flex items-center gap-3 mb-4">
+      <div className="flex-1 relative">
+        <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder={placeholder || 'Rechercher...'} className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" />
+        <span className="absolute left-3 top-2.5 text-gray-400 text-sm">🔍</span>
+      </div>
+      <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+      <span className="text-gray-400 text-sm">→</span>
+      <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
+      {(searchTerm || dateFrom || dateTo) && (
+        <button onClick={() => { setSearchTerm(''); setDateFrom(''); setDateTo(''); }} className="px-3 py-2 text-sm text-gray-500 hover:text-red-500">✕ Clear</button>
+      )}
+    </div>
+  );
+
+  const EmptyState = ({ icon, title, subtitle }) => (
+    <div className="text-center py-16">
+      <div className="text-5xl mb-3">{icon}</div>
+      <p className="text-gray-500 font-medium">{title}</p>
+      {subtitle && <p className="text-gray-400 text-sm mt-1">{subtitle}</p>}
+    </div>
+  );
+
+  const fmt = (n) => (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+
+  // ===== TABS =====
   const tabs = [
-    { id: 'connection', label: '🔌 Connection', labelFr: '🔌 Connexion' },
-    { id: 'account', label: '🏢 Account', labelFr: '🏢 Compte' },
-    { id: 'contacts', label: '👥 Contacts', labelFr: '👥 Contacts' },
-    { id: 'invoices', label: '📄 Invoices', labelFr: '📄 Factures' },
-    { id: 'events', label: '📋 Activity', labelFr: '📋 Activité' },
-    { id: 'reference', label: '📚 Reference', labelFr: '📚 Référence' },
+    { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+    { id: 'outgoing', icon: '📤', label: lang === 'en' ? 'Outgoing' : 'Émises', badge: unpaidInvoices.length || null },
+    { id: 'incoming', icon: '📥', label: lang === 'en' ? 'Incoming' : 'Reçues' },
+    { id: 'credit_notes', icon: '↩️', label: lang === 'en' ? 'Credit Notes' : 'Avoirs' },
+    { id: 'purchase_orders', icon: '🛒', label: lang === 'en' ? 'POs' : 'Bons Cde' },
+    { id: 'clients', icon: '👥', label: 'Clients' },
+    { id: 'bank', icon: '🏦', label: lang === 'en' ? 'Bank' : 'Banque' },
+    { id: 'reporting', icon: '📈', label: 'Reporting' },
+    { id: 'settings', icon: '⚙️', label: lang === 'en' ? 'Settings' : 'Paramètres' },
   ];
-
-  const StatusBadge = ({ status }) => {
-    const colors = { new: 'bg-blue-100 text-blue-800', sending: 'bg-yellow-100 text-yellow-800', sent: 'bg-green-100 text-green-800', accepted: 'bg-emerald-100 text-emerald-800', refused: 'bg-red-100 text-red-800', paid: 'bg-purple-100 text-purple-800', error: 'bg-red-100 text-red-800', draft: 'bg-gray-100 text-gray-800' };
-    return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-600'}`}>{status}</span>;
-  };
 
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">🏦 {lang === 'en' ? 'Accounting & e-Invoicing' : 'Comptabilité & Facturation Électronique'}</h1>
-          <p className="text-gray-500 text-sm mt-1">B2BRouter — {lang === 'en' ? 'PDP integration for France e-invoicing compliance' : 'Intégration PDP pour la conformité facturation électronique France'}</p>
+          <h1 className="text-2xl font-bold text-gray-800">🏦 {lang === 'en' ? 'Accounting' : 'Comptabilité'}</h1>
+          <p className="text-gray-400 text-sm">{lang === 'en' ? 'e-Invoicing, payments, reporting' : 'e-Facturation, paiements, reporting'}</p>
         </div>
-        {connectionStatus === 'success' && (
-          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-sm font-medium text-green-800">{lang === 'en' ? 'Connected' : 'Connecté'} — Staging</span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {b2bConnected === true && (
+            <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+              <span className="text-xs font-medium text-green-700">B2BRouter</span>
+            </div>
+          )}
+          {b2bConnected === false && (
+            <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
+              <div className="w-2 h-2 rounded-full bg-red-400"></div>
+              <span className="text-xs font-medium text-red-600">Déconnecté</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b overflow-x-auto">
+      <div className="flex gap-0.5 mb-6 border-b overflow-x-auto pb-px">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id ? 'border-[#2D5A7B] text-[#2D5A7B]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {lang === 'en' ? tab.label : tab.labelFr}
+            className={`px-3 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1.5 ${
+              activeTab === tab.id ? 'border-[#2D5A7B] text-[#2D5A7B]' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>
+            <span>{tab.icon}</span> {tab.label}
+            {tab.badge && <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-[10px] rounded-full font-bold">{tab.badge}</span>}
           </button>
         ))}
       </div>
 
-      {/* ===== CONNECTION TAB ===== */}
-      {activeTab === 'connection' && (
+      {/* ================================================================
+           DASHBOARD TAB
+         ================================================================ */}
+      {activeTab === 'dashboard' && (
         <div className="space-y-6">
-          {/* Connection Test Card */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">🧪 {lang === 'en' ? 'API Connection Test' : 'Test de Connexion API'}</h2>
-            <p className="text-sm text-gray-500 mb-6">{lang === 'en' ? 'Test the connection to B2BRouter staging environment. This verifies your API key, account ID, and network connectivity.' : 'Tester la connexion à l\'environnement staging B2BRouter. Cela vérifie votre clé API, votre ID de compte et la connectivité réseau.'}</p>
-            
-            <div className="flex items-center gap-4 mb-6">
-              <button onClick={testConnection} disabled={connectionStatus === 'loading'}
-                className="px-6 py-3 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
-                {connectionStatus === 'loading' ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Testing...</>) : '🔌 Test Connection'}
-              </button>
-              {connectionStatus === 'success' && <span className="text-green-600 font-medium flex items-center gap-1">✅ {lang === 'en' ? 'Connection successful!' : 'Connexion réussie !'}</span>}
-              {connectionStatus === 'error' && <span className="text-red-600 font-medium flex items-center gap-1">❌ {lang === 'en' ? 'Connection failed' : 'Connexion échouée'}</span>}
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                <p className="text-sm text-red-800 font-medium">Error:</p>
-                <pre className="text-xs text-red-600 mt-1 whitespace-pre-wrap break-all">{error}</pre>
-              </div>
-            )}
-
-            {connectionStatus === 'success' && accountData && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-sm font-bold text-green-800 mb-3">{lang === 'en' ? 'Account found:' : 'Compte trouvé :'}</p>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><span className="text-gray-500">Name:</span> <span className="font-medium">{accountData.name}</span></div>
-                  <div><span className="text-gray-500">ID:</span> <span className="font-mono text-xs bg-white px-2 py-0.5 rounded">{accountData.id}</span></div>
-                  <div><span className="text-gray-500">Country:</span> <span className="font-medium">{accountData.country?.toUpperCase()}</span></div>
-                  <div><span className="text-gray-500">TIN:</span> <span className="font-mono text-xs">{accountData.tin_value}</span></div>
-                  {accountData.email && <div><span className="text-gray-500">Email:</span> <span className="font-medium">{accountData.email}</span></div>}
-                  {accountData.city && <div><span className="text-gray-500">City:</span> <span className="font-medium">{accountData.city}</span></div>}
-                </div>
-              </div>
-            )}
-
-            {rawResponse && (
-              <div className="mt-4">
-                <button onClick={() => setShowRaw(!showRaw)} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
-                  {showRaw ? '▼' : '▶'} {lang === 'en' ? 'Raw API response' : 'Réponse API brute'}
-                </button>
-                {showRaw && <pre className="mt-2 bg-gray-900 text-green-400 text-xs p-4 rounded-lg overflow-auto max-h-64">{JSON.stringify(rawResponse, null, 2)}</pre>}
-              </div>
-            )}
+          {/* KPI Row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard icon="💰" label={lang === 'en' ? 'Revenue YTD' : 'CA Année'} value={fmt(totalRevenueYear)} sub={`${thisYearInvoices.length} factures`} color="blue" />
+            <KPICard icon="📅" label={lang === 'en' ? 'This Month' : 'Ce Mois'} value={fmt(totalRevenueMonth)} sub={`${thisMonthInvoices.length} factures`} color="emerald" />
+            <KPICard icon="⏳" label={lang === 'en' ? 'Outstanding' : 'En Attente'} value={fmt(totalOutstanding)} sub={`${unpaidInvoices.length} non payées`} color="amber" />
+            <KPICard icon="🔴" label={lang === 'en' ? 'Overdue' : 'En Retard'} value={fmt(totalOverdue)} sub={`${overdueInvoices.length} factures`} color="red" />
           </div>
 
-          {/* Environment Info */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">⚙️ {lang === 'en' ? 'Configuration' : 'Configuration'}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">API URL</p>
-                <p className="font-mono text-gray-800">api-staging.b2brouter.net</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">API Version</p>
-                <p className="font-mono text-gray-800">2025-10-13</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">API Key</p>
-                <p className="font-mono text-gray-800">••••••••••••••••</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">Environment</p>
-                <p className="font-medium text-amber-600">🟡 Staging (Test)</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-400 mt-4 italic">{lang === 'en' ? 'Environment variables stored securely in Vercel. Switch to production by updating B2BROUTER_API_URL.' : 'Variables d\'environnement stockées de manière sécurisée dans Vercel.'}</p>
+          {/* Second row */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard icon="🔧" label={lang === 'en' ? 'Service Revenue' : 'CA Service'} value={fmt(serviceRevenue)} sub={`Calibration & réparation`} color="blue" />
+            <KPICard icon="🔩" label={lang === 'en' ? 'Parts Revenue' : 'CA Pièces'} value={fmt(partsRevenue)} sub="Ventes de pièces" color="purple" />
+            <KPICard icon="✅" label={lang === 'en' ? 'Collected' : 'Encaissé'} value={fmt(totalCollected)} sub={`${paidInvoices.length} payées`} color="green" />
+            <KPICard icon="🔗" label="e-Factures" value={syncedCount} sub={`/${activeInvoices.length} sync B2BRouter`} color="teal" />
           </div>
 
-          {/* Quick Actions */}
+          {/* Revenue Chart */}
           <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">⚡ {lang === 'en' ? 'Quick Actions' : 'Actions Rapides'}</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              <button onClick={() => { setActiveTab('account'); loadTransports(); }} className="p-4 border-2 border-dashed border-gray-200 rounded-lg hover:border-[#2D5A7B] hover:bg-blue-50 transition-colors text-left">
-                <p className="font-medium text-gray-800">🚀 {lang === 'en' ? 'Check Transports' : 'Vérifier Transports'}</p>
-                <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'Peppol, Chorus Pro, email' : 'Peppol, Chorus Pro, email'}</p>
-              </button>
-              <button onClick={() => { setActiveTab('contacts'); loadContacts(); }} className="p-4 border-2 border-dashed border-gray-200 rounded-lg hover:border-[#2D5A7B] hover:bg-blue-50 transition-colors text-left">
-                <p className="font-medium text-gray-800">👥 {lang === 'en' ? 'View Contacts' : 'Voir les Contacts'}</p>
-                <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'Clients & suppliers in B2BRouter' : 'Clients & fournisseurs dans B2BRouter'}</p>
-              </button>
-              <button onClick={() => { setActiveTab('invoices'); loadIssuedInvoices(); loadReceivedInvoices(); }} className="p-4 border-2 border-dashed border-gray-200 rounded-lg hover:border-[#2D5A7B] hover:bg-blue-50 transition-colors text-left">
-                <p className="font-medium text-gray-800">📄 {lang === 'en' ? 'View Invoices' : 'Voir les Factures'}</p>
-                <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'Sent & received invoices' : 'Factures envoyées & reçues'}</p>
-              </button>
-            </div>
-          </div>
-
-          {/* Roadmap */}
-          <div className="bg-gradient-to-r from-[#2D5A7B] to-[#1a3d5c] rounded-xl p-6 text-white">
-            <h2 className="text-lg font-bold mb-3">🗺️ {lang === 'en' ? 'e-Invoicing Roadmap' : 'Feuille de Route e-Facturation'}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              {[
-                { phase: 'Phase 1', status: '🔄', label: lang === 'en' ? 'Connect & test API' : 'Connexion & test API', desc: lang === 'en' ? 'Current — API connection, view account' : 'En cours — connexion API, voir le compte' },
-                { phase: 'Phase 2', status: '⏳', label: lang === 'en' ? 'Send invoices' : 'Envoyer des factures', desc: lang === 'en' ? 'Generate from RMA/parts/contracts → e-invoice' : 'Générer depuis RMA/pièces/contrats → e-facture' },
-                { phase: 'Phase 3', status: '⏳', label: lang === 'en' ? 'Receive invoices' : 'Recevoir des factures', desc: lang === 'en' ? 'Poll incoming supplier invoices, display' : 'Recevoir les factures fournisseurs' },
-                { phase: 'Phase 4', status: '⏳', label: lang === 'en' ? 'Full tracking' : 'Suivi complet', desc: lang === 'en' ? 'Payment tracking, accept/reject, dashboards' : 'Suivi paiements, accepter/refuser, tableaux' },
-              ].map((item, i) => (
-                <div key={i} className="bg-white/10 rounded-lg p-3">
-                  <p className="font-medium">{item.status} {item.phase}: {item.label}</p>
-                  <p className="text-white/70 text-xs mt-0.5">{item.desc}</p>
+            <h3 className="font-bold text-gray-800 mb-4">📊 {lang === 'en' ? 'Monthly Revenue' : 'CA Mensuel'} {thisYear}</h3>
+            <div className="flex items-end gap-2 h-40">
+              {monthlyData.map((d, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-[10px] text-gray-500 font-medium">{d.revenue > 0 ? (d.revenue / 1000).toFixed(1) + 'k' : ''}</span>
+                  <div className="w-full rounded-t" style={{ height: Math.max(2, (d.revenue / maxMonthly) * 120), background: i === thisMonth ? '#2D5A7B' : '#e2e8f0' }}></div>
+                  <span className={`text-[10px] ${i === thisMonth ? 'font-bold text-[#2D5A7B]' : 'text-gray-400'}`}>{d.month}</span>
                 </div>
               ))}
             </div>
-            <p className="text-white/60 text-xs mt-4">⚠️ {lang === 'en' ? 'France B2B e-invoicing mandatory from September 1, 2026' : 'Facturation électronique B2B obligatoire en France à partir du 1er septembre 2026'}</p>
+          </div>
+
+          {/* TVA Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500 mb-1">Total HT {thisYear}</p>
+              <p className="text-xl font-bold text-gray-800">{fmt(totalHTYear)}</p>
+            </div>
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500 mb-1">TVA Collectée {thisYear}</p>
+              <p className="text-xl font-bold text-amber-600">{fmt(totalTVAYear)}</p>
+            </div>
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500 mb-1">Total TTC {thisYear}</p>
+              <p className="text-xl font-bold text-[#2D5A7B]">{fmt(totalRevenueYear)}</p>
+            </div>
+          </div>
+
+          {/* Recent Activity */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <h3 className="font-bold text-gray-800 mb-4">🕐 {lang === 'en' ? 'Recent Invoices' : 'Factures Récentes'}</h3>
+            {activeInvoices.slice(0, 8).map((inv, i) => {
+              const isOd = inv.due_date && !['paid','cancelled'].includes(inv.status) && new Date(inv.due_date) < now;
+              return (
+                <div key={inv.id} className={`flex items-center justify-between py-2.5 ${i < 7 ? 'border-b border-gray-100' : ''}`}>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-sm font-medium text-gray-800">{inv.invoice_number}</span>
+                    <span className="text-sm text-gray-500">{inv.companies?.name || '—'}</span>
+                    <StatusBadge status={isOd ? 'overdue' : inv.status} />
+                    {inv.b2brouter_invoice_id && <span className="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-medium">B2B</span>}
+                  </div>
+                  <span className="font-medium text-gray-800">{fmt(inv.total_ttc)}</span>
+                </div>
+              );
+            })}
+            {activeInvoices.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Aucune facture</p>}
           </div>
         </div>
       )}
 
-      {/* ===== ACCOUNT TAB ===== */}
-      {activeTab === 'account' && (
-        <div className="space-y-6">
-          {/* Account Info */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800">🏢 {lang === 'en' ? 'Account Details' : 'Détails du Compte'}</h2>
-              <button onClick={async () => { setLoading(p => ({...p, account: true})); try { const d = await b2bFetch('account'); setAccountData(d.account || d); } catch(e) { notify?.(e.message, 'error'); } setLoading(p => ({...p, account: false})); }}
-                disabled={loading.account} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
-                {loading.account ? '...' : '🔄 Refresh'}
-              </button>
+      {/* ================================================================
+           OUTGOING INVOICES TAB
+         ================================================================ */}
+      {activeTab === 'outgoing' && (
+        <div className="space-y-4">
+          <SectionHeader title={lang === 'en' ? 'Outgoing Invoices' : 'Factures Émises'} icon="📤" actions={
+            <div className="flex items-center gap-2">
+              <button onClick={loadInvoices} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">🔄</button>
+              <button onClick={() => { setActiveTab('outgoing_new'); }} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouvelle Facture</button>
             </div>
-            {accountData ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(accountData).filter(([k]) => !['id','created_at','updated_at'].includes(k) && accountData[k]).map(([k, v]) => (
-                  <div key={k} className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">{k.replace(/_/g, ' ')}</p>
-                    <p className="font-medium text-gray-800 text-sm">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</p>
+          } />
+          <SearchBar placeholder="Rechercher par n° facture, client..." />
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-4 gap-3 mb-2">
+            <div className="bg-white rounded-lg border p-3 text-center">
+              <p className="text-xl font-bold text-gray-800">{activeInvoices.length}</p>
+              <p className="text-xs text-gray-500">Total</p>
+            </div>
+            <div className="bg-white rounded-lg border p-3 text-center">
+              <p className="text-xl font-bold text-blue-600">{activeInvoices.filter(i => i.status === 'sent').length}</p>
+              <p className="text-xs text-gray-500">Envoyées</p>
+            </div>
+            <div className="bg-white rounded-lg border p-3 text-center">
+              <p className="text-xl font-bold text-green-600">{paidInvoices.length}</p>
+              <p className="text-xs text-gray-500">Payées</p>
+            </div>
+            <div className="bg-white rounded-lg border p-3 text-center">
+              <p className="text-xl font-bold text-red-600">{overdueInvoices.length}</p>
+              <p className="text-xs text-gray-500">En retard</p>
+            </div>
+          </div>
+
+          {/* Invoice table */}
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Facture</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Échéance</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">HT</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">TTC</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">e-Facture</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filterByDate(filterBySearch(activeInvoices, ['invoice_number', 'companies.name']), 'invoice_date').map((inv, i) => {
+                    const isOd = inv.due_date && !['paid','cancelled'].includes(inv.status) && new Date(inv.due_date) < now;
+                    return (
+                      <tr key={inv.id} className={`border-b last:border-0 hover:bg-gray-50 ${isOd ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                        <td className="px-4 py-3">
+                          <span className="font-mono font-medium text-gray-800">{inv.invoice_number}</span>
+                          {inv.service_requests?.request_number && <p className="text-[10px] text-gray-400">{inv.service_requests.request_number}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{inv.companies?.name || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{inv.invoice_date?.split('T')[0] || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={isOd ? 'text-red-600 font-medium' : 'text-gray-600'}>{inv.due_date?.split('T')[0] || '—'}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium text-gray-700">{fmt(inv.subtotal_ht)}</td>
+                        <td className="px-4 py-3 text-right font-bold text-gray-800">{fmt(inv.total_ttc)}</td>
+                        <td className="px-4 py-3 text-center"><StatusBadge status={isOd ? 'overdue' : inv.status} /></td>
+                        <td className="px-4 py-3 text-center">
+                          {inv.b2brouter_invoice_id ? (
+                            <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-medium">✓ #{inv.b2brouter_invoice_id}</span>
+                          ) : (
+                            <span className="text-[10px] text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {inv.pdf_url && <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded text-sm" title="PDF">📄</a>}
+                            <button onClick={() => { /* TODO: open detail modal */ }} className="p-1 hover:bg-gray-100 rounded text-sm" title="Détails">👁️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {activeInvoices.length === 0 && <EmptyState icon="📤" title="Aucune facture émise" subtitle="Les factures créées depuis les RMA apparaîtront ici" />}
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           INCOMING INVOICES TAB
+         ================================================================ */}
+      {activeTab === 'incoming' && (
+        <div className="space-y-4">
+          <SectionHeader title={lang === 'en' ? 'Incoming Invoices' : 'Factures Reçues'} icon="📥" actions={
+            <button onClick={loadB2bReceived} disabled={loading.b2bReceived} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c] disabled:opacity-50">
+              {loading.b2bReceived ? '...' : '🔄 Charger B2BRouter'}
+            </button>
+          } />
+
+          {b2bReceivedInvoices ? (
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              {b2bReceivedInvoices.meta && <div className="px-4 py-2 bg-gray-50 border-b"><p className="text-xs text-gray-500">Total: {b2bReceivedInvoices.meta.total_count} factures reçues</p></div>}
+              {(b2bReceivedInvoices.invoices || []).length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-gray-50 border-b">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fournisseur</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Facture</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr></thead>
+                  <tbody>
+                    {(b2bReceivedInvoices.invoices || []).map((inv, i) => (
+                      <tr key={inv.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500">{inv.id}</td>
+                        <td className="px-4 py-3 font-medium text-gray-800">{inv.contact?.name || inv.from_name || '—'}</td>
+                        <td className="px-4 py-3">{inv.number || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{inv.date || '—'}</td>
+                        <td className="px-4 py-3 text-right font-bold">{inv.total ? `${inv.total} ${inv.currency || '€'}` : '—'}</td>
+                        <td className="px-4 py-3 text-center"><StatusBadge status={inv.state} /></td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={async () => {
+                              try {
+                                await b2bPost({ action: 'mark_invoice', invoice_id: inv.id, state: 'accepted' });
+                                notify?.('Facture acceptée', 'success');
+                                loadB2bReceived();
+                              } catch (e) { notify?.(e.message, 'error'); }
+                            }} className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100" title="Accepter">✓</button>
+                            <button onClick={async () => {
+                              const reason = prompt('Raison du refus:');
+                              if (!reason) return;
+                              try {
+                                await b2bPost({ action: 'mark_invoice', invoice_id: inv.id, state: 'refused', reason });
+                                notify?.('Facture refusée', 'success');
+                                loadB2bReceived();
+                              } catch (e) { notify?.(e.message, 'error'); }
+                            }} className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs hover:bg-red-100" title="Refuser">✗</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <EmptyState icon="📥" title="Aucune facture reçue" subtitle="Les factures envoyées par vos fournisseurs apparaîtront ici" />}
+            </div>
+          ) : (
+            <EmptyState icon="📥" title={lang === 'en' ? 'Click Load to fetch received invoices from B2BRouter' : 'Cliquez sur Charger pour récupérer les factures reçues'} />
+          )}
+        </div>
+      )}
+
+      {/* ================================================================
+           CREDIT NOTES TAB
+         ================================================================ */}
+      {activeTab === 'credit_notes' && (
+        <div className="space-y-4">
+          <SectionHeader title={lang === 'en' ? 'Credit Notes' : 'Avoirs'} icon="↩️" actions={
+            <button className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Créer Avoir</button>
+          } />
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <EmptyState icon="↩️" title={lang === 'en' ? 'Credit Notes' : 'Avoirs'} subtitle={lang === 'en' ? 'Create credit notes to correct sent invoices. Coming in Phase 2.6' : 'Créez des avoirs pour corriger des factures envoyées. Disponible Phase 2.6'} />
+            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-800 mb-2">ℹ️ {lang === 'en' ? 'How it works' : 'Comment ça marche'}</h4>
+              <ul className="text-sm text-blue-700 space-y-1">
+                <li>• {lang === 'en' ? 'Select an invoice to correct → system creates a credit note (AVO-MMYY-XXX)' : 'Sélectionnez une facture à corriger → le système crée un avoir (AVO-MMYY-XXX)'}</li>
+                <li>• {lang === 'en' ? 'Credit note cancels the original invoice' : 'L\'avoir annule la facture originale'}</li>
+                <li>• {lang === 'en' ? 'Reissue a corrected invoice if needed' : 'Réémettez une facture corrigée si nécessaire'}</li>
+                <li>• {lang === 'en' ? 'Synced to B2BRouter for compliance' : 'Synchronisé avec B2BRouter pour conformité'}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           PURCHASE ORDERS TAB
+         ================================================================ */}
+      {activeTab === 'purchase_orders' && (
+        <div className="space-y-4">
+          <SectionHeader title={lang === 'en' ? 'Purchase Orders' : 'Bons de Commande Fournisseurs'} icon="🛒" actions={
+            <button className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouveau BC</button>
+          } />
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <EmptyState icon="🛒" title={lang === 'en' ? 'Purchase Orders' : 'Bons de Commande'} subtitle={lang === 'en' ? 'Create and track purchase orders to suppliers. Coming in Phase 2.7' : 'Créez et suivez les bons de commande fournisseurs. Disponible Phase 2.7'} />
+            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-800 mb-2">ℹ️ {lang === 'en' ? 'Planned workflow' : 'Workflow prévu'}</h4>
+              <ul className="text-sm text-blue-700 space-y-1">
+                <li>• {lang === 'en' ? 'Create PO → Send to supplier' : 'Créer BC → Envoyer au fournisseur'}</li>
+                <li>• {lang === 'en' ? 'Receive goods → Mark as delivered' : 'Recevoir marchandises → Marquer comme livré'}</li>
+                <li>• {lang === 'en' ? 'Match incoming invoice to PO' : 'Rapprocher facture fournisseur au BC'}</li>
+                <li>• {lang === 'en' ? 'Approve payment → Track in bank' : 'Approuver paiement → Suivre en banque'}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           CLIENTS TAB
+         ================================================================ */}
+      {activeTab === 'clients' && (
+        <div className="space-y-4">
+          <SectionHeader title="Clients" icon="👥" />
+          <SearchBar placeholder="Rechercher par nom, TVA, SIRET..." />
+
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-gray-50 border-b">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">TVA Intra.</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SIRET</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ville</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Chorus</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Factures</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">CA TTC</th>
+              </tr></thead>
+              <tbody>
+                {filterBySearch(clients || [], ['name', 'tva_number', 'siret', 'city']).map((c, i) => {
+                  const clientInvs = activeInvoices.filter(inv => inv.company_id === c.id);
+                  const clientRevenue = clientInvs.reduce((s, inv) => s + (parseFloat(inv.total_ttc) || 0), 0);
+                  return (
+                    <tr key={c.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-800">{c.name}</p>
+                        {c.email && <p className="text-xs text-gray-400">{c.email}</p>}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{c.tva_number || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{c.siret || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-4 py-3 text-gray-600">{c.city || c.billing_city || '—'}</td>
+                      <td className="px-4 py-3 text-center">{c.chorus_invoicing ? <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">Chorus</span> : <span className="text-gray-300">—</span>}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{clientInvs.length || '—'}</td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-800">{clientRevenue > 0 ? fmt(clientRevenue) : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {(!clients || clients.length === 0) && <EmptyState icon="👥" title="Aucun client" />}
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           BANK TAB
+         ================================================================ */}
+      {activeTab === 'bank' && (
+        <div className="space-y-4">
+          <SectionHeader title={lang === 'en' ? 'Bank & Payments' : 'Banque & Paiements'} icon="🏦" />
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <EmptyState icon="🏦" title={lang === 'en' ? 'Bank Reconciliation' : 'Rapprochement Bancaire'} subtitle={lang === 'en' ? 'Upload bank CSV/Excel to match payments to invoices. Coming in Phase 2.8' : 'Téléchargez un CSV/Excel bancaire pour rapprocher les paiements. Disponible Phase 2.8'} />
+            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-800 mb-2">ℹ️ {lang === 'en' ? 'Planned features' : 'Fonctionnalités prévues'}</h4>
+              <ul className="text-sm text-blue-700 space-y-1">
+                <li>• {lang === 'en' ? 'Upload bank statement CSV/Excel' : 'Upload relevé bancaire CSV/Excel'}</li>
+                <li>• {lang === 'en' ? 'Auto-match payments to invoices by amount/reference' : 'Rapprochement auto par montant/référence'}</li>
+                <li>• {lang === 'en' ? 'Manual matching for unrecognized payments' : 'Rapprochement manuel pour paiements non reconnus'}</li>
+                <li>• {lang === 'en' ? 'Payment history and aging report' : 'Historique paiements et balance âgée'}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           REPORTING TAB
+         ================================================================ */}
+      {activeTab === 'reporting' && (
+        <div className="space-y-4">
+          <SectionHeader title="Reporting" icon="📈" />
+
+          {/* Quick stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500">Factures émises {thisYear}</p>
+              <p className="text-2xl font-bold text-gray-800">{thisYearInvoices.length}</p>
+            </div>
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500">Taux de paiement</p>
+              <p className="text-2xl font-bold text-green-600">{thisYearInvoices.length > 0 ? Math.round((paidInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear).length / thisYearInvoices.length) * 100) : 0}%</p>
+            </div>
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500">Délai moyen paiement</p>
+              <p className="text-2xl font-bold text-amber-600">{(() => {
+                const paid = paidInvoices.filter(i => i.paid_at && i.invoice_date);
+                if (paid.length === 0) return '—';
+                const avg = paid.reduce((s, i) => s + Math.max(0, (new Date(i.paid_at) - new Date(i.invoice_date)) / 86400000), 0) / paid.length;
+                return Math.round(avg) + 'j';
+              })()}</p>
+            </div>
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500">Facture moyenne</p>
+              <p className="text-2xl font-bold text-[#2D5A7B]">{thisYearInvoices.length > 0 ? fmt(totalRevenueYear / thisYearInvoices.length) : '—'}</p>
+            </div>
+          </div>
+
+          {/* Aging report */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <h3 className="font-bold text-gray-800 mb-4">⏰ {lang === 'en' ? 'Aging Report' : 'Balance Âgée'}</h3>
+            {(() => {
+              const buckets = { current: [], '1_30': [], '31_60': [], '61_90': [], '90_plus': [] };
+              unpaidInvoices.forEach(inv => {
+                const days = inv.due_date ? Math.max(0, Math.floor((now - new Date(inv.due_date)) / 86400000)) : 0;
+                const remaining = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
+                const item = { ...inv, remaining, days };
+                if (days <= 0) buckets.current.push(item);
+                else if (days <= 30) buckets['1_30'].push(item);
+                else if (days <= 60) buckets['31_60'].push(item);
+                else if (days <= 90) buckets['61_90'].push(item);
+                else buckets['90_plus'].push(item);
+              });
+              const bucketTotal = (arr) => arr.reduce((s, i) => s + i.remaining, 0);
+              const rows = [
+                { label: 'Non échu', color: 'green', items: buckets.current },
+                { label: '1-30 jours', color: 'yellow', items: buckets['1_30'] },
+                { label: '31-60 jours', color: 'orange', items: buckets['31_60'] },
+                { label: '61-90 jours', color: 'red', items: buckets['61_90'] },
+                { label: '90+ jours', color: 'red', items: buckets['90_plus'] },
+              ];
+              return (
+                <div className="space-y-2">
+                  {rows.map((row, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <span className="w-24 text-sm text-gray-600">{row.label}</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-6 relative overflow-hidden">
+                        <div className={`h-full rounded-full bg-${row.color}-400`} style={{ width: totalOutstanding > 0 ? Math.max(1, (bucketTotal(row.items) / totalOutstanding) * 100) + '%' : '0%' }}></div>
+                      </div>
+                      <span className="w-28 text-right text-sm font-medium">{fmt(bucketTotal(row.items))}</span>
+                      <span className="w-10 text-right text-xs text-gray-400">{row.items.length}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-3 pt-2 border-t mt-2">
+                    <span className="w-24 text-sm font-bold text-gray-800">Total</span>
+                    <div className="flex-1"></div>
+                    <span className="w-28 text-right text-sm font-bold text-gray-800">{fmt(totalOutstanding)}</span>
+                    <span className="w-10 text-right text-xs font-bold text-gray-600">{unpaidInvoices.length}</span>
                   </div>
-                ))}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Future reports */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              { icon: '📊', title: 'P&L / Résultat', desc: 'Profit et perte par période', phase: '3.0' },
+              { icon: '📋', title: 'TVA Summary', desc: 'TVA collectée vs. TVA déductible', phase: '3.0' },
+              { icon: '💾', title: 'Export FEC', desc: 'Fichier des Écritures Comptables', phase: '3.0' },
+            ].map((r, i) => (
+              <div key={i} className="bg-white rounded-xl border shadow-sm p-5 opacity-60">
+                <p className="text-2xl mb-2">{r.icon}</p>
+                <p className="font-medium text-gray-800">{r.title}</p>
+                <p className="text-xs text-gray-500">{r.desc}</p>
+                <p className="text-[10px] text-gray-400 mt-2">Phase {r.phase}</p>
               </div>
-            ) : (
-              <p className="text-gray-400 text-sm">{lang === 'en' ? 'Test connection first to load account data.' : 'Testez la connexion d\'abord.'}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           SETTINGS TAB
+         ================================================================ */}
+      {activeTab === 'settings' && (
+        <div className="space-y-6">
+          {/* Connection Test */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <SectionHeader title="B2BRouter API" icon="🔌" actions={
+              <button onClick={testConnection} disabled={loading.connection}
+                className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium text-sm disabled:opacity-50 flex items-center gap-2">
+                {loading.connection ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Test...</>) : '🔌 Tester Connexion'}
+              </button>
+            } />
+            
+            {b2bConnected === true && b2bAccount && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                <p className="text-sm font-bold text-green-800 mb-2">✅ Connecté — {b2bAccount.name}</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><span className="text-gray-500">ID:</span> <span className="font-mono text-xs">{b2bAccount.id}</span></div>
+                  <div><span className="text-gray-500">TVA:</span> <span className="font-mono text-xs">{b2bAccount.tin_value}</span></div>
+                  <div><span className="text-gray-500">Pays:</span> {b2bAccount.country?.toUpperCase()}</div>
+                  <div><span className="text-gray-500">Ville:</span> {b2bAccount.city}</div>
+                </div>
+              </div>
             )}
+
+            {b2bConnected === false && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-sm font-bold text-red-800">❌ Connexion échouée</p>
+                {connectionError && <pre className="text-xs text-red-600 mt-1 whitespace-pre-wrap break-all">{connectionError}</pre>}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">API URL</p>
+                <p className="font-mono text-gray-800 text-xs">api-staging.b2brouter.net</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">Version</p>
+                <p className="font-mono text-gray-800 text-xs">2025-10-13</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">API Key</p>
+                <p className="font-mono text-gray-800 text-xs">••••••••</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">Environnement</p>
+                <p className="font-medium text-amber-600 text-xs">🟡 Staging</p>
+              </div>
+            </div>
           </div>
 
           {/* Transports */}
           <div className="bg-white rounded-xl border shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800">🚀 {lang === 'en' ? 'Active Transports' : 'Transports Actifs'}</h2>
-              <button onClick={loadTransports} disabled={loading.transports} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
-                {loading.transports ? '...' : '🔄 Load'}
+            <SectionHeader title="Transports" icon="🚀" actions={
+              <button onClick={loadB2bTransports} disabled={loading.transports} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm disabled:opacity-50">
+                {loading.transports ? '...' : '🔄 Charger'}
               </button>
-            </div>
-            {transports ? (
-              Array.isArray(transports) && transports.length > 0 ? (
-                <div className="space-y-3">
-                  {transports.map((tr, i) => (
-                    <div key={i} className="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
+            } />
+            {b2bTransports ? (
+              Array.isArray(b2bTransports) && b2bTransports.length > 0 ? (
+                <div className="space-y-2">
+                  {b2bTransports.map((tr, i) => (
+                    <div key={i} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
                       <div>
-                        <p className="font-medium text-gray-800">{tr.code || tr.transport_type_code || 'Unknown'}</p>
-                        {tr.pin_value && <p className="text-xs text-gray-500 font-mono mt-0.5">PIN: {tr.pin_scheme}:{tr.pin_value}</p>}
+                        <p className="font-medium text-sm text-gray-800">{tr.code || tr.transport_type_code || 'Unknown'}</p>
+                        {tr.pin_value && <p className="text-xs text-gray-400 font-mono">{tr.pin_scheme}:{tr.pin_value}</p>}
                       </div>
-                      <div className="flex items-center gap-3">
-                        {tr.enabled && <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs">Active</span>}
-                        {tr.reception && <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">Reception</span>}
-                        {tr.invoice && <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs">Invoice</span>}
+                      <div className="flex gap-2">
+                        {tr.enabled && <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs">Actif</span>}
+                        {tr.reception && <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">Réception</span>}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <p className="text-amber-800 text-sm font-medium">{lang === 'en' ? 'No transports configured yet' : 'Aucun transport configuré'}</p>
-                  <p className="text-amber-600 text-xs mt-1">{lang === 'en' ? 'You may need to activate Peppol, Chorus Pro, or B2BRouter transport in the B2BRouter app.' : 'Vous devrez peut-être activer Peppol, Chorus Pro ou le transport B2BRouter dans l\'application B2BRouter.'}</p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-amber-700 text-sm">Aucun transport configuré. Activez Peppol, Chorus Pro ou B2BRouter dans l'app B2BRouter.</p>
                 </div>
               )
-            ) : (
-              <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch transport config.' : 'Cliquez sur Load pour charger.'}</p>
-            )}
+            ) : <p className="text-gray-400 text-sm">Cliquez Charger pour voir les transports actifs.</p>}
           </div>
-        </div>
-      )}
 
-      {/* ===== CONTACTS TAB ===== */}
-      {activeTab === 'contacts' && (
-        <div className="bg-white rounded-xl border shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-800">👥 {lang === 'en' ? 'B2BRouter Contacts' : 'Contacts B2BRouter'}</h2>
-            <button onClick={loadContacts} disabled={loading.contacts} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
-              {loading.contacts ? '...' : '🔄 Load'}
-            </button>
-          </div>
-          {contacts ? (
-            <div>
-              {contacts.meta && <p className="text-xs text-gray-400 mb-3">Total: {contacts.meta.total_count} contacts</p>}
-              {(contacts.contacts || []).length > 0 ? (
-                <div className="overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="bg-gray-50 text-left"><th className="px-3 py-2 text-xs text-gray-500">ID</th><th className="px-3 py-2 text-xs text-gray-500">Name</th><th className="px-3 py-2 text-xs text-gray-500">Country</th><th className="px-3 py-2 text-xs text-gray-500">TIN</th><th className="px-3 py-2 text-xs text-gray-500">Transport</th><th className="px-3 py-2 text-xs text-gray-500">Type</th></tr></thead>
-                    <tbody>
-                      {(contacts.contacts || []).map((c, i) => (
-                        <tr key={c.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="px-3 py-2 font-mono text-xs">{c.id}</td>
-                          <td className="px-3 py-2 font-medium">{c.name}</td>
-                          <td className="px-3 py-2">{c.country?.toUpperCase()}</td>
-                          <td className="px-3 py-2 font-mono text-xs">{c.tin_value || '—'}</td>
-                          <td className="px-3 py-2 text-xs">{c.transport_type_code || '—'}</td>
-                          <td className="px-3 py-2">
-                            {c.is_client && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs mr-1">Client</span>}
-                            {c.is_provider && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">Supplier</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No contacts found.' : 'Aucun contact trouvé.'}</p>}
-            </div>
-          ) : (
-            <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch contacts.' : 'Cliquez sur Load pour charger.'}</p>
-          )}
-        </div>
-      )}
-
-      {/* ===== INVOICES TAB ===== */}
-      {activeTab === 'invoices' && (
-        <div className="space-y-6">
-          {/* Test Invoice */}
+          {/* Activity Log */}
           <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-2">🧪 {lang === 'en' ? 'Send Test Invoice' : 'Envoyer une Facture Test'}</h2>
-            <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Creates a test contact and sends a sample invoice through B2BRouter staging.' : 'Crée un contact test et envoie une facture exemple via B2BRouter staging.'}</p>
-            <button onClick={sendTestInvoice} disabled={sendingTest}
-              className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
-              {sendingTest ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Sending...</>) : '📤 Send Test Invoice'}
-            </button>
-            {testInvoiceResult && (
-              <div className={`mt-4 rounded-lg p-4 ${testInvoiceResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
-                {testInvoiceResult.error ? (
-                  <pre className="text-xs text-red-700 whitespace-pre-wrap break-all">{testInvoiceResult.error}</pre>
-                ) : (
-                  <div>
-                    <p className="text-green-800 font-medium mb-2">✅ Test invoice created!</p>
-                    <pre className="text-xs text-green-700 bg-white/50 rounded p-3 overflow-auto max-h-40">{JSON.stringify(testInvoiceResult, null, 2)}</pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Issued Invoices */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800">📤 {lang === 'en' ? 'Issued Invoices' : 'Factures Émises'}</h2>
-              <button onClick={loadIssuedInvoices} disabled={loading.issued} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
-                {loading.issued ? '...' : '🔄 Load'}
+            <SectionHeader title={lang === 'en' ? 'Activity Log' : 'Journal d\'Activité'} icon="📋" actions={
+              <button onClick={loadB2bEvents} disabled={loading.events} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm disabled:opacity-50">
+                {loading.events ? '...' : '🔄 Charger'}
               </button>
-            </div>
-            {issuedInvoices ? (
-              <div>
-                {issuedInvoices.meta && <p className="text-xs text-gray-400 mb-3">Total: {issuedInvoices.meta.total_count}</p>}
-                {(issuedInvoices.invoices || []).length > 0 ? (
-                  <div className="overflow-auto">
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">ID</th><th className="px-3 py-2 text-left text-xs text-gray-500">Number</th><th className="px-3 py-2 text-left text-xs text-gray-500">Date</th><th className="px-3 py-2 text-right text-xs text-gray-500">Total</th><th className="px-3 py-2 text-left text-xs text-gray-500">Status</th></tr></thead>
-                      <tbody>
-                        {(issuedInvoices.invoices || []).map((inv, i) => (
-                          <tr key={inv.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-3 py-2 font-mono text-xs">{inv.id}</td>
-                            <td className="px-3 py-2 font-medium">{inv.number || '—'}</td>
-                            <td className="px-3 py-2 text-gray-600">{inv.date || inv.created_at?.split('T')[0] || '—'}</td>
-                            <td className="px-3 py-2 text-right font-medium">{inv.total ? `${inv.total} ${inv.currency || '€'}` : '—'}</td>
-                            <td className="px-3 py-2"><StatusBadge status={inv.state} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No issued invoices found.' : 'Aucune facture émise.'}</p>}
-              </div>
-            ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch invoices.' : 'Cliquez sur Load.'}</p>}
-          </div>
-
-          {/* Received Invoices */}
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800">📥 {lang === 'en' ? 'Received Invoices' : 'Factures Reçues'}</h2>
-              <button onClick={loadReceivedInvoices} disabled={loading.received} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
-                {loading.received ? '...' : '🔄 Load'}
-              </button>
-            </div>
-            {receivedInvoices ? (
-              <div>
-                {receivedInvoices.meta && <p className="text-xs text-gray-400 mb-3">Total: {receivedInvoices.meta.total_count}</p>}
-                {(receivedInvoices.invoices || []).length > 0 ? (
-                  <div className="overflow-auto">
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">ID</th><th className="px-3 py-2 text-left text-xs text-gray-500">From</th><th className="px-3 py-2 text-left text-xs text-gray-500">Number</th><th className="px-3 py-2 text-left text-xs text-gray-500">Date</th><th className="px-3 py-2 text-right text-xs text-gray-500">Total</th><th className="px-3 py-2 text-left text-xs text-gray-500">Status</th></tr></thead>
-                      <tbody>
-                        {(receivedInvoices.invoices || []).map((inv, i) => (
-                          <tr key={inv.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-3 py-2 font-mono text-xs">{inv.id}</td>
-                            <td className="px-3 py-2 font-medium">{inv.from_name || inv.contact_name || '—'}</td>
-                            <td className="px-3 py-2">{inv.number || '—'}</td>
-                            <td className="px-3 py-2 text-gray-600">{inv.date || '—'}</td>
-                            <td className="px-3 py-2 text-right font-medium">{inv.total ? `${inv.total} ${inv.currency || '€'}` : '—'}</td>
-                            <td className="px-3 py-2"><StatusBadge status={inv.state} /></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No received invoices.' : 'Aucune facture reçue.'}</p>}
-              </div>
-            ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch.' : 'Cliquez sur Load.'}</p>}
-          </div>
-        </div>
-      )}
-
-      {/* ===== EVENTS TAB ===== */}
-      {activeTab === 'events' && (
-        <div className="bg-white rounded-xl border shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-gray-800">📋 {lang === 'en' ? 'Activity Log' : 'Journal d\'Activité'}</h2>
-            <button onClick={loadEvents} disabled={loading.events} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
-              {loading.events ? '...' : '🔄 Load'}
-            </button>
-          </div>
-          {events ? (
-            <div>
-              {events.meta && <p className="text-xs text-gray-400 mb-3">Total: {events.meta.total_count} events</p>}
-              {(events.events || []).length > 0 ? (
-                <div className="space-y-2">
-                  {(events.events || []).map((ev, i) => (
-                    <div key={ev.id || i} className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
+            } />
+            {b2bEvents ? (
+              (b2bEvents.events || []).length > 0 ? (
+                <div className="space-y-1 max-h-64 overflow-y-auto">
+                  {(b2bEvents.events || []).map((ev, i) => (
+                    <div key={ev.id || i} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                       <div>
-                        <p className="text-sm font-medium text-gray-800">{ev.name || ev.event_type || ev.action || 'Event'}</p>
-                        {ev.invoice_id && <p className="text-xs text-gray-500">Invoice #{ev.invoice_id}</p>}
+                        <p className="text-sm text-gray-800">{ev.name || ev.event_type || ev.action || 'Event'}</p>
+                        {ev.invoice_id && <p className="text-xs text-gray-400">Facture #{ev.invoice_id}</p>}
                       </div>
                       <p className="text-xs text-gray-400">{ev.created_at ? new Date(ev.created_at).toLocaleString('fr-FR') : ''}</p>
                     </div>
                   ))}
                 </div>
-              ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No events found.' : 'Aucun événement.'}</p>}
-            </div>
-          ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch.' : 'Cliquez sur Load.'}</p>}
-        </div>
-      )}
-
-      {/* ===== REFERENCE TAB ===== */}
-      {activeTab === 'reference' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-800">📚 {lang === 'en' ? 'API Code Lists' : 'Listes de Codes API'}</h2>
-              <button onClick={loadCodeLists} disabled={loading.codes} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
-                {loading.codes ? '...' : '🔄 Load All'}
-              </button>
-            </div>
-            <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Reference data from B2BRouter API — document types, transport types, identification schemes.' : 'Données de référence de l\'API B2BRouter — types de documents, types de transport, schémas d\'identification.'}</p>
-            
-            {docTypes && (
-              <div className="mb-6">
-                <h3 className="font-bold text-gray-700 mb-2 text-sm">Document Types ({(docTypes.document_types || []).length})</h3>
-                <div className="max-h-48 overflow-auto bg-gray-50 rounded-lg p-3">
-                  {(docTypes.document_types || []).map((dt, i) => (
-                    <div key={i} className="flex justify-between py-1 text-xs border-b border-gray-100 last:border-0">
-                      <span className="font-mono text-gray-800">{dt.code}</span>
-                      <span className="text-gray-500">{dt.name || dt.description || ''}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {transportTypes && (
-              <div className="mb-6">
-                <h3 className="font-bold text-gray-700 mb-2 text-sm">Transport Types ({(transportTypes.transport_types || []).length})</h3>
-                <div className="max-h-48 overflow-auto bg-gray-50 rounded-lg p-3">
-                  {(transportTypes.transport_types || []).map((tt, i) => (
-                    <div key={i} className="flex justify-between py-1 text-xs border-b border-gray-100 last:border-0">
-                      <span className="font-mono text-gray-800">{tt.code}</span>
-                      <span className="text-gray-500">{tt.name || tt.description || ''}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {schemes && (
-              <div>
-                <h3 className="font-bold text-gray-700 mb-2 text-sm">Identification Schemes ({(schemes.schemes || []).length})</h3>
-                <div className="max-h-48 overflow-auto bg-gray-50 rounded-lg p-3">
-                  {(schemes.schemes || []).slice(0, 50).map((sc, i) => (
-                    <div key={i} className="flex justify-between py-1 text-xs border-b border-gray-100 last:border-0">
-                      <span className="font-mono text-gray-800">{sc.code}</span>
-                      <span className="text-gray-500 truncate ml-4">{sc.name || sc.description || ''}</span>
-                    </div>
-                  ))}
-                  {(schemes.schemes || []).length > 50 && <p className="text-xs text-gray-400 mt-2">...and {(schemes.schemes || []).length - 50} more</p>}
-                </div>
-              </div>
-            )}
+              ) : <p className="text-gray-400 text-sm">Aucun événement.</p>
+            ) : <p className="text-gray-400 text-sm">Cliquez Charger pour voir l'activité.</p>}
           </div>
 
           {/* Useful Links */}
           <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">🔗 {lang === 'en' ? 'Useful Links' : 'Liens Utiles'}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <h3 className="font-bold text-gray-800 mb-3">🔗 Liens Utiles</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {[
-                { label: 'B2BRouter App (Staging)', url: 'https://app-staging.b2brouter.net' },
+                { label: 'B2BRouter Staging', url: 'https://app-staging.b2brouter.net' },
                 { label: 'API Docs', url: 'https://developer.b2brouter.net/docs/setting_up_guide' },
                 { label: 'API Reference', url: 'https://developer.b2brouter.net/reference' },
-                { label: 'France Chorus Pro Guide', url: 'https://developer.b2brouter.net/docs/send_an_invoice_through_chorus_pro' },
-                { label: 'France DGFiP Guide (Beta)', url: 'https://developer.b2brouter.net/docs/dgfip' },
-                { label: 'Chorus Pro Portal', url: 'https://chorus-pro.gouv.fr' },
+                { label: 'Chorus Pro Guide', url: 'https://developer.b2brouter.net/docs/send_an_invoice_through_chorus_pro' },
+                { label: 'France DGFiP', url: 'https://developer.b2brouter.net/docs/dgfip' },
+                { label: 'Chorus Pro', url: 'https://chorus-pro.gouv.fr' },
               ].map((link, i) => (
-                <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors text-sm text-[#2D5A7B] font-medium">
-                  🔗 {link.label}
-                </a>
+                <a key={i} href={link.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 p-2.5 bg-gray-50 rounded-lg hover:bg-blue-50 text-sm text-[#2D5A7B] font-medium">🔗 {link.label}</a>
               ))}
             </div>
+          </div>
+
+          {/* Roadmap */}
+          <div className="bg-gradient-to-r from-[#2D5A7B] to-[#1a3d5c] rounded-xl p-6 text-white">
+            <h3 className="font-bold mb-3">🗺️ Feuille de Route</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {[
+                { phase: '2.5', status: '✅', label: 'Dashboard + gestion factures', done: true },
+                { phase: '2.6', status: '⏳', label: 'Facture libre + avoirs' },
+                { phase: '2.7', status: '⏳', label: 'Bons de commande fournisseurs' },
+                { phase: '2.8', status: '⏳', label: 'Upload bancaire + rapprochement' },
+                { phase: '2.9', status: '⏳', label: 'PO → Facture matching' },
+                { phase: '3.0', status: '⏳', label: 'P&L, balance âgée, FEC, TVA' },
+                { phase: '3.1', status: '⏳', label: 'US reporting + Chorus Pro' },
+              ].map((item, i) => (
+                <div key={i} className={`rounded-lg p-2.5 ${item.done ? 'bg-white/20' : 'bg-white/10'}`}>
+                  <p className="font-medium">{item.status} {item.phase}: {item.label}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-white/60 text-xs mt-4">⚠️ e-Facturation B2B obligatoire : 1er septembre 2026</p>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           STANDALONE INVOICE CREATION (placeholder)
+         ================================================================ */}
+      {activeTab === 'outgoing_new' && (
+        <div className="space-y-4">
+          <SectionHeader title={lang === 'en' ? 'Create Invoice' : 'Nouvelle Facture'} icon="✏️" actions={
+            <button onClick={() => setActiveTab('outgoing')} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">← Retour</button>
+          } />
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <EmptyState icon="✏️" title={lang === 'en' ? 'Standalone Invoice Creation' : 'Création Facture Libre'} subtitle={lang === 'en' ? 'Create invoices not tied to an RMA. Coming in Phase 2.6' : 'Créez des factures non liées à un RMA. Disponible Phase 2.6'} />
           </div>
         </div>
       )}
     </div>
   );
 }
-
 function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, setBusinessSettings, requests = [], clients = [], t = k=>k, lang = 'fr', setLang }) {
   const [editingSettings, setEditingSettings] = useState(false);
   const [tempSettings, setTempSettings] = useState(businessSettings);
