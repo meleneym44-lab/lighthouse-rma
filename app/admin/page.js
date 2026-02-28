@@ -28174,7 +28174,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   const unmatched = clientInvs.filter(inv => !clientBillingAddrs.some(ba => inv.service_requests?.billing_address_id === ba.id));
 
                   return (
-                    <React.Fragment key={c.id}>
+                    <Fragment key={c.id}>
                       {/* Parent company row */}
                       <tr className={`border-b hover:bg-gray-50 cursor-pointer ${ci % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`} onClick={hasEntities ? toggleExpand : undefined}>
                         <td className="px-3 py-3 text-center">
@@ -28252,7 +28252,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                           <td className="px-4 py-2 text-right text-xs font-medium text-amber-700">{fmt(unmatched.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0))}</td>
                         </tr>
                       )}
-                    </React.Fragment>
+                    </Fragment>
                   );
                 })}
               </tbody>
