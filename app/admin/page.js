@@ -28345,8 +28345,8 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
         const poRemoveLine = (id) => setPoLines(prev => prev.filter(l => l.id !== id));
         const poSubtotal = poLines.reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
 
-        const typeLabels = { parts: '🔩 Pièces', service: '🔧 Service', intercompany: '🏢 Inter-société', general: '📦 Général' };
-        const typeColors = { parts: 'blue', service: 'amber', intercompany: 'purple', general: 'gray' };
+        const typeLabels = { parts: 'Pièces', service: 'Service', intercompany: 'Inter-société', general: 'Général' };
+        const typeIcons = { parts: '🔩', service: '🔧', intercompany: '🏢', general: '📦' };
 
         const openPOs = (purchaseOrders || []).filter(p => !['paid','cancelled'].includes(p.status));
         const archivedPOs = (purchaseOrders || []).filter(p => p.status === 'paid');
@@ -28387,12 +28387,8 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             if (upErr) throw upErr;
             const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
             await supabase.from('po_attachments').insert({
-              po_id: poId,
-              file_name: poDocName.trim() || poDocFile.name,
-              file_url: urlData?.publicUrl,
-              file_type: poDocFile.type,
-              category: poDocCategory,
-              uploaded_by: profile?.id
+              po_id: poId, file_name: poDocName.trim() || poDocFile.name, file_url: urlData?.publicUrl,
+              file_type: poDocFile.type, category: poDocCategory, uploaded_by: profile?.id
             });
             setPoDocFile(null); setPoDocName(''); setPoDocCategory('devis_fournisseur');
             notify('📄 Document ajouté!');
@@ -28410,9 +28406,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             try {
               const { data: docNum } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BC-INT' });
               if (docNum) poNumber = docNum;
-            } catch (e) {
-              poNumber = `BC-INT-${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getFullYear()).slice(-2)}-001`;
-            }
+            } catch (e) { poNumber = `BC-INT-${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getFullYear()).slice(-2)}-001`; }
             let pdfUrl = null;
             try {
               const pdfBlob = await generateBCPDF({
@@ -28422,23 +28416,18 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
               }, businessSettings);
               pdfUrl = await uploadPDFToStorage(pdfBlob, 'purchase_orders', `BC_${poNumber.replace(/[^a-zA-Z0-9-]/g,'_')}_${Date.now()}.pdf`);
             } catch (pdfErr) { console.error('BC PDF error:', pdfErr); }
-
             const { data: newPO, error } = await supabase.from('supplier_purchase_orders').insert({
               po_number: poNumber, supplier_name: poSupplier.trim(), supplier_ref: poSupplierRef,
               po_type: poType, status: 'draft', expected_date: poExpectedDate || null,
               notes: poNotes, subtotal_ht: poSubtotal, pdf_url: pdfUrl, created_by: profile?.id
             }).select().single();
             if (error) throw error;
-
             if (newPO) {
-              const lineInserts = poLines.filter(l => l.description).map((l, idx) => ({
-                po_id: newPO.id, description: l.description,
-                quantity: parseInt(l.quantity) || 1, unit_price_ht: parseFloat(l.unitPrice) || 0,
-                total_ht: parseFloat(l.total) || 0, sort_order: idx
-              }));
-              await supabase.from('supplier_po_lines').insert(lineInserts);
+              await supabase.from('supplier_po_lines').insert(poLines.filter(l => l.description).map((l, idx) => ({
+                po_id: newPO.id, description: l.description, quantity: parseInt(l.quantity) || 1,
+                unit_price_ht: parseFloat(l.unitPrice) || 0, total_ht: parseFloat(l.total) || 0, sort_order: idx
+              })));
             }
-
             setPoSaved({ ...newPO, pdf_url: pdfUrl });
             setPoStep(3);
             notify(`✅ BC ${poNumber} créé!`);
@@ -28453,7 +28442,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             if (newStatus === 'ordered') updates.ordered_at = new Date().toISOString();
             if (newStatus === 'delivered') updates.delivered_at = new Date().toISOString();
             await supabase.from('supplier_purchase_orders').update(updates).eq('id', po.id);
-            notify(`BC ${po.po_number} → ${newStatus === 'ordered' ? 'Commandé' : newStatus === 'delivered' ? 'Reçu' : newStatus}`);
+            notify(`✅ ${po.po_number} → ${({ ordered: 'Commandé', delivered: 'Reçu' })[newStatus] || newStatus}`);
             loadPurchaseOrders();
           } catch (err) { notify(err.message, 'error'); }
         };
@@ -28463,11 +28452,10 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
           try {
             await supabase.from('supplier_purchase_orders').update({
               supplier_invoice_ref: poSupplierInvoiceRef.trim(),
-              supplier_invoice_amount: parseFloat(poSupplierInvoiceAmount) || null,
-              status: 'invoiced'
+              supplier_invoice_amount: parseFloat(poSupplierInvoiceAmount) || null, status: 'invoiced'
             }).eq('id', po.id);
             setPoSupplierInvoiceRef(''); setPoSupplierInvoiceAmount('');
-            notify('🧾 Facture fournisseur liée!');
+            notify('🧾 Facture liée!');
             loadPurchaseOrders();
           } catch (err) { notify(err.message, 'error'); }
         };
@@ -28481,19 +28469,52 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
               payment_method: poPaymentMethod
             }).eq('id', po.id);
             setPoPaymentAmount(''); setPoPaymentDate(''); setPoPaymentMethod('virement');
+            setPoViewId(null);
             notify('✅ Payé! Dossier archivé.');
             loadPurchaseOrders();
           } catch (err) { notify(err.message, 'error'); }
         };
 
         const viewPO = poViewId ? purchaseOrders.find(p => p.id === poViewId) : null;
+
         const statusSteps = ['draft','ordered','delivered','invoiced','paid'];
         const statusLabels = { draft: 'Brouillon', ordered: 'Commandé', delivered: 'Reçu', invoiced: 'Facturé', paid: 'Payé' };
         const statusIcons = { draft: '📝', ordered: '📦', delivered: '✅', invoiced: '🧾', paid: '💰' };
 
-        /* =====================================================================
-           LIST VIEW
-         ===================================================================== */
+        // Chevron progress bar component (matches parts order style)
+        const POProgressBar = ({ status }) => {
+          const currentIdx = statusSteps.indexOf(status) >= 0 ? statusSteps.indexOf(status) : 0;
+          return (
+            <div className="flex items-center w-full">
+              {statusSteps.map((st, i) => {
+                const isCompleted = i < currentIdx;
+                const isCurrent = i === currentIdx;
+                const isLast = i === statusSteps.length - 1;
+                return (
+                  <div key={st} className="flex items-center flex-1">
+                    <div
+                      className={`relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium ${
+                        isCompleted ? 'bg-[#2D5A7B] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'
+                      } ${i === 0 ? 'rounded-l-md' : ''} ${isLast ? 'rounded-r-md' : ''}`}
+                      style={{
+                        clipPath: isLast
+                          ? 'polygon(0 0, 100% 0, 100% 100%, 0 100%, 8px 50%)'
+                          : i === 0
+                            ? 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)'
+                            : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
+                      }}
+                    >
+                      <span className="mr-1">{statusIcons[st]}</span>
+                      <span className="hidden sm:inline">{statusLabels[st]}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        };
+
+        /* ============================== LIST VIEW ============================== */
         if (poStep === 1 && !poViewId) return (
           <div className="space-y-4">
             <SectionHeader title="Bons de Commande" icon="🛒" actions={
@@ -28501,42 +28522,37 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                 className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c] flex items-center gap-2">+ Nouveau BC</button>
             } />
 
-            {/* Summary strip */}
+            {/* Summary */}
             <div className="grid grid-cols-4 gap-3">
-              <div className="bg-white rounded-xl border p-4">
-                <p className="text-xs text-gray-400 uppercase font-medium">En cours</p>
-                <p className="text-2xl font-bold text-[#2D5A7B]">{openPOs.length}</p>
-              </div>
-              <div className="bg-white rounded-xl border p-4">
-                <p className="text-xs text-gray-400 uppercase font-medium">Montant ouvert</p>
-                <p className="text-2xl font-bold text-amber-600">{fmt(totalOpen)}</p>
-              </div>
-              <div className="bg-white rounded-xl border p-4">
-                <p className="text-xs text-gray-400 uppercase font-medium">Archivés payés</p>
-                <p className="text-2xl font-bold text-green-600">{archivedPOs.length}</p>
-              </div>
-              <div className="bg-white rounded-xl border p-4">
-                <p className="text-xs text-gray-400 uppercase font-medium">Total payé</p>
-                <p className="text-2xl font-bold text-green-600">{fmt(totalPaid)}</p>
-              </div>
+              {[
+                { label: 'En cours', value: openPOs.length, color: 'text-[#2D5A7B]' },
+                { label: 'Montant ouvert HT', value: fmt(totalOpen), color: 'text-amber-600' },
+                { label: 'Archivés (payés)', value: archivedPOs.length, color: 'text-green-600' },
+                { label: 'Total payé', value: fmt(totalPaid), color: 'text-green-600' },
+              ].map((c, i) => (
+                <div key={i} className="bg-white rounded-xl border p-4 text-center">
+                  <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
+                  <p className="text-[11px] text-gray-400 uppercase font-medium mt-0.5">{c.label}</p>
+                </div>
+              ))}
             </div>
 
             {/* Toggle + Filters */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
+              <div className="flex bg-gray-100 rounded-lg p-0.5">
                 <button onClick={() => setPoShowArchived(false)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${!poShowArchived ? 'bg-[#2D5A7B] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${!poShowArchived ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>
                   📂 En cours ({openPOs.length})
                 </button>
                 <button onClick={() => setPoShowArchived(true)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${poShowArchived ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                  ✅ Payés / Archivés ({archivedPOs.length})
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${poShowArchived ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>
+                  ✅ Archivés ({archivedPOs.length})
                 </button>
               </div>
-              <div className="flex items-center gap-1.5">
-                {[{ k: 'all', l: 'Tous' }, ...Object.entries(typeLabels).map(([k, l]) => ({ k, l }))].map(f => (
+              <div className="flex items-center gap-1">
+                {[{ k: 'all', l: 'Tous' }, ...Object.entries(typeLabels).map(([k, l]) => ({ k, l: `${typeIcons[k]} ${l}` }))].map(f => (
                   <button key={f.k} onClick={() => setPoFilterType(f.k)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${poFilterType === f.k ? 'bg-[#2D5A7B] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${poFilterType === f.k ? 'bg-[#2D5A7B] text-white' : 'bg-white border text-gray-500 hover:bg-gray-50'}`}>
                     {f.l}
                   </button>
                 ))}
@@ -28545,109 +28561,82 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
 
             <SearchBar placeholder="Rechercher par n° BC, fournisseur..." />
 
-            {/* PO Cards — styled like parts orders */}
-            <div className="space-y-2">
+            {/* PO List */}
+            <div className="space-y-3">
               {filteredPOs.length > 0 ? filteredPOs.map(po => {
                 const isLate = po.expected_date && !['delivered','invoiced','paid','cancelled'].includes(po.status) && new Date(po.expected_date) < now;
-                const tc = typeColors[po.po_type] || 'gray';
-                const currentStep = statusSteps.indexOf(po.status);
                 return (
                   <div key={po.id} onClick={() => { setPoViewId(po.id); setPoTab('details'); loadPoAttachments(po.id); }}
-                    className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer p-4 ${isLate ? 'border-l-4 border-l-red-400' : 'hover:border-gray-300'}`}>
-                    <div className="flex items-center gap-4">
-                      {/* Status icon */}
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-                        po.status === 'paid' ? 'bg-green-100' : po.status === 'invoiced' ? 'bg-purple-100' :
-                        po.status === 'delivered' ? 'bg-emerald-100' : po.status === 'ordered' ? 'bg-blue-100' : 'bg-gray-100'
-                      }`}>
-                        {statusIcons[po.status] || '📝'}
-                      </div>
-                      {/* Main info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="font-mono font-bold text-gray-800">{po.po_number}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium bg-${tc}-50 text-${tc}-700`}>
-                            {typeLabels[po.po_type] || '📦 Général'}
-                          </span>
-                          {isLate && <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600">⚠️ En retard</span>}
+                    className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden">
+                    {/* Chevron progress at top of card */}
+                    <POProgressBar status={po.status} />
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono font-bold text-[#2D5A7B] text-base">{po.po_number}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600`}>
+                              {typeIcons[po.po_type] || '📦'} {typeLabels[po.po_type] || 'Général'}
+                            </span>
+                            {isLate && <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-600 animate-pulse">⚠️ En retard</span>}
+                          </div>
+                          <p className="text-lg font-semibold text-gray-800">{po.supplier_name}</p>
+                          {po.supplier_ref && <p className="text-sm text-gray-400">Réf: {po.supplier_ref}</p>}
                         </div>
-                        <p className="text-sm text-gray-600 truncate">{po.supplier_name}{po.supplier_ref ? ` — Réf: ${po.supplier_ref}` : ''}</p>
+                        <div className="text-right shrink-0">
+                          <p className="text-xl font-bold text-gray-800">{fmt(po.subtotal_ht)}</p>
+                          <p className="text-xs text-gray-400 mt-1">{po.created_at?.split('T')[0]}</p>
+                          {po.expected_date && <p className={`text-xs mt-0.5 ${isLate ? 'text-red-500 font-medium' : 'text-gray-400'}`}>🚚 {po.expected_date}</p>}
+                        </div>
                       </div>
-                      {/* Amount */}
-                      <div className="text-right shrink-0">
-                        <p className="font-bold text-gray-800 text-lg">{fmt(po.subtotal_ht)}</p>
-                        <p className="text-xs text-gray-400">{po.created_at?.split('T')[0]}</p>
+                      {/* Bottom info strip */}
+                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100">
+                        <StatusBadge status={po.status} />
+                        {po.supplier_invoice_ref && <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded">🧾 {po.supplier_invoice_ref}</span>}
+                        {po.pdf_url && <span className="text-xs text-gray-400">📄 PDF</span>}
+                        <span className="ml-auto text-gray-300 text-lg">›</span>
                       </div>
-                      {/* Progress mini */}
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        {statusSteps.map((st, i) => (
-                          <div key={st} className={`w-2 h-2 rounded-full ${i <= currentStep ? 'bg-[#2D5A7B]' : 'bg-gray-200'}`}></div>
-                        ))}
-                      </div>
-                      <span className="text-gray-400 text-lg shrink-0">›</span>
                     </div>
                   </div>
                 );
               }) : (
-                <div className="bg-white rounded-xl border shadow-sm p-8">
-                  <EmptyState icon={poShowArchived ? '✅' : '🛒'}
-                    title={poShowArchived ? 'Aucun BC archivé' : 'Aucun BC en cours'}
-                    subtitle={poShowArchived ? 'Les BC payés apparaîtront ici' : 'Créez votre premier bon de commande'} />
+                <div className="bg-white rounded-xl border shadow-sm p-12 text-center">
+                  <div className="text-5xl mb-3">{poShowArchived ? '✅' : '🛒'}</div>
+                  <p className="text-lg font-medium text-gray-700 mb-1">{poShowArchived ? 'Aucun dossier archivé' : 'Aucun BC en cours'}</p>
+                  <p className="text-sm text-gray-400">{poShowArchived ? 'Les BC payés apparaîtront ici' : 'Créez votre premier bon de commande'}</p>
                 </div>
               )}
             </div>
           </div>
         );
 
-        /* =====================================================================
-           DETAIL VIEW — Parts Order Style with Tabs
-         ===================================================================== */
+        /* ============================== DETAIL VIEW ============================== */
         if (poStep === 1 && poViewId && viewPO) {
-          const currentStep = statusSteps.indexOf(viewPO.status === 'cancelled' ? 'draft' : viewPO.status);
-          const tc = typeColors[viewPO.po_type] || 'gray';
           return (
-            <div className="space-y-0">
-              {/* Header bar */}
-              <div className={`bg-gradient-to-r from-[#1E3A5F] to-[#2D5A7B] text-white rounded-t-xl p-5`}>
-                <div className="flex items-center justify-between mb-3">
-                  <button onClick={() => setPoViewId(null)} className="text-white/70 hover:text-white text-sm flex items-center gap-1">← Retour à la liste</button>
-                  <div className="flex items-center gap-2">
-                    {viewPO.pdf_url && <a href={viewPO.pdf_url} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium">📄 PDF</a>}
+            <div className="space-y-4">
+              {/* Back + header */}
+              <div className="flex items-center gap-3">
+                <button onClick={() => setPoViewId(null)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">←</button>
+                <div className="flex-1">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xl font-bold text-gray-800">{viewPO.po_number}</h2>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100">{typeIcons[viewPO.po_type]} {typeLabels[viewPO.po_type] || 'Général'}</span>
                     <StatusBadge status={viewPO.status} />
                   </div>
+                  <p className="text-gray-500">{viewPO.supplier_name}{viewPO.supplier_ref ? ` — Réf: ${viewPO.supplier_ref}` : ''}</p>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className={`w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center text-2xl`}>
-                    {statusIcons[viewPO.status] || '📝'}
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold">{viewPO.po_number}</h2>
-                    <p className="text-white/80">{viewPO.supplier_name}{viewPO.supplier_ref ? ` — ${viewPO.supplier_ref}` : ''}</p>
-                  </div>
-                  <div className="ml-auto text-right">
-                    <p className="text-2xl font-bold">{fmt(viewPO.subtotal_ht)}</p>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/20`}>{typeLabels[viewPO.po_type] || '📦 Général'}</span>
-                  </div>
-                </div>
-                {/* Progress */}
-                <div className="flex items-center gap-1 mt-4">
-                  {statusSteps.map((st, i) => (
-                    <Fragment key={st}>
-                      {i > 0 && <div className={`flex-1 h-1 rounded ${i <= currentStep ? 'bg-white' : 'bg-white/20'}`}></div>}
-                      <div className={`flex flex-col items-center gap-0.5`}>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                          i === currentStep ? 'bg-white text-[#1E3A5F] font-bold ring-2 ring-white/50' :
-                          i < currentStep ? 'bg-white/90 text-[#1E3A5F]' : 'bg-white/20 text-white/60'
-                        }`}>{statusIcons[st]}</div>
-                        <span className="text-[9px] text-white/60">{statusLabels[st]}</span>
-                      </div>
-                    </Fragment>
-                  ))}
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-[#2D5A7B]">{fmt(viewPO.subtotal_ht)}</p>
                 </div>
               </div>
 
+              {/* Chevron progress bar */}
+              <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <POProgressBar status={viewPO.status} />
+              </div>
+
               {/* Tab bar */}
-              <div className="bg-white border-x border-b rounded-b-xl shadow-sm">
+              <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 <div className="flex border-b">
                   {[
                     { id: 'details', label: 'Détails', icon: '📋' },
@@ -28659,149 +28648,140 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                         poTab === tab.id ? 'bg-blue-50 text-[#2D5A7B] border-b-2 border-[#2D5A7B]' : 'text-gray-500 hover:bg-gray-50'
                       }`}>
                       <span>{tab.icon}</span> {tab.label}
-                      {tab.badge > 0 && <span className="bg-gray-200 text-gray-700 text-[10px] px-1.5 py-0.5 rounded-full">{tab.badge}</span>}
+                      {tab.badge > 0 && <span className="bg-gray-200 text-gray-600 text-[10px] px-1.5 py-0.5 rounded-full">{tab.badge}</span>}
                     </button>
                   ))}
                 </div>
 
-                <div className="p-6">
+                <div className="p-5">
                   {/* ---- DETAILS TAB ---- */}
                   {poTab === 'details' && (
-                    <div className="space-y-6">
-                      {/* Info grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-5">
+                      {/* Info */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {[
-                          { label: 'Fournisseur', value: viewPO.supplier_name, sub: viewPO.supplier_ref ? `Réf: ${viewPO.supplier_ref}` : null },
-                          { label: 'Type', value: typeLabels[viewPO.po_type] || '📦 Général' },
-                          { label: 'Date', value: viewPO.created_at?.split('T')[0] },
-                          { label: 'Livraison prévue', value: viewPO.expected_date || '—' },
+                          { l: 'Fournisseur', v: viewPO.supplier_name, s: viewPO.supplier_ref ? `Réf: ${viewPO.supplier_ref}` : null, icon: '🏭' },
+                          { l: 'Type', v: `${typeIcons[viewPO.po_type] || '📦'} ${typeLabels[viewPO.po_type] || 'Général'}`, icon: '' },
+                          { l: 'Créé le', v: viewPO.created_at?.split('T')[0], icon: '📅' },
+                          { l: 'Livraison', v: viewPO.expected_date || '—', icon: '🚚' },
                         ].map((item, i) => (
-                          <div key={i} className="bg-gray-50 rounded-lg p-3 border">
-                            <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">{item.label}</p>
-                            <p className="font-medium text-gray-800 text-sm">{item.value}</p>
-                            {item.sub && <p className="text-xs text-gray-500">{item.sub}</p>}
+                          <div key={i} className="bg-gray-50 rounded-lg p-3">
+                            <p className="text-[10px] text-gray-400 uppercase font-bold">{item.l}</p>
+                            <p className="font-medium text-gray-800 text-sm mt-0.5">{item.v}</p>
+                            {item.s && <p className="text-xs text-gray-400">{item.s}</p>}
                           </div>
                         ))}
                       </div>
 
-                      {/* Line items */}
-                      <div>
-                        <h4 className="font-bold text-gray-800 mb-3">📝 Articles commandés</h4>
-                        <div className="border rounded-lg overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead><tr className="bg-gray-50 border-b">
-                              <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Description</th>
-                              <th className="px-4 py-2.5 text-center text-xs font-medium text-gray-500 w-20">Qté</th>
-                              <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 w-28">P.U. HT</th>
-                              <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 w-28">Total HT</th>
-                            </tr></thead>
-                            <tbody>
-                              {(viewPO.supplier_po_lines || []).sort((a,b) => (a.sort_order||0) - (b.sort_order||0)).map((l, i) => (
-                                <tr key={l.id} className={`border-b last:border-0 ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
-                                  <td className="px-4 py-2.5 text-gray-700">{l.description}</td>
-                                  <td className="px-4 py-2.5 text-center text-gray-600">{l.quantity}</td>
-                                  <td className="px-4 py-2.5 text-right text-gray-600">{fmt(l.unit_price_ht)}</td>
-                                  <td className="px-4 py-2.5 text-right font-medium text-gray-800">{fmt(l.total_ht)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          <div className="bg-[#2D5A7B] text-white px-4 py-3 flex justify-between items-center">
-                            <span className="font-bold">Total HT</span>
-                            <span className="text-xl font-bold">{fmt(viewPO.subtotal_ht)}</span>
-                          </div>
+                      {/* Lines */}
+                      <div className="border rounded-xl overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead><tr className="bg-gray-50 border-b">
+                            <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                            <th className="px-4 py-2.5 text-center text-xs font-medium text-gray-500 uppercase w-20">Qté</th>
+                            <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase w-28">P.U. HT</th>
+                            <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase w-28">Total HT</th>
+                          </tr></thead>
+                          <tbody>
+                            {(viewPO.supplier_po_lines || []).sort((a,b) => (a.sort_order||0) - (b.sort_order||0)).map((l, i) => (
+                              <tr key={l.id} className={`border-b last:border-0 ${i % 2 ? 'bg-gray-50/50' : ''}`}>
+                                <td className="px-4 py-2.5 text-gray-700">{l.description}</td>
+                                <td className="px-4 py-2.5 text-center text-gray-600">{l.quantity}</td>
+                                <td className="px-4 py-2.5 text-right text-gray-600">{fmt(l.unit_price_ht)}</td>
+                                <td className="px-4 py-2.5 text-right font-semibold text-gray-800">{fmt(l.total_ht)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <div className="bg-[#2D5A7B] text-white px-4 py-3 flex justify-between items-center">
+                          <span className="font-bold">Total HT</span>
+                          <span className="text-xl font-bold">{fmt(viewPO.subtotal_ht)}</span>
                         </div>
                       </div>
 
-                      {/* Notes */}
                       {viewPO.notes && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                          <p className="text-xs text-amber-500 uppercase font-bold mb-1">Notes</p>
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                          <span>📝</span>
                           <p className="text-sm text-gray-700">{viewPO.notes}</p>
                         </div>
                       )}
 
-                      {/* Linked invoice info */}
+                      {/* Linked invoice */}
                       {viewPO.supplier_invoice_ref && (
-                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 flex items-center gap-3">
-                          <span className="text-2xl">🧾</span>
+                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center gap-3">
+                          <span className="text-xl">🧾</span>
                           <div>
-                            <p className="font-bold text-purple-800">Facture fournisseur: {viewPO.supplier_invoice_ref}</p>
-                            {viewPO.supplier_invoice_amount && <p className="text-sm text-purple-600">Montant: {fmt(viewPO.supplier_invoice_amount)}</p>}
+                            <p className="font-semibold text-purple-800">Facture: {viewPO.supplier_invoice_ref}</p>
+                            {viewPO.supplier_invoice_amount && <p className="text-sm text-purple-600">{fmt(viewPO.supplier_invoice_amount)}</p>}
                           </div>
                         </div>
                       )}
 
-                      {/* Payment info */}
+                      {/* Paid */}
                       {viewPO.status === 'paid' && (
                         <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
-                          <span className="text-2xl">💰</span>
+                          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-xl">💰</div>
                           <div>
-                            <p className="font-bold text-green-800">Payé — Dossier clôturé</p>
+                            <p className="font-bold text-green-800">Dossier clôturé — Payé</p>
                             <p className="text-sm text-green-600">
-                              {viewPO.payment_amount && `${fmt(viewPO.payment_amount)}`}
-                              {viewPO.payment_date && ` le ${viewPO.payment_date}`}
-                              {viewPO.payment_method && ` par ${viewPO.payment_method}`}
+                              {[viewPO.payment_amount && fmt(viewPO.payment_amount), viewPO.payment_date && `le ${viewPO.payment_date}`, viewPO.payment_method && `par ${viewPO.payment_method}`].filter(Boolean).join(' • ')}
                             </p>
                           </div>
                         </div>
                       )}
 
-                      {/* ==== ACTION SECTION ==== */}
-                      {viewPO.status !== 'paid' && viewPO.status !== 'cancelled' && (
-                        <div className="bg-white border-2 border-dashed border-gray-200 rounded-xl p-5">
-                          <h4 className="font-bold text-gray-800 mb-4">⚡ Prochaine étape</h4>
-                          
+                      {/* === NEXT STEP === */}
+                      {!['paid','cancelled'].includes(viewPO.status) && (
+                        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5">
+                          <h4 className="font-bold text-[#2D5A7B] mb-3 flex items-center gap-2">⚡ Prochaine étape</h4>
+
                           {viewPO.status === 'draft' && (
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <button onClick={() => poUpdateStatus(viewPO, 'ordered')} className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-2">📦 Marquer Commandé</button>
+                            <div className="flex items-center gap-3">
+                              <button onClick={() => poUpdateStatus(viewPO, 'ordered')} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">📦 J'ai passé la commande</button>
                               <button onClick={async () => {
                                 if (!confirm('Supprimer ce BC ?')) return;
                                 await supabase.from('supplier_po_lines').delete().eq('po_id', viewPO.id);
                                 await supabase.from('po_attachments').delete().eq('po_id', viewPO.id);
                                 await supabase.from('supplier_purchase_orders').delete().eq('id', viewPO.id);
                                 setPoViewId(null); loadPurchaseOrders(); notify('BC supprimé');
-                              }} className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium">🗑️ Supprimer</button>
+                              }} className="px-4 py-2.5 text-red-500 hover:bg-red-50 rounded-lg text-sm">🗑️ Supprimer</button>
                             </div>
                           )}
 
                           {viewPO.status === 'ordered' && (
-                            <div>
-                              <p className="text-sm text-gray-500 mb-3">Marchandises livrées ou service complété ?</p>
-                              <button onClick={() => poUpdateStatus(viewPO, 'delivered')} className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium flex items-center gap-2">✅ Marquer Reçu / Complété</button>
-                            </div>
+                            <button onClick={() => poUpdateStatus(viewPO, 'delivered')} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium">✅ Reçu / Service complété</button>
                           )}
 
                           {viewPO.status === 'delivered' && (
-                            <div>
-                              <p className="text-sm text-gray-500 mb-3">Lier la facture fournisseur:</p>
+                            <div className="space-y-3">
+                              <p className="text-sm text-gray-600">Lier la facture fournisseur reçue :</p>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <input type="text" value={poSupplierInvoiceRef} onChange={e => setPoSupplierInvoiceRef(e.target.value)}
-                                  placeholder="N° facture fournisseur" className="px-3 py-2.5 border rounded-lg text-sm w-52" />
+                                  placeholder="N° facture fournisseur" className="px-3 py-2.5 border rounded-lg text-sm w-52 bg-white" />
                                 <input type="number" value={poSupplierInvoiceAmount} onChange={e => setPoSupplierInvoiceAmount(e.target.value)}
-                                  placeholder="Montant TTC" step="0.01" className="px-3 py-2.5 border rounded-lg text-sm w-36" />
-                                <button onClick={() => poLinkInvoice(viewPO)} className="px-5 py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium">🧾 Lier Facture</button>
+                                  placeholder="Montant TTC" step="0.01" className="px-3 py-2.5 border rounded-lg text-sm w-36 bg-white" />
+                                <button onClick={() => poLinkInvoice(viewPO)} className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">🧾 Lier</button>
                               </div>
                             </div>
                           )}
 
                           {viewPO.status === 'invoiced' && (
-                            <div>
-                              <p className="text-sm text-gray-500 mb-3">Enregistrer le paiement:</p>
+                            <div className="space-y-3">
+                              <p className="text-sm text-gray-600">Enregistrer le paiement :</p>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <input type="number" value={poPaymentAmount} onChange={e => setPoPaymentAmount(e.target.value)}
                                   placeholder={`Montant (${viewPO.supplier_invoice_amount || viewPO.subtotal_ht})`} step="0.01"
-                                  className="px-3 py-2.5 border rounded-lg text-sm w-40" />
+                                  className="px-3 py-2.5 border rounded-lg text-sm w-40 bg-white" />
                                 <input type="date" value={poPaymentDate} onChange={e => setPoPaymentDate(e.target.value)}
-                                  className="px-3 py-2.5 border rounded-lg text-sm" />
+                                  className="px-3 py-2.5 border rounded-lg text-sm bg-white" />
                                 <select value={poPaymentMethod} onChange={e => setPoPaymentMethod(e.target.value)}
-                                  className="px-3 py-2.5 border rounded-lg text-sm">
+                                  className="px-3 py-2.5 border rounded-lg text-sm bg-white">
                                   <option value="virement">Virement</option>
                                   <option value="carte">Carte</option>
                                   <option value="cheque">Chèque</option>
                                   <option value="prelevement">Prélèvement</option>
                                 </select>
-                                <button onClick={() => poMarkPaid(viewPO)} className="px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">💰 Marquer Payé</button>
+                                <button onClick={() => poMarkPaid(viewPO)} className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">💰 Marquer Payé</button>
                               </div>
                             </div>
                           )}
@@ -28814,17 +28794,12 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   {poTab === 'documents' && (
                     <div className="space-y-4">
                       {/* System docs */}
-                      <h4 className="font-bold text-gray-800">📄 Documents du dossier</h4>
                       <div className="grid grid-cols-2 gap-3">
-                        {/* BC PDF */}
                         {viewPO.pdf_url && (
                           <a href={viewPO.pdf_url} target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
                             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🛒</div>
-                            <div>
-                              <p className="font-medium text-gray-800">Bon de Commande</p>
-                              <p className="text-sm text-blue-600">N° {viewPO.po_number}</p>
-                            </div>
+                            <div><p className="font-medium text-gray-800">Bon de Commande</p><p className="text-sm text-blue-600">N° {viewPO.po_number}</p></div>
                           </a>
                         )}
                       </div>
@@ -28835,22 +28810,21 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                           <h4 className="text-sm font-medium text-gray-600 mb-2">Fichiers ajoutés</h4>
                           <div className="space-y-2">
                             {poAttachments.map(doc => {
-                              const catIcons = { devis_fournisseur: '💰', facture_fournisseur: '🧾', bon_livraison: '📋', contrat: '📝', general: '📎' };
-                              const catLabels = { devis_fournisseur: 'Devis', facture_fournisseur: 'Facture', bon_livraison: 'BL', contrat: 'Contrat', general: 'Document' };
+                              const catLabels = { devis_fournisseur: '💰 Devis', facture_fournisseur: '🧾 Facture', bon_livraison: '📋 BL', contrat: '📝 Contrat', general: '📎 Document' };
                               return (
-                                <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-white hover:bg-gray-50">
-                                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
+                                <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-gray-50">
+                                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0 hover:text-blue-600">
                                     <span className="text-xl shrink-0">{doc.file_type?.includes('pdf') ? '📄' : '📎'}</span>
                                     <div className="min-w-0">
                                       <p className="font-medium text-sm truncate">{doc.file_name}</p>
-                                      <p className="text-xs text-gray-400">{catLabels[doc.category] || 'Document'} • {new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                                      <p className="text-xs text-gray-400">{catLabels[doc.category] || '📎 Document'} • {new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
                                     </div>
                                   </a>
                                   <button onClick={async () => {
-                                    if (!confirm('Supprimer ce document ?')) return;
+                                    if (!confirm('Supprimer ?')) return;
                                     await supabase.from('po_attachments').delete().eq('id', doc.id);
-                                    loadPoAttachments(viewPO.id); notify('Document supprimé');
-                                  }} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs shrink-0">🗑️</button>
+                                    loadPoAttachments(viewPO.id); notify('Supprimé');
+                                  }} className="p-1.5 rounded bg-red-50 hover:bg-red-100 text-red-500 text-xs shrink-0">🗑️</button>
                                 </div>
                               );
                             })}
@@ -28858,73 +28832,56 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                         </div>
                       )}
 
-                      {/* Upload form */}
-                      <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-5">
-                        <h4 className="font-medium text-gray-700 mb-3">➕ Ajouter un document</h4>
-                        <div className="grid grid-cols-2 gap-3 mb-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Catégorie</label>
-                            <select value={poDocCategory} onChange={e => setPoDocCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                      {/* Upload */}
+                      <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-4">
+                        <h4 className="font-medium text-gray-700 mb-3 text-sm">➕ Ajouter un document</h4>
+                        <div className="flex items-end gap-3 flex-wrap">
+                          <div className="w-44">
+                            <label className="block text-[10px] font-medium text-gray-400 uppercase mb-1">Catégorie</label>
+                            <select value={poDocCategory} onChange={e => setPoDocCategory(e.target.value)} className="w-full px-2.5 py-2 border rounded-lg text-sm bg-white">
                               <option value="devis_fournisseur">💰 Devis fournisseur</option>
                               <option value="facture_fournisseur">🧾 Facture fournisseur</option>
                               <option value="bon_livraison">📋 Bon de livraison</option>
                               <option value="contrat">📝 Contrat</option>
-                              <option value="general">📎 Autre document</option>
+                              <option value="general">📎 Autre</option>
                             </select>
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Nom personnalisé</label>
-                            <input type="text" value={poDocName} onChange={e => setPoDocName(e.target.value)}
-                              placeholder="Optionnel..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                          <div className="flex-1 min-w-[180px]">
+                            <label className="block text-[10px] font-medium text-gray-400 uppercase mb-1">Fichier</label>
+                            <label className="flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer hover:bg-white transition-colors bg-white">
+                              <span className="text-sm text-gray-500 truncate">{poDocFile ? `✅ ${poDocFile.name}` : '📎 Choisir...'}</span>
+                              <input type="file" className="hidden" onChange={e => setPoDocFile(e.target.files?.[0] || null)} />
+                            </label>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <label className="flex-1 flex items-center gap-2 px-4 py-3 border-2 border-dashed rounded-lg cursor-pointer hover:bg-white transition-colors">
-                            <span className="text-lg">{poDocFile ? '✅' : '📎'}</span>
-                            <span className="text-sm text-gray-500">{poDocFile ? poDocFile.name : 'Choisir un fichier...'}</span>
-                            <input type="file" className="hidden" onChange={e => setPoDocFile(e.target.files?.[0] || null)} />
-                          </label>
                           <button onClick={() => handlePoDocUpload(viewPO.id)} disabled={!poDocFile || poDocUploading}
-                            className="px-5 py-3 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-[#1a3d5c]">
-                            {poDocUploading ? '⏳...' : '📤 Ajouter'}
+                            className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-[#1a3d5c] whitespace-nowrap">
+                            {poDocUploading ? '⏳' : '📤 Ajouter'}
                           </button>
                         </div>
                       </div>
-
-                      {!viewPO.pdf_url && poAttachments.length === 0 && (
-                        <p className="text-gray-400 text-center py-4 text-sm">Aucun document. Ajoutez un devis, une facture ou tout autre fichier lié.</p>
-                      )}
                     </div>
                   )}
 
                   {/* ---- HISTORY TAB ---- */}
                   {poTab === 'history' && (
-                    <div className="space-y-3">
-                      <h4 className="font-bold text-gray-800">📜 Historique du dossier</h4>
-                      <div className="relative pl-6">
-                        <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-gray-200"></div>
-                        {[
-                          { date: viewPO.created_at, label: 'BC créé', icon: '📝', detail: `${viewPO.po_number} — ${viewPO.supplier_name}` },
-                          viewPO.ordered_at ? { date: viewPO.ordered_at, label: 'Commandé', icon: '📦' } : null,
-                          viewPO.delivered_at ? { date: viewPO.delivered_at, label: 'Reçu / Complété', icon: '✅' } : null,
-                          viewPO.supplier_invoice_ref ? { date: viewPO.updated_at, label: `Facture liée: ${viewPO.supplier_invoice_ref}`, icon: '🧾', detail: viewPO.supplier_invoice_amount ? `Montant: ${fmt(viewPO.supplier_invoice_amount)}` : null } : null,
-                          viewPO.payment_date ? { date: viewPO.payment_date, label: `Payé${viewPO.payment_method ? ' par ' + viewPO.payment_method : ''}`, icon: '💰', detail: viewPO.payment_amount ? `${fmt(viewPO.payment_amount)}` : null } : null,
-                        ].filter(Boolean).map((event, i) => (
-                          <div key={i} className="relative mb-4 pl-4">
-                            <div className="absolute -left-4 top-1 w-4 h-4 rounded-full bg-[#2D5A7B] flex items-center justify-center">
-                              <div className="w-2 h-2 rounded-full bg-white"></div>
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span>{event.icon}</span>
-                                <span className="font-medium text-gray-800 text-sm">{event.label}</span>
-                              </div>
-                              <p className="text-xs text-gray-400">{event.date ? new Date(event.date).toLocaleString('fr-FR') : '—'}</p>
-                              {event.detail && <p className="text-xs text-gray-500 mt-0.5">{event.detail}</p>}
-                            </div>
+                    <div className="space-y-0 relative pl-8">
+                      <div className="absolute left-3 top-2 bottom-2 w-0.5 bg-gray-200"></div>
+                      {[
+                        { date: viewPO.created_at, label: 'BC créé', icon: '📝', detail: `${viewPO.supplier_name} — ${fmt(viewPO.subtotal_ht)}` },
+                        viewPO.ordered_at && { date: viewPO.ordered_at, label: 'Commande passée', icon: '📦' },
+                        viewPO.delivered_at && { date: viewPO.delivered_at, label: 'Reçu / Complété', icon: '✅' },
+                        viewPO.supplier_invoice_ref && { date: null, label: `Facture liée: ${viewPO.supplier_invoice_ref}`, icon: '🧾', detail: viewPO.supplier_invoice_amount ? fmt(viewPO.supplier_invoice_amount) : null },
+                        viewPO.payment_date && { date: viewPO.payment_date, label: `Payé${viewPO.payment_method ? ' par ' + viewPO.payment_method : ''}`, icon: '💰', detail: viewPO.payment_amount ? fmt(viewPO.payment_amount) : null },
+                      ].filter(Boolean).map((ev, i) => (
+                        <div key={i} className="relative pb-5">
+                          <div className="absolute -left-5 top-0.5 w-5 h-5 rounded-full bg-[#2D5A7B] flex items-center justify-center text-[10px]">{ev.icon}</div>
+                          <div>
+                            <p className="font-medium text-gray-800 text-sm">{ev.label}</p>
+                            {ev.date && <p className="text-xs text-gray-400">{new Date(ev.date).toLocaleString('fr-FR')}</p>}
+                            {ev.detail && <p className="text-xs text-gray-500">{ev.detail}</p>}
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -28933,59 +28890,39 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
           );
         }
 
-        /* =====================================================================
-           CREATION FORM
-         ===================================================================== */
+        /* ============================== CREATION FORM ============================== */
         if (poStep === 2) return (
           <div className="space-y-4">
             <SectionHeader title="Nouveau Bon de Commande" icon="🛒" actions={
               <button onClick={() => setPoStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
             } />
-
-            {/* Type */}
             <div className="bg-white rounded-xl border shadow-sm p-5">
               <h3 className="font-bold text-gray-800 mb-3">Type de commande</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {Object.entries(typeLabels).map(([key, label]) => (
                   <button key={key} onClick={() => setPoType(key)}
-                    className={`p-3.5 rounded-xl border-2 text-sm font-medium text-center transition-all ${
-                      poType === key ? `border-[#2D5A7B] bg-blue-50 shadow-sm` : 'border-gray-200 hover:border-gray-300'
-                    }`}>
-                    <div className="text-xl mb-1">{label.split(' ')[0]}</div>
-                    <div>{label.split(' ').slice(1).join(' ')}</div>
+                    className={`p-4 rounded-xl border-2 text-center transition-all ${poType === key ? 'border-[#2D5A7B] bg-blue-50 shadow-sm' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <div className="text-2xl mb-1">{typeIcons[key]}</div>
+                    <div className="text-sm font-medium">{label}</div>
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Supplier */}
             <div className="bg-white rounded-xl border shadow-sm p-5">
               <h3 className="font-bold text-gray-800 mb-3">🏭 Fournisseur</h3>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Nom *</label>
-                  <input type="text" value={poSupplier} onChange={e => setPoSupplier(e.target.value)}
-                    placeholder="Lighthouse USA, Fisher Scientific..." className="w-full px-3 py-2.5 border rounded-lg text-sm" autoFocus />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Réf. fournisseur / N° devis</label>
-                  <input type="text" value={poSupplierRef} onChange={e => setPoSupplierRef(e.target.value)}
-                    placeholder="Devis, contrat..." className="w-full px-3 py-2.5 border rounded-lg text-sm" />
-                </div>
+                <div><label className="block text-xs font-medium text-gray-500 mb-1">Nom *</label>
+                  <input type="text" value={poSupplier} onChange={e => setPoSupplier(e.target.value)} placeholder="Lighthouse USA, Fisher..." className="w-full px-3 py-2.5 border rounded-lg text-sm" autoFocus /></div>
+                <div><label className="block text-xs font-medium text-gray-500 mb-1">Réf. devis / contrat</label>
+                  <input type="text" value={poSupplierRef} onChange={e => setPoSupplierRef(e.target.value)} placeholder="Optionnel..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
               </div>
               <div className="grid grid-cols-2 gap-4 mt-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Date livraison / completion</label>
-                  <input type="date" value={poExpectedDate} onChange={e => setPoExpectedDate(e.target.value)} className="w-full px-3 py-2.5 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
-                  <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Notes..." className="w-full px-3 py-2.5 border rounded-lg text-sm" />
-                </div>
+                <div><label className="block text-xs font-medium text-gray-500 mb-1">Date livraison / completion</label>
+                  <input type="date" value={poExpectedDate} onChange={e => setPoExpectedDate(e.target.value)} className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
+                <div><label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+                  <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Notes..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
               </div>
             </div>
-
-            {/* Lines */}
             <div className="bg-white rounded-xl border shadow-sm p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-gray-800">📝 {poType === 'service' ? 'Prestations' : 'Articles'}</h3>
@@ -28993,66 +28930,54 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
               </div>
               <div className="space-y-2">
                 <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-400 font-medium uppercase px-1">
-                  <div className="col-span-6">Description</div>
-                  <div className="col-span-2 text-center">Qté</div>
-                  <div className="col-span-2 text-right">P.U. HT</div>
-                  <div className="col-span-1 text-right">Total</div>
-                  <div className="col-span-1"></div>
+                  <div className="col-span-6">Description</div><div className="col-span-2 text-center">Qté</div><div className="col-span-2 text-right">P.U. HT</div><div className="col-span-1 text-right">Total</div><div className="col-span-1"></div>
                 </div>
                 {poLines.map(l => (
                   <div key={l.id} className="grid grid-cols-12 gap-2 items-center">
                     <input type="text" value={l.description} onChange={e => poUpdateLine(l.id, 'description', e.target.value)}
-                      placeholder={poType === 'service' ? 'Prestation...' : 'Pièce, article...'} className="col-span-6 px-3 py-2.5 border rounded-lg text-sm" />
-                    <input type="number" value={l.quantity} onChange={e => poUpdateLine(l.id, 'quantity', e.target.value)}
-                      min="1" className="col-span-2 px-3 py-2.5 border rounded-lg text-sm text-center" />
-                    <input type="number" value={l.unitPrice} onChange={e => poUpdateLine(l.id, 'unitPrice', e.target.value)}
-                      step="0.01" className="col-span-2 px-3 py-2.5 border rounded-lg text-sm text-right" />
+                      placeholder={poType === 'service' ? 'Prestation...' : 'Article...'} className="col-span-6 px-3 py-2.5 border rounded-lg text-sm" />
+                    <input type="number" value={l.quantity} onChange={e => poUpdateLine(l.id, 'quantity', e.target.value)} min="1" className="col-span-2 px-3 py-2.5 border rounded-lg text-sm text-center" />
+                    <input type="number" value={l.unitPrice} onChange={e => poUpdateLine(l.id, 'unitPrice', e.target.value)} step="0.01" className="col-span-2 px-3 py-2.5 border rounded-lg text-sm text-right" />
                     <p className="col-span-1 text-right text-sm font-medium text-gray-700">{(parseFloat(l.total) || 0).toFixed(2)}</p>
-                    <button onClick={() => poRemoveLine(l.id)} disabled={poLines.length <= 1}
-                      className="col-span-1 text-center text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
+                    <button onClick={() => poRemoveLine(l.id)} disabled={poLines.length <= 1} className="col-span-1 text-center text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
                   </div>
                 ))}
               </div>
               <div className="mt-4 pt-4 border-t flex justify-end items-center gap-4">
-                <span className="font-bold text-gray-800 text-lg">Total HT</span>
+                <span className="font-bold text-gray-800">Total HT</span>
                 <span className="font-bold text-[#2D5A7B] text-2xl">{fmt(poSubtotal)}</span>
               </div>
             </div>
-
-            {/* Submit */}
             <div className="flex justify-end gap-3">
               <button onClick={() => setPoStep(1)} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
               <button onClick={poHandleSave} disabled={poSaving || !poSupplier.trim() || poLines.filter(l => l.description).length === 0}
-                className="px-6 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
-                {poSaving ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Création...</>) : '🛒 Créer BC + Générer PDF'}
+                className="px-6 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium disabled:opacity-50">
+                {poSaving ? '⏳ Création...' : '🛒 Créer BC + PDF'}
               </button>
             </div>
           </div>
         );
 
-        /* =====================================================================
-           SUCCESS
-         ===================================================================== */
+        /* ============================== SUCCESS ============================== */
         if (poStep === 3 && poSaved) return (
           <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
-            <div className="text-6xl mb-4">✅</div>
-            <h3 className="text-2xl font-bold text-green-700 mb-2">Bon de Commande Créé!</h3>
-            <p className="text-lg font-mono text-gray-700 mb-1">{poSaved.po_number}</p>
+            <div className="text-5xl mb-4">✅</div>
+            <h3 className="text-xl font-bold text-green-700 mb-1">Bon de Commande Créé!</h3>
+            <p className="font-mono text-gray-700 mb-1">{poSaved.po_number}</p>
             <p className="text-gray-500 mb-6">{poSupplier} — {fmt(poSubtotal)}</p>
             <div className="flex items-center justify-center gap-3 flex-wrap">
-              {poSaved.pdf_url && (
-                <a href={poSaved.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium flex items-center gap-2">📄 Télécharger PDF</a>
-              )}
+              {poSaved.pdf_url && <a href={poSaved.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium">📄 Télécharger PDF</a>}
               <button onClick={() => { setPoViewId(poSaved.id); setPoStep(1); setPoTab('details'); loadPoAttachments(poSaved.id); }}
                 className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">👁️ Ouvrir Dossier</button>
               <button onClick={() => { setPoStep(2); poResetForm(); }}
-                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">+ Nouveau BC</button>
+                className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">+ Nouveau BC</button>
             </div>
           </div>
         );
 
         return null;
       })()}
+
 
       {/* ================================================================
            CLIENTS TAB
