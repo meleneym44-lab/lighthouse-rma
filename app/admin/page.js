@@ -2140,35 +2140,36 @@ const generateBCPDF = async (poData, businessSettings) => {
   const darkGray = [51, 51, 51];
   const medGray = [130, 130, 130];
   const lightLine = [210, 215, 220];
-  const { poNumber, supplier, supplierName, supplierRef, poType, expectedDate, notes, lines, subtotalHT } = poData;
+  const { poNumber, supplier, supplierName, supplierRef, poType, notes, lines, subtotalHT } = poData;
   const sup = supplier || {};
   const frenchMonths = ['janvier','f\u00E9vrier','mars','avril','mai','juin','juillet','ao\u00FBt','septembre','octobre','novembre','d\u00E9cembre'];
   const fmtD = (ds) => { if (!ds) return ''; const d = new Date(ds); return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear(); };
 
-  // Pre-load capcert logo
+  // Pre-load logos
   let capcertLogo = null;
   try { capcertLogo = await loadImageAsBase64('/images/logos/capcert-logo.png'); } catch(e) {}
 
-  const footerHeight = 38;
-  const getUsableHeight = () => pageHeight - footerHeight - 5;
+  const footerHeight = 32;
+  const getUsableHeight = () => pageHeight - footerHeight - 2;
 
   // ---- FOOTER (every page) ----
   const drawFooter = (pgNum, totalPg) => {
     const ftY = pageHeight - footerHeight;
     if (capcertLogo) {
-      try { const f = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG'; pdf.addImage(capcertLogo, f, margin, ftY - 3, 28, 26); } catch(e) {}
+      try { const f = capcertLogo.includes('image/png') ? 'PNG' : 'JPEG'; pdf.addImage(capcertLogo, f, margin, ftY + 1, 22, 20); } catch(e) {}
     }
     pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.4);
-    pdf.line(margin + 34, ftY + 1, pageWidth - margin, ftY + 1);
-    const cx = pageWidth / 2 - 2;
-    pdf.setFontSize(9); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-    pdf.text(biz.company_name || 'Lighthouse France SAS', cx, ftY + 7, { align: 'center' });
-    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5); pdf.setTextColor(...darkGray);
-    pdf.text((biz.address || '16 rue Paul S\u00E9journ\u00E9') + ', ' + (biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL') + ' | T\u00E9l. ' + (biz.phone || '01 43 77 28 07'), cx, ftY + 12, { align: 'center' });
-    pdf.text('SIRET ' + (biz.siret || '50178134800013') + ' | TVA ' + (biz.tva || 'FR 86501781348') + ' | Capital ' + (biz.capital || '10 000') + ' \u20AC', cx, ftY + 17, { align: 'center' });
+    pdf.line(margin + 26, ftY + 4, pageWidth - margin, ftY + 4);
+    const cx = margin + 26 + (pageWidth - margin - margin - 26) / 2;
+    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+    pdf.text(biz.company_name || 'Lighthouse France SAS', cx, ftY + 9, { align: 'center' });
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7); pdf.setTextColor(...darkGray);
+    pdf.text((biz.address || '16 rue Paul S\u00E9journ\u00E9') + ', ' + (biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL') + ' | T\u00E9l. ' + (biz.phone || '01 43 77 28 07'), cx, ftY + 14, { align: 'center' });
+    pdf.text('SIRET ' + (biz.siret || '50178134800013') + ' | TVA ' + (biz.tva || 'FR 86501781348') + ' | Capital ' + (biz.capital || '10 000') + ' \u20AC', cx, ftY + 19, { align: 'center' });
+    pdf.setFontSize(6.5); pdf.setTextColor(...medGray);
+    pdf.text((biz.email || 'France@golighthouse.com') + ' | ' + (biz.website || 'www.golighthouse.fr'), cx, ftY + 24, { align: 'center' });
     pdf.setFontSize(7); pdf.setTextColor(...medGray);
-    pdf.text((biz.email || 'France@golighthouse.com') + ' | ' + (biz.website || 'www.golighthouse.fr'), cx, ftY + 22, { align: 'center' });
-    pdf.text('Page ' + pgNum + '/' + totalPg, pageWidth - margin, ftY + 22, { align: 'right' });
+    pdf.text('Page ' + pgNum + '/' + totalPg, pageWidth - margin, ftY + 24, { align: 'right' });
   };
 
   // ---- LOGO ----
@@ -2184,6 +2185,20 @@ const generateBCPDF = async (poData, businessSettings) => {
     pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
     pdf.text('WORLDWIDE SOLUTIONS \u2014 FRANCE', 10, 23);
   }
+
+  // ---- TOP RIGHT: BC date + ref ----
+  const trX = pageWidth - margin;
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+  pdf.text('Date:', trX - 45, 12);
+  pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkGray);
+  pdf.text(fmtD(new Date().toISOString()), trX, 12, { align: 'right' });
+  if (supplierRef) {
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+    pdf.text('R\u00E9f. devis:', trX - 45, 17);
+    pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkGray);
+    pdf.text(supplierRef, trX, 17, { align: 'right' });
+  }
+
   y = 32;
 
   // ---- TITLE BAR ----
@@ -2195,13 +2210,33 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.text('N\u00B0 ' + (poNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
   y += 20;
 
-  // ---- OUR INFO (left) | SUPPLIER (right) ----
+  // ---- OUR INFO (left) | SUPPLIER (right) — SAME HEIGHT ----
   const blockY = y;
   const halfW = contentWidth * 0.48;
+  const gap = contentWidth * 0.04;
+
+  // Calculate content heights for both boxes to equalize
+  // Our box content
+  let ourLines = 5; // name + address + city + phone + email
+  ourLines += 2; // siret + tva
+
+  // Supplier content
+  let supContentLines = 1; // name always
+  if (sup.contact_name) supContentLines++;
+  if (sup.address) supContentLines++;
+  if (sup.postal_code || sup.city) supContentLines++;
+  if (sup.country && sup.country !== 'France') supContentLines++;
+  if (sup.phone) supContentLines++;
+  if (sup.email) supContentLines++;
+  if (sup.siret) supContentLines++;
+  if (sup.tva_number) supContentLines++;
+
+  const maxLines = Math.max(ourLines, supContentLines);
+  const boxH = Math.max(42, 14 + maxLines * 3.8 + 2);
 
   // Left: Our company
   pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
-  pdf.roundedRect(margin, blockY, halfW, 42, 2, 2, 'FD');
+  pdf.roundedRect(margin, blockY, halfW, boxH, 2, 2, 'FD');
   pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
   pdf.text('\u00C9METTEUR', margin + 4, blockY + 5);
   pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
@@ -2216,30 +2251,17 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.text('SIRET: ' + (biz.siret || '50178134800013'), margin + 4, oy); oy += 3;
   pdf.text('TVA: ' + (biz.tva_number || biz.tva || 'FR 86501781348'), margin + 4, oy);
 
-  // Right: Supplier with full details
-  const supBoxX = margin + contentWidth * 0.52;
-  // Calculate dynamic height based on supplier info
-  let supLines = 2; // header + name
-  if (sup.contact_name) supLines++;
-  if (sup.address) supLines++;
-  if (sup.postal_code || sup.city) supLines++;
-  if (sup.country && sup.country !== 'France') supLines++;
-  if (sup.phone) supLines++;
-  if (sup.email) supLines++;
-  if (sup.siret) supLines++;
-  if (sup.tva_number) supLines++;
-  if (supplierRef) supLines++;
-  const supBoxH = Math.max(42, 12 + supLines * 3.8 + 2);
-
+  // Right: Supplier — same height
+  const supBoxX = margin + halfW + gap;
   pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
-  pdf.roundedRect(supBoxX, blockY, halfW, supBoxH, 2, 2, 'FD');
+  pdf.roundedRect(supBoxX, blockY, halfW, boxH, 2, 2, 'FD');
   pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
   pdf.text('FOURNISSEUR', supBoxX + 4, blockY + 5);
-  pdf.setFontSize(11); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  pdf.text(sup.name || supplierName || '', supBoxX + 4, blockY + 13);
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text(sup.name || supplierName || '', supBoxX + 4, blockY + 12);
   pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
-  let sty = blockY + 18;
-  if (sup.contact_name) { pdf.text('\u00C0 l\u0027att. de ' + sup.contact_name, supBoxX + 4, sty); sty += 3.8; }
+  let sty = blockY + 17;
+  if (sup.contact_name) { pdf.text('Contact: ' + sup.contact_name, supBoxX + 4, sty); sty += 3.8; }
   if (sup.address) { pdf.text(sup.address, supBoxX + 4, sty); sty += 3.8; }
   const supCity = [sup.postal_code, sup.city].filter(Boolean).join(' ');
   if (supCity) { pdf.text(supCity, supBoxX + 4, sty); sty += 3.8; }
@@ -2249,18 +2271,16 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.setFontSize(7); pdf.setTextColor(...medGray);
   if (sup.siret) { pdf.text('SIRET: ' + sup.siret, supBoxX + 4, sty); sty += 3.3; }
   if (sup.tva_number) { pdf.text('TVA: ' + sup.tva_number, supBoxX + 4, sty); sty += 3.3; }
-  if (supplierRef) { pdf.setFont('helvetica', 'bold'); pdf.text('R\u00E9f: ' + supplierRef, supBoxX + 4, sty); sty += 3.3; }
 
-  y = blockY + Math.max(42, supBoxH) + 5;
+  y = blockY + boxH + 5;
 
-  // ---- DETAILS ROW (date + type only, no delivery if empty) ----
+  // ---- TYPE ROW (no delivery date) ----
   const typeLabel = { parts: 'Pi\u00E8ces / Mat\u00E9riel', service: 'Service / Prestation', intercompany: 'Inter-soci\u00E9t\u00E9', general: 'G\u00E9n\u00E9ral' };
-  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-  const details = ['Date: ' + fmtD(new Date().toISOString())];
-  if (expectedDate) details.push('Livraison souhait\u00E9e: ' + fmtD(expectedDate));
-  if (poType && typeLabel[poType]) details.push('Type: ' + typeLabel[poType]);
-  pdf.text(details.join('   |   '), margin, y);
-  y += 7;
+  if (poType && typeLabel[poType]) {
+    pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+    pdf.text('Type: ' + typeLabel[poType], margin, y);
+    y += 6;
+  }
 
   // ---- LINE ITEMS TABLE ----
   const colQty = margin + 1; const colDesc = margin + 18;
@@ -2314,26 +2334,29 @@ const generateBCPDF = async (poData, businessSettings) => {
     y += 20;
   }
 
-  // ---- LEGAL CONDITIONS ----
-  if (y > getUsableHeight() - 40) { pdf.addPage(); y = margin + 10; }
+  // ---- CONDITIONS GÉNÉRALES D'ACHAT ----
+  if (y > getUsableHeight() - 50) { pdf.addPage(); y = margin + 10; }
   y += 3;
-  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  pdf.text('CONDITIONS G\u00C9N\u00C9RALES D\u0027ACHAT', margin, y);
-  y += 4;
-  pdf.setFontSize(6); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+  pdf.setFillColor(248, 250, 252);
+  pdf.roundedRect(margin, y - 2, contentWidth, 6, 1, 1, 'F');
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text('CONDITIONS G\u00C9N\u00C9RALES D\u0027ACHAT', margin + 4, y + 2);
+  y += 8;
+  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
   const legalText = [
-    '1. Le pr\u00E9sent bon de commande engage la soci\u00E9t\u00E9 \u00E9mettrice aux conditions convenues. Toute modification doit faire l\u0027objet d\u0027un accord \u00E9crit.',
-    '2. Toute livraison doit \u00EAtre accompagn\u00E9e d\u0027un bon de livraison mentionnant le n\u00B0 de commande ' + (poNumber || '') + '. Les marchandises doivent \u00EAtre conformes aux sp\u00E9cifications.',
-    '3. La facturation doit reprendre le n\u00B0 de commande. Les factures non conformes seront retourn\u00E9es. Tout litige sur la livraison doit \u00EAtre signal\u00E9 sous 8 jours.',
-    '4. P\u00E9nalit\u00E9s de retard de livraison : 1% du montant HT par semaine de retard, plafonn\u00E9 \u00E0 10% du montant total HT de la commande.',
-    '5. Conditions de paiement : 30 jours date de facture, par virement bancaire, sauf conditions particuli\u00E8res convenues.',
+    '1. Le pr\u00E9sent bon de commande engage la soci\u00E9t\u00E9 \u00E9mettrice aux conditions convenues. Toute modification doit faire l\u0027objet d\u0027un accord \u00E9crit pr\u00E9alable.',
+    '2. Toute livraison doit \u00EAtre accompagn\u00E9e d\u0027un bon de livraison mentionnant le n\u00B0 de commande ' + (poNumber || '') + '. Les marchandises ou prestations doivent \u00EAtre conformes aux sp\u00E9cifications convenues.',
+    '3. La facturation doit imp\u00E9rativement reprendre le n\u00B0 de commande. Les factures non conformes seront retourn\u00E9es. Tout litige doit \u00EAtre signal\u00E9 dans un d\u00E9lai de 8 jours.',
+    '4. P\u00E9nalit\u00E9s de retard de livraison : 1% du montant HT par semaine de retard, plafonn\u00E9 \u00E0 10% du montant total HT.',
+    '5. Conditions de paiement : 30 jours date de facture par virement bancaire, sauf conditions particuli\u00E8res convenues par \u00E9crit.',
     '6. ' + (biz.company_name || 'Lighthouse France SAS') + ' \u2014 SAS au capital de ' + (biz.capital || '10 000') + ' \u20AC \u2014 RCS Cr\u00E9teil \u2014 SIRET: ' + (biz.siret || '50178134800013') + ' \u2014 TVA: ' + (biz.tva_number || biz.tva || 'FR 86501781348'),
-    '7. En cas de litige, le Tribunal de Commerce de Cr\u00E9teil sera seul comp\u00E9tent.',
+    '7. En cas de litige, le Tribunal de Commerce de Cr\u00E9teil sera seul comp\u00E9tent.'
   ];
   legalText.forEach(lt => {
-    const wrapped = pdf.splitTextToSize(lt, contentWidth);
-    wrapped.forEach(wl => { pdf.text(wl, margin, y); y += 2.8; });
-    y += 0.5;
+    if (y > getUsableHeight() - 8) { pdf.addPage(); y = margin + 10; }
+    const wrapped = pdf.splitTextToSize(lt, contentWidth - 4);
+    wrapped.forEach(wl => { pdf.text(wl, margin + 2, y); y += 3.5; });
+    y += 1;
   });
 
   // ---- FOOTER ON ALL PAGES ----
