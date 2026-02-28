@@ -2133,28 +2133,20 @@ const generateBCPDF = async (poData, businessSettings) => {
   const pdf = new jsPDF('p', 'mm', 'a4');
   const biz = businessSettings || {};
   const pageWidth = 210;
+  const pageHeight = 297;
   const margin = 15;
   const contentWidth = pageWidth - margin * 2;
-  
   const navy = [30, 58, 95];
   const darkGray = [51, 51, 51];
   const medGray = [130, 130, 130];
   const lightLine = [210, 215, 220];
-  
   const { poNumber, supplierName, supplierRef, poType, expectedDate, notes, lines, subtotalHT } = poData;
+  const frenchMonths = ['janvier','f\u00E9vrier','mars','avril','mai','juin','juillet','ao\u00FBt','septembre','octobre','novembre','d\u00E9cembre'];
+  const formatDateFull = (dateStr) => { if (!dateStr) return '\u2014'; const d = new Date(dateStr); return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear(); };
 
-  const frenchMonths = ['janvier', 'f\u00E9vrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'ao\u00FBt', 'septembre', 'octobre', 'novembre', 'd\u00E9cembre'];
-  const formatDateFull = (dateStr) => {
-    if (!dateStr) return '\u2014';
-    const d = new Date(dateStr);
-    return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear();
-  };
-
-  // ---- LOGO ----
   let y = 10;
   try {
-    const logoImg = new Image();
-    logoImg.crossOrigin = 'anonymous';
+    const logoImg = new Image(); logoImg.crossOrigin = 'anonymous';
     logoImg.src = '/images/logos/Lighthouse-color-logo.jpg';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
     pdf.addImage(logoImg, 'JPEG', 10, 8, 95, 21);
@@ -2164,116 +2156,112 @@ const generateBCPDF = async (poData, businessSettings) => {
     pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
     pdf.text('WORLDWIDE SOLUTIONS \u2014 FRANCE', 10, 23);
   }
-
   y = 30;
 
-  // ---- COMPANY INFO (top right) ----
-  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-  const companyLines = [
-    biz.company_name || 'Lighthouse France SAS',
-    biz.address || '16, rue Paul S\u00E9journ\u00E9',
-    `${biz.postal_code || '94000'} ${biz.city || 'CR\u00C9TEIL'}`,
-    `T\u00E9l: ${biz.phone || '+33 (0)1 43 68 09 28'}`,
-    `Email: ${biz.email || 'info.france@golighthouse.com'}`,
-  ];
-  if (biz.tva_number) companyLines.push(`TVA: ${biz.tva_number}`);
-  if (biz.siret) companyLines.push(`SIRET: ${biz.siret}`);
-  companyLines.forEach((line, i) => { pdf.text(line, pageWidth - margin, y + i * 3.5, { align: 'right' }); });
-  y = Math.max(y + companyLines.length * 3.5, 55);
-
-  // ---- TITLE ----
+  // Title bar
   pdf.setFillColor(...navy);
-  pdf.rect(margin, y, contentWidth, 10, 'F');
-  pdf.setFontSize(13); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
-  pdf.text('BON DE COMMANDE', margin + 4, y + 7);
-  pdf.setFontSize(10);
-  pdf.text(poNumber || '', pageWidth - margin - 4, y + 7, { align: 'right' });
-  y += 14;
+  pdf.roundedRect(margin, y, contentWidth, 14, 2, 2, 'F');
+  pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
+  pdf.text('BON DE COMMANDE', margin + 8, y + 10);
+  pdf.setFontSize(14);
+  pdf.text('N\u00B0 ' + (poNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
+  y += 20;
 
-  // ---- TYPE BADGE ----
-  const typeLabels = { parts: 'Pi\u00E8ces / Mat\u00E9riel', service: 'Service / Prestation', intercompany: 'Inter-soci\u00E9t\u00E9', general: 'G\u00E9n\u00E9ral' };
-  if (poType && typeLabels[poType]) {
-    pdf.setFontSize(8); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(...medGray);
-    pdf.text(`Type: ${typeLabels[poType]}`, margin, y);
-    y += 5;
-  }
+  // References (left) | Supplier box (right)
+  const blockY = y;
+  let refY = blockY;
+  const addRef = (label, value, bold) => {
+    if (!value) return;
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+    pdf.text(label, margin, refY);
+    pdf.setFont('helvetica', bold ? 'bold' : 'normal'); pdf.setTextColor(...darkGray);
+    pdf.text(String(value), margin + 38, refY);
+    refY += 6;
+  };
+  addRef('Date :', formatDateFull(new Date().toISOString()), false);
+  if (expectedDate) addRef('Livraison :', formatDateFull(expectedDate), true);
+  refY += 2;
+  const typeLabel = { parts: 'Pi\u00E8ces / Mat\u00E9riel', service: 'Service / Prestation', intercompany: 'Inter-soci\u00E9t\u00E9', general: 'G\u00E9n\u00E9ral' };
+  addRef('Type :', typeLabel[poType] || 'G\u00E9n\u00E9ral', false);
+  if (supplierRef) addRef('R\u00E9f. devis :', supplierRef, false);
 
-  // ---- SUPPLIER & INFO BOXES ----
-  const boxY = y;
   // Supplier box
-  pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
-  pdf.rect(margin, boxY, contentWidth * 0.5 - 2, 28);
-  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  pdf.text('FOURNISSEUR', margin + 3, boxY + 5);
-  pdf.setFontSize(9); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkGray);
-  pdf.text(supplierName || '', margin + 3, boxY + 11);
-  if (supplierRef) {
-    pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-    pdf.text(`R\u00E9f: ${supplierRef}`, margin + 3, boxY + 16);
-  }
+  const boxX = pageWidth / 2 + 8; const boxW = pageWidth / 2 - margin - 8; const boxH = 32;
+  pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.4);
+  pdf.roundedRect(boxX, blockY - 3, boxW, boxH, 2, 2, 'FD');
+  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
+  pdf.text('FOURNISSEUR', boxX + 5, blockY + 3);
+  pdf.setFontSize(12); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text(supplierName || '', boxX + 5, blockY + 12);
+  if (supplierRef) { pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray); pdf.text('R\u00E9f: ' + supplierRef, boxX + 5, blockY + 18); }
 
-  // Info box
-  const infoX = margin + contentWidth * 0.5 + 2;
-  pdf.setDrawColor(...lightLine);
-  pdf.rect(infoX, boxY, contentWidth * 0.5 - 2, 28);
-  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  pdf.text('D\u00C9TAILS', infoX + 3, boxY + 5);
-  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
-  pdf.text(`Date: ${formatDateFull(new Date().toISOString())}`, infoX + 3, boxY + 11);
-  if (expectedDate) pdf.text(`Livraison souhait\u00E9e: ${formatDateFull(expectedDate)}`, infoX + 3, boxY + 16);
-  y = boxY + 34;
+  // Company info below refs
+  refY += 4;
+  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+  [biz.company_name || 'Lighthouse France SAS', biz.address || '16, rue Paul S\u00E9journ\u00E9', `${biz.postal_code || '94000'} ${biz.city || 'CR\u00C9TEIL'}`, `T\u00E9l: ${biz.phone || '+33 (0)1 43 68 09 28'}`]
+    .forEach(cl => { pdf.text(cl, margin, refY); refY += 3.5; });
+  y = Math.max(refY, blockY + boxH) + 8;
 
-  // ---- LINES TABLE ----
-  const colX = [margin, margin + 90, margin + 115, margin + 145, margin + contentWidth];
-  const headers = ['D\u00E9signation', 'Qt\u00E9', 'P.U. HT', 'Total HT'];
-
-  pdf.setFillColor(245, 247, 250);
-  pdf.rect(margin, y, contentWidth, 7, 'F');
-  pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  headers.forEach((h, i) => {
-    const align = i >= 1 ? 'right' : 'left';
-    const x = i === 0 ? colX[i] + 3 : colX[i + 1] - 3;
-    pdf.text(h, x, y + 5, { align });
-  });
-  y += 9;
-
-  pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
-  (lines || []).forEach((line, idx) => {
-    if (y > 260) { pdf.addPage(); y = 20; }
-    if (idx % 2 === 0) { pdf.setFillColor(252, 252, 253); pdf.rect(margin, y - 1, contentWidth, 7, 'F'); }
-    pdf.setFontSize(8);
-    // Wrap description
-    const desc = line.description || '';
-    const descLines = pdf.splitTextToSize(desc, 85);
-    descLines.forEach((dl, di) => { pdf.text(dl, colX[0] + 3, y + 4 + di * 3.5); });
-    pdf.text(String(line.quantity || 1), colX[2] - 3, y + 4, { align: 'right' });
-    pdf.text((parseFloat(line.unitPrice || line.unit_price_ht || 0)).toFixed(2) + ' \u20AC', colX[3] - 3, y + 4, { align: 'right' });
-    pdf.text((parseFloat(line.total || line.total_ht || 0)).toFixed(2) + ' \u20AC', colX[4] - 3, y + 4, { align: 'right' });
-    y += Math.max(7, descLines.length * 3.5 + 3);
-    pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.15); pdf.line(margin, y, margin + contentWidth, y);
-    y += 1;
-  });
-
-  // ---- TOTAL ----
-  y += 4;
+  // Line items table
+  const colQty = margin + 1; const colDesc = margin + 18;
+  const colPU = pageWidth - margin - 48; const colTotal = pageWidth - margin - 2;
   pdf.setFillColor(...navy);
-  pdf.rect(margin + contentWidth * 0.55, y, contentWidth * 0.45, 9, 'F');
-  pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
-  pdf.text('TOTAL HT', margin + contentWidth * 0.55 + 5, y + 6.5);
-  pdf.text((subtotalHT || 0).toFixed(2) + ' \u20AC', margin + contentWidth - 5, y + 6.5, { align: 'right' });
-  y += 15;
+  pdf.roundedRect(margin, y, contentWidth, 8, 1, 1, 'F');
+  pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
+  pdf.text('QT\u00C9', colQty + 2, y + 5.5);
+  pdf.text('D\u00C9SIGNATION', colDesc, y + 5.5);
+  pdf.text('P.U. HT', colPU, y + 5.5, { align: 'right' });
+  pdf.text('TOTAL HT', colTotal, y + 5.5, { align: 'right' });
+  y += 11;
 
-  // ---- NOTES ----
+  (lines || []).forEach((line, idx) => {
+    if (y > 255) { pdf.addPage(); y = 20; }
+    if (idx % 2 === 0) { pdf.setFillColor(248, 250, 252); pdf.rect(margin, y - 3, contentWidth, 8, 'F'); }
+    pdf.setFontSize(8.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
+    pdf.text(String(line.quantity || 1), colQty + 5, y + 1, { align: 'center' });
+    const descLines = pdf.splitTextToSize(line.description || '', colPU - colDesc - 15);
+    descLines.forEach((dl, di) => { pdf.text(dl, colDesc, y + 1 + di * 4); });
+    pdf.text((parseFloat(line.unitPrice || line.unit_price_ht || 0)).toFixed(2) + ' \u20AC', colPU, y + 1, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.text((parseFloat(line.total || line.total_ht || 0)).toFixed(2) + ' \u20AC', colTotal, y + 1, { align: 'right' });
+    y += Math.max(8, descLines.length * 4 + 4);
+    pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.15); pdf.line(margin, y - 2, margin + contentWidth, y - 2);
+  });
+
+  // Total
+  y += 4;
+  const totBoxX = margin + contentWidth * 0.5; const totBoxW = contentWidth * 0.5;
+  pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
+  pdf.roundedRect(totBoxX, y, totBoxW, 12, 2, 2, 'FD');
+  pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+  pdf.text('TOTAL HT', totBoxX + 8, y + 8);
+  pdf.setFontSize(12);
+  pdf.text((subtotalHT || 0).toFixed(2) + ' \u20AC', totBoxX + totBoxW - 8, y + 8, { align: 'right' });
+  y += 18;
+
+  // Notes
   if (notes) {
-    pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-    pdf.text('NOTES:', margin, y);
-    y += 4;
-    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray); pdf.setFontSize(7.5);
-    const noteLines = pdf.splitTextToSize(notes, contentWidth);
-    noteLines.forEach(nl => { pdf.text(nl, margin, y); y += 3.5; });
+    pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
+    pdf.roundedRect(margin, y, contentWidth, 20, 2, 2, 'S');
+    pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
+    pdf.text('NOTES', margin + 5, y + 5);
+    pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray); pdf.setFontSize(8);
+    pdf.splitTextToSize(notes, contentWidth - 10).slice(0, 3).forEach((nl, i) => { pdf.text(nl, margin + 5, y + 10 + i * 3.5); });
+    y += 24;
   }
 
-  // ---- FOOTER ----
+  // Signature lines
+  y = Math.max(y + 10, 230);
+  pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
+  pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
+  pdf.text('Bon pour accord :', margin, y);
+  pdf.line(margin, y + 15, margin + contentWidth * 0.4, y + 15);
+  pdf.text('Date et signature', margin, y + 20);
+  pdf.text('Lighthouse France :', margin + contentWidth * 0.6, y);
+  pdf.line(margin + contentWidth * 0.6, y + 15, margin + contentWidth, y + 15);
+  pdf.text('Date et signature', margin + contentWidth * 0.6, y + 20);
+
+  // Footer
   const footerY = 280;
   pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3); pdf.line(margin, footerY, pageWidth - margin, footerY);
   pdf.setFontSize(6.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
@@ -27785,6 +27773,14 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [poPaymentAmount, setPoPaymentAmount] = useState('');
   const [poPaymentDate, setPoPaymentDate] = useState('');
   const [poPaymentMethod, setPoPaymentMethod] = useState('virement');
+  const [poTab, setPoTab] = useState('details');
+  const [poShowArchived, setPoShowArchived] = useState(false);
+  const [poFilterType, setPoFilterType] = useState('all');
+  const [poDocFile, setPoDocFile] = useState(null);
+  const [poDocName, setPoDocName] = useState('');
+  const [poDocCategory, setPoDocCategory] = useState('devis_fournisseur');
+  const [poDocUploading, setPoDocUploading] = useState(false);
+  const [poAttachments, setPoAttachments] = useState([]);
 
   const biz = businessSettings || {};
 
@@ -28349,28 +28345,60 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
         const poRemoveLine = (id) => setPoLines(prev => prev.filter(l => l.id !== id));
         const poSubtotal = poLines.reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
 
-        const typeLabels = { parts: '🔩 Pièces / Matériel', service: '🔧 Service / Prestation', intercompany: '🏢 Inter-société', general: '📦 Général' };
+        const typeLabels = { parts: '🔩 Pièces', service: '🔧 Service', intercompany: '🏢 Inter-société', general: '📦 Général' };
         const typeColors = { parts: 'blue', service: 'amber', intercompany: 'purple', general: 'gray' };
 
+        const openPOs = (purchaseOrders || []).filter(p => !['paid','cancelled'].includes(p.status));
+        const archivedPOs = (purchaseOrders || []).filter(p => p.status === 'paid');
+        const displayPOs = poShowArchived ? archivedPOs : openPOs;
+
         const filteredPOs = (() => {
-          let pos = purchaseOrders || [];
+          let pos = displayPOs;
+          if (poFilterType !== 'all') pos = pos.filter(p => p.po_type === poFilterType);
           if (searchTerm) {
             const s = searchTerm.toLowerCase();
             pos = pos.filter(p => (p.po_number || '').toLowerCase().includes(s) || (p.supplier_name || '').toLowerCase().includes(s));
           }
-          if (dateFrom) pos = pos.filter(p => p.created_at >= dateFrom);
-          if (dateTo) pos = pos.filter(p => p.created_at <= dateTo + 'T23:59:59');
           return pos;
         })();
 
-        const totalPOSpend = purchaseOrders.reduce((s, p) => s + (parseFloat(p.subtotal_ht) || 0), 0);
-        const totalPaid = purchaseOrders.filter(p => p.status === 'paid').reduce((s, p) => s + (parseFloat(p.payment_amount || p.subtotal_ht) || 0), 0);
-        const totalOpen = purchaseOrders.filter(p => !['paid','cancelled'].includes(p.status)).reduce((s, p) => s + (parseFloat(p.subtotal_ht) || 0), 0);
+        const totalOpen = openPOs.reduce((s, p) => s + (parseFloat(p.subtotal_ht) || 0), 0);
+        const totalPaid = archivedPOs.reduce((s, p) => s + (parseFloat(p.payment_amount || p.subtotal_ht) || 0), 0);
 
         const poResetForm = () => {
           setPoSupplier(''); setPoSupplierRef(''); setPoExpectedDate(''); setPoNotes('');
           setPoLines([{ id: 'p1', description: '', quantity: 1, unitPrice: 0, total: 0 }]);
           setPoSaved(null); setPoType('parts');
+        };
+
+        const loadPoAttachments = async (poId) => {
+          const { data } = await supabase.from('po_attachments').select('*').eq('po_id', poId).order('created_at', { ascending: false });
+          setPoAttachments(data || []);
+        };
+
+        const handlePoDocUpload = async (poId) => {
+          if (!poDocFile) return;
+          setPoDocUploading(true);
+          try {
+            const ext = poDocFile.name.split('.').pop();
+            const fileName = `po_${poId}_${Date.now()}.${ext}`;
+            const filePath = `purchase_orders/${fileName}`;
+            const { error: upErr } = await supabase.storage.from('documents').upload(filePath, poDocFile, { contentType: poDocFile.type });
+            if (upErr) throw upErr;
+            const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+            await supabase.from('po_attachments').insert({
+              po_id: poId,
+              file_name: poDocName.trim() || poDocFile.name,
+              file_url: urlData?.publicUrl,
+              file_type: poDocFile.type,
+              category: poDocCategory,
+              uploaded_by: profile?.id
+            });
+            setPoDocFile(null); setPoDocName(''); setPoDocCategory('devis_fournisseur');
+            notify('📄 Document ajouté!');
+            loadPoAttachments(poId);
+          } catch (err) { notify('Erreur: ' + err.message, 'error'); }
+          setPoDocUploading(false);
         };
 
         const poHandleSave = async () => {
@@ -28383,11 +28411,8 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
               const { data: docNum } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BC-INT' });
               if (docNum) poNumber = docNum;
             } catch (e) {
-              const now = new Date();
-              poNumber = `BC-INT-${String(now.getMonth()+1).padStart(2,'0')}${String(now.getFullYear()).slice(-2)}-001`;
+              poNumber = `BC-INT-${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getFullYear()).slice(-2)}-001`;
             }
-
-            // Generate PDF
             let pdfUrl = null;
             try {
               const pdfBlob = await generateBCPDF({
@@ -28395,8 +28420,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                 poType, expectedDate: poExpectedDate, notes: poNotes,
                 lines: poLines.filter(l => l.description), subtotalHT: poSubtotal
               }, businessSettings);
-              const fileName = `BC_${poNumber.replace(/[^a-zA-Z0-9-]/g,'_')}_${Date.now()}.pdf`;
-              pdfUrl = await uploadPDFToStorage(pdfBlob, 'purchase_orders', fileName);
+              pdfUrl = await uploadPDFToStorage(pdfBlob, 'purchase_orders', `BC_${poNumber.replace(/[^a-zA-Z0-9-]/g,'_')}_${Date.now()}.pdf`);
             } catch (pdfErr) { console.error('BC PDF error:', pdfErr); }
 
             const { data: newPO, error } = await supabase.from('supplier_purchase_orders').insert({
@@ -28419,9 +28443,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             setPoStep(3);
             notify(`✅ BC ${poNumber} créé!`);
             loadPurchaseOrders();
-          } catch (err) {
-            notify('Erreur: ' + (err.message || 'Erreur'), 'error');
-          }
+          } catch (err) { notify('Erreur: ' + (err.message || 'Erreur'), 'error'); }
           setPoSaving(false);
         };
 
@@ -28431,7 +28453,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             if (newStatus === 'ordered') updates.ordered_at = new Date().toISOString();
             if (newStatus === 'delivered') updates.delivered_at = new Date().toISOString();
             await supabase.from('supplier_purchase_orders').update(updates).eq('id', po.id);
-            notify(`BC ${po.po_number} → ${newStatus}`);
+            notify(`BC ${po.po_number} → ${newStatus === 'ordered' ? 'Commandé' : newStatus === 'delivered' ? 'Reçu' : newStatus}`);
             loadPurchaseOrders();
           } catch (err) { notify(err.message, 'error'); }
         };
@@ -28445,7 +28467,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
               status: 'invoiced'
             }).eq('id', po.id);
             setPoSupplierInvoiceRef(''); setPoSupplierInvoiceAmount('');
-            notify('Facture fournisseur liée!');
+            notify('🧾 Facture fournisseur liée!');
             loadPurchaseOrders();
           } catch (err) { notify(err.message, 'error'); }
         };
@@ -28459,408 +28481,577 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
               payment_method: poPaymentMethod
             }).eq('id', po.id);
             setPoPaymentAmount(''); setPoPaymentDate(''); setPoPaymentMethod('virement');
-            notify('✅ BC marqué payé!');
+            notify('✅ Payé! Dossier archivé.');
             loadPurchaseOrders();
           } catch (err) { notify(err.message, 'error'); }
         };
 
         const viewPO = poViewId ? purchaseOrders.find(p => p.id === poViewId) : null;
-
         const statusSteps = ['draft','ordered','delivered','invoiced','paid'];
         const statusLabels = { draft: 'Brouillon', ordered: 'Commandé', delivered: 'Reçu', invoiced: 'Facturé', paid: 'Payé' };
+        const statusIcons = { draft: '📝', ordered: '📦', delivered: '✅', invoiced: '🧾', paid: '💰' };
 
-        return (
+        /* =====================================================================
+           LIST VIEW
+         ===================================================================== */
+        if (poStep === 1 && !poViewId) return (
           <div className="space-y-4">
-            {/* ===== LIST VIEW ===== */}
-            {poStep === 1 && !poViewId && (
-              <div className="space-y-4">
-                <SectionHeader title="Bons de Commande Fournisseurs" icon="🛒" actions={
-                  <div className="flex items-center gap-2">
-                    <button onClick={loadPurchaseOrders} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">🔄</button>
-                    <button onClick={() => { setPoStep(2); poResetForm(); }}
-                      className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouveau BC</button>
-                  </div>
-                } />
-                <SearchBar placeholder="Rechercher par n° BC, fournisseur..." />
+            <SectionHeader title="Bons de Commande" icon="🛒" actions={
+              <button onClick={() => { setPoStep(2); poResetForm(); }}
+                className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c] flex items-center gap-2">+ Nouveau BC</button>
+            } />
 
-                {/* Summary cards */}
-                <div className="grid grid-cols-4 gap-3">
-                  <div className="bg-white rounded-lg border p-3 text-center">
-                    <p className="text-xl font-bold text-gray-800">{purchaseOrders.length}</p>
-                    <p className="text-xs text-gray-500">Total BC</p>
-                  </div>
-                  <div className="bg-white rounded-lg border p-3 text-center">
-                    <p className="text-xl font-bold text-blue-600">{fmt(totalPOSpend)}</p>
-                    <p className="text-xs text-gray-500">Total commandé HT</p>
-                  </div>
-                  <div className="bg-white rounded-lg border p-3 text-center">
-                    <p className="text-xl font-bold text-amber-600">{fmt(totalOpen)}</p>
-                    <p className="text-xs text-gray-500">En cours</p>
-                  </div>
-                  <div className="bg-white rounded-lg border p-3 text-center">
-                    <p className="text-xl font-bold text-green-600">{fmt(totalPaid)}</p>
-                    <p className="text-xs text-gray-500">Payé</p>
-                  </div>
-                </div>
-
-                {/* PO table */}
-                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                  {filteredPOs.length > 0 ? (
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-50 border-b">
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° BC</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fournisseur</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total HT</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Docs</th>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
-                      </tr></thead>
-                      <tbody>
-                        {filteredPOs.map((po, i) => {
-                          const isLate = po.expected_date && !['delivered','invoiced','paid','cancelled'].includes(po.status) && new Date(po.expected_date) < now;
-                          const tc = typeColors[po.po_type] || 'gray';
-                          return (
-                            <tr key={po.id} className={`border-b last:border-0 hover:bg-gray-50 cursor-pointer ${isLate ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}
-                              onClick={() => setPoViewId(po.id)}>
-                              <td className="px-4 py-3">
-                                <span className="font-mono font-medium text-gray-800">{po.po_number}</span>
-                                {isLate && <span className="ml-1.5 text-[10px] text-red-500 font-medium">⚠️ Retard</span>}
-                              </td>
-                              <td className="px-4 py-3">
-                                <p className="text-gray-700">{po.supplier_name}</p>
-                                {po.supplier_ref && <p className="text-[10px] text-gray-400">{po.supplier_ref}</p>}
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium bg-${tc}-50 text-${tc}-700`}>
-                                  {(typeLabels[po.po_type] || '📦').split(' ').slice(1).join(' ') || po.po_type || 'Général'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-gray-600 text-xs">{po.created_at?.split('T')[0]}</td>
-                              <td className="px-4 py-3 text-right font-medium text-gray-800">{fmt(po.subtotal_ht)}</td>
-                              <td className="px-4 py-3 text-center"><StatusBadge status={po.status} /></td>
-                              <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                                <div className="flex items-center justify-center gap-1">
-                                  {po.pdf_url && <a href={po.pdf_url} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded text-xs" title="PDF BC">📄</a>}
-                                  {po.supplier_invoice_ref && <span className="text-[10px] bg-purple-50 text-purple-600 px-1 rounded" title={`Fact: ${po.supplier_invoice_ref}`}>🧾</span>}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                                <button onClick={() => setPoViewId(po.id)} className="p-1 hover:bg-gray-100 rounded text-sm">👁️</button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <EmptyState icon="🛒" title="Aucun bon de commande" subtitle="Créez votre premier BC fournisseur" />
-                  )}
-                </div>
+            {/* Summary strip */}
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-white rounded-xl border p-4">
+                <p className="text-xs text-gray-400 uppercase font-medium">En cours</p>
+                <p className="text-2xl font-bold text-[#2D5A7B]">{openPOs.length}</p>
               </div>
-            )}
-
-            {/* ===== DETAIL / DOSSIER VIEW ===== */}
-            {poStep === 1 && poViewId && viewPO && (
-              <div className="space-y-4">
-                <SectionHeader title={`Dossier ${viewPO.po_number}`} icon="🛒" actions={
-                  <div className="flex items-center gap-2">
-                    {viewPO.pdf_url && <a href={viewPO.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium">📄 PDF</a>}
-                    <button onClick={() => setPoViewId(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
-                  </div>
-                } />
-
-                {/* Progress bar */}
-                <div className="bg-white rounded-xl border shadow-sm p-6">
-                  <div className="flex items-center gap-1 mb-2">
-                    {statusSteps.map((st, i) => {
-                      const currentIdx = statusSteps.indexOf(viewPO.status === 'cancelled' ? 'draft' : viewPO.status);
-                      const isActive = i <= currentIdx;
-                      const isCurrent = i === currentIdx;
-                      return (
-                        <Fragment key={st}>
-                          {i > 0 && <div className={`flex-1 h-1 rounded ${isActive ? 'bg-[#2D5A7B]' : 'bg-gray-200'}`}></div>}
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                            isCurrent ? 'bg-[#2D5A7B] text-white ring-4 ring-blue-100' : isActive ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'
-                          }`}>{['📝','📦','✅','🧾','💰'][i]}</div>
-                        </Fragment>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-400 px-1">
-                    {statusSteps.map((st, i) => (
-                      <Fragment key={st}>
-                        {i > 0 && <div className="flex-1"></div>}
-                        <span className="w-9 text-center">{statusLabels[st]}</span>
-                      </Fragment>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Header info */}
-                <div className="bg-white rounded-xl border shadow-sm p-6">
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase">Fournisseur</p>
-                      <p className="font-bold text-gray-800">{viewPO.supplier_name}</p>
-                      {viewPO.supplier_ref && <p className="text-xs text-gray-500">Réf: {viewPO.supplier_ref}</p>}
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase">Type</p>
-                      <p className={`text-sm font-medium text-${typeColors[viewPO.po_type] || 'gray'}-700`}>{typeLabels[viewPO.po_type] || '📦 Général'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase">Créé le</p>
-                      <p className="font-medium text-gray-800 text-sm">{viewPO.created_at?.split('T')[0]}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase">Livraison prévue</p>
-                      <p className="font-medium text-gray-800 text-sm">{viewPO.expected_date || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 uppercase">Total HT</p>
-                      <p className="font-bold text-[#2D5A7B] text-lg">{fmt(viewPO.subtotal_ht)}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Line items */}
-                <div className="bg-white rounded-xl border shadow-sm p-6">
-                  <h4 className="font-bold text-gray-800 mb-3">📝 Lignes commandées</h4>
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b">
-                      <th className="pb-2 text-left text-xs text-gray-500">Description</th>
-                      <th className="pb-2 text-center text-xs text-gray-500">Qté</th>
-                      <th className="pb-2 text-right text-xs text-gray-500">P.U. HT</th>
-                      <th className="pb-2 text-right text-xs text-gray-500">Total HT</th>
-                    </tr></thead>
-                    <tbody>
-                      {(viewPO.supplier_po_lines || []).sort((a,b) => (a.sort_order||0) - (b.sort_order||0)).map(l => (
-                        <tr key={l.id} className="border-b border-gray-100">
-                          <td className="py-2.5 text-gray-700">{l.description}</td>
-                          <td className="py-2.5 text-center text-gray-600">{l.quantity}</td>
-                          <td className="py-2.5 text-right text-gray-600">{fmt(l.unit_price_ht)}</td>
-                          <td className="py-2.5 text-right font-medium text-gray-800">{fmt(l.total_ht)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="flex justify-end pt-3 border-t mt-1">
-                    <span className="text-gray-500 mr-4 text-sm">Total HT</span>
-                    <span className="text-lg font-bold text-[#2D5A7B]">{fmt(viewPO.subtotal_ht)}</span>
-                  </div>
-                </div>
-
-                {/* ---- LIFECYCLE ACTIONS ---- */}
-                <div className="bg-white rounded-xl border shadow-sm p-6">
-                  <h4 className="font-bold text-gray-800 mb-4">⚡ Actions</h4>
-                  
-                  {/* Draft → Ordered */}
-                  {viewPO.status === 'draft' && (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <button onClick={() => poUpdateStatus(viewPO, 'ordered')} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">📦 Marquer Commandé</button>
-                      <button onClick={async () => {
-                        if (!confirm('Supprimer ce BC brouillon ?')) return;
-                        await supabase.from('supplier_po_lines').delete().eq('po_id', viewPO.id);
-                        await supabase.from('supplier_purchase_orders').delete().eq('id', viewPO.id);
-                        setPoViewId(null); loadPurchaseOrders(); notify('BC supprimé');
-                      }} className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium">🗑️ Supprimer</button>
-                    </div>
-                  )}
-
-                  {/* Ordered → Delivered */}
-                  {viewPO.status === 'ordered' && (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-3">Marchandises ou service reçu?</p>
-                      <button onClick={() => poUpdateStatus(viewPO, 'delivered')} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">✅ Marquer Reçu / Complété</button>
-                    </div>
-                  )}
-
-                  {/* Delivered → Link invoice */}
-                  {viewPO.status === 'delivered' && (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-3">Lier la facture fournisseur reçue:</p>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <input type="text" value={poSupplierInvoiceRef} onChange={e => setPoSupplierInvoiceRef(e.target.value)}
-                          placeholder="N° facture fournisseur" className="px-3 py-2 border rounded-lg text-sm w-48" />
-                        <input type="number" value={poSupplierInvoiceAmount} onChange={e => setPoSupplierInvoiceAmount(e.target.value)}
-                          placeholder="Montant TTC" step="0.01" className="px-3 py-2 border rounded-lg text-sm w-36" />
-                        <button onClick={() => poLinkInvoice(viewPO)} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium">🧾 Lier Facture</button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Invoiced → Pay */}
-                  {viewPO.status === 'invoiced' && (
-                    <div>
-                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
-                        <p className="text-sm font-medium text-purple-800">🧾 Facture: {viewPO.supplier_invoice_ref}</p>
-                        {viewPO.supplier_invoice_amount && <p className="text-sm text-purple-600">Montant: {fmt(viewPO.supplier_invoice_amount)}</p>}
-                      </div>
-                      <p className="text-sm text-gray-600 mb-3">Enregistrer le paiement:</p>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <input type="number" value={poPaymentAmount} onChange={e => setPoPaymentAmount(e.target.value)}
-                          placeholder={`Montant (${viewPO.supplier_invoice_amount || viewPO.subtotal_ht})`} step="0.01"
-                          className="px-3 py-2 border rounded-lg text-sm w-40" />
-                        <input type="date" value={poPaymentDate} onChange={e => setPoPaymentDate(e.target.value)}
-                          className="px-3 py-2 border rounded-lg text-sm" />
-                        <select value={poPaymentMethod} onChange={e => setPoPaymentMethod(e.target.value)}
-                          className="px-3 py-2 border rounded-lg text-sm">
-                          <option value="virement">Virement</option>
-                          <option value="carte">Carte</option>
-                          <option value="cheque">Chèque</option>
-                          <option value="prelevement">Prélèvement</option>
-                          <option value="especes">Espèces</option>
-                        </select>
-                        <button onClick={() => poMarkPaid(viewPO)} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">💰 Marquer Payé</button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Paid — completed */}
-                  {viewPO.status === 'paid' && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <p className="font-bold text-green-800 mb-2">✅ Dossier clôturé</p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                        {viewPO.supplier_invoice_ref && <div><span className="text-gray-500">Facture:</span> <span className="font-medium">{viewPO.supplier_invoice_ref}</span></div>}
-                        {viewPO.payment_amount && <div><span className="text-gray-500">Payé:</span> <span className="font-medium">{fmt(viewPO.payment_amount)}</span></div>}
-                        {viewPO.payment_date && <div><span className="text-gray-500">Le:</span> <span className="font-medium">{viewPO.payment_date}</span></div>}
-                        {viewPO.payment_method && <div><span className="text-gray-500">Par:</span> <span className="font-medium capitalize">{viewPO.payment_method}</span></div>}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Timestamps */}
-                <div className="bg-white rounded-xl border shadow-sm p-4">
-                  <h4 className="font-medium text-gray-600 text-sm mb-2">📅 Historique</h4>
-                  <div className="space-y-1 text-xs text-gray-500">
-                    <p>Créé: {viewPO.created_at ? new Date(viewPO.created_at).toLocaleString('fr-FR') : '—'}</p>
-                    {viewPO.ordered_at && <p>Commandé: {new Date(viewPO.ordered_at).toLocaleString('fr-FR')}</p>}
-                    {viewPO.delivered_at && <p>Reçu: {new Date(viewPO.delivered_at).toLocaleString('fr-FR')}</p>}
-                    {viewPO.payment_date && <p>Payé: {viewPO.payment_date}</p>}
-                  </div>
-                  {viewPO.notes && <p className="mt-2 text-sm text-gray-600 italic">{viewPO.notes}</p>}
-                </div>
+              <div className="bg-white rounded-xl border p-4">
+                <p className="text-xs text-gray-400 uppercase font-medium">Montant ouvert</p>
+                <p className="text-2xl font-bold text-amber-600">{fmt(totalOpen)}</p>
               </div>
-            )}
+              <div className="bg-white rounded-xl border p-4">
+                <p className="text-xs text-gray-400 uppercase font-medium">Archivés payés</p>
+                <p className="text-2xl font-bold text-green-600">{archivedPOs.length}</p>
+              </div>
+              <div className="bg-white rounded-xl border p-4">
+                <p className="text-xs text-gray-400 uppercase font-medium">Total payé</p>
+                <p className="text-2xl font-bold text-green-600">{fmt(totalPaid)}</p>
+              </div>
+            </div>
 
-            {/* ===== CREATION FORM ===== */}
-            {poStep === 2 && (
-              <div className="space-y-4">
-                <SectionHeader title="Nouveau Bon de Commande" icon="🛒" actions={
-                  <button onClick={() => setPoStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
-                } />
-
-                {/* Type selection */}
-                <div className="bg-white rounded-xl border shadow-sm p-6">
-                  <h3 className="font-bold text-gray-800 mb-3">Type de commande</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {Object.entries(typeLabels).map(([key, label]) => (
-                      <button key={key} onClick={() => setPoType(key)}
-                        className={`p-3 rounded-lg border-2 text-sm font-medium text-left transition-colors ${poType === key ? `border-${typeColors[key]}-400 bg-${typeColors[key]}-50` : 'border-gray-200 hover:border-gray-300'}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Supplier info */}
-                <div className="bg-white rounded-xl border shadow-sm p-6">
-                  <h3 className="font-bold text-gray-800 mb-4">🏭 Fournisseur</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-600 mb-1">Nom du fournisseur *</label>
-                      <input type="text" value={poSupplier} onChange={e => setPoSupplier(e.target.value)}
-                        placeholder="Ex: Lighthouse Worldwide Solutions, Fisher Scientific..."
-                        className="w-full px-3 py-2 border rounded-lg text-sm" autoFocus />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-600 mb-1">Réf. fournisseur / N° devis</label>
-                      <input type="text" value={poSupplierRef} onChange={e => setPoSupplierRef(e.target.value)}
-                        placeholder="Devis, n° contrat..." className="w-full px-3 py-2 border rounded-lg text-sm" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mt-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-600 mb-1">Date livraison / completion prévue</label>
-                      <input type="date" value={poExpectedDate} onChange={e => setPoExpectedDate(e.target.value)}
-                        className="w-full px-3 py-2 border rounded-lg text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-600 mb-1">Notes</label>
-                      <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)}
-                        placeholder="Notes internes..." className="w-full px-3 py-2 border rounded-lg text-sm" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Line items */}
-                <div className="bg-white rounded-xl border shadow-sm p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-gray-800">📝 {poType === 'service' ? 'Prestations' : 'Articles'}</h3>
-                    <button onClick={poAddLine} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100">+ Ajouter</button>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium px-1">
-                      <div className="col-span-6">Description</div>
-                      <div className="col-span-2 text-center">Qté</div>
-                      <div className="col-span-2 text-right">P.U. HT</div>
-                      <div className="col-span-1 text-right">Total</div>
-                      <div className="col-span-1"></div>
-                    </div>
-                    {poLines.map(l => (
-                      <div key={l.id} className="grid grid-cols-12 gap-2 items-center">
-                        <input type="text" value={l.description} onChange={e => poUpdateLine(l.id, 'description', e.target.value)}
-                          placeholder={poType === 'service' ? 'Prestation...' : 'Pièce, article...'} className="col-span-6 px-3 py-2 border rounded-lg text-sm" />
-                        <input type="number" value={l.quantity} onChange={e => poUpdateLine(l.id, 'quantity', e.target.value)}
-                          min="1" className="col-span-2 px-3 py-2 border rounded-lg text-sm text-center" />
-                        <input type="number" value={l.unitPrice} onChange={e => poUpdateLine(l.id, 'unitPrice', e.target.value)}
-                          step="0.01" className="col-span-2 px-3 py-2 border rounded-lg text-sm text-right" />
-                        <p className="col-span-1 text-right text-sm font-medium text-gray-700">{(parseFloat(l.total) || 0).toFixed(2)}</p>
-                        <button onClick={() => poRemoveLine(l.id)} disabled={poLines.length <= 1}
-                          className="col-span-1 text-center text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 pt-4 border-t flex justify-end gap-8">
-                    <span className="font-bold text-gray-800 text-lg">Total HT</span>
-                    <span className="font-bold text-[#2D5A7B] text-lg w-28 text-right">{fmt(poSubtotal)}</span>
-                  </div>
-                </div>
-
-                {/* Submit */}
-                <div className="flex justify-end gap-3">
-                  <button onClick={() => setPoStep(1)} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
-                  <button onClick={poHandleSave} disabled={poSaving || !poSupplier.trim() || poLines.filter(l => l.description).length === 0}
-                    className="px-6 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
-                    {poSaving ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Création...</>) : '🛒 Créer BC + PDF'}
+            {/* Toggle + Filters */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPoShowArchived(false)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${!poShowArchived ? 'bg-[#2D5A7B] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  📂 En cours ({openPOs.length})
+                </button>
+                <button onClick={() => setPoShowArchived(true)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${poShowArchived ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                  ✅ Payés / Archivés ({archivedPOs.length})
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {[{ k: 'all', l: 'Tous' }, ...Object.entries(typeLabels).map(([k, l]) => ({ k, l }))].map(f => (
+                  <button key={f.k} onClick={() => setPoFilterType(f.k)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${poFilterType === f.k ? 'bg-[#2D5A7B] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                    {f.l}
                   </button>
-                </div>
+                ))}
               </div>
-            )}
+            </div>
 
-            {/* ===== SUCCESS ===== */}
-            {poStep === 3 && poSaved && (
-              <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
-                <div className="text-6xl mb-4">✅</div>
-                <h3 className="text-2xl font-bold text-green-700 mb-2">Bon de Commande Créé!</h3>
-                <p className="text-lg font-mono text-gray-700 mb-1">{poSaved.po_number}</p>
-                <p className="text-gray-500 mb-6">{poSupplier} — {fmt(poSubtotal)}</p>
-                <div className="flex items-center justify-center gap-3 flex-wrap">
-                  {poSaved.pdf_url && (
-                    <a href={poSaved.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium">📄 Télécharger PDF</a>
-                  )}
-                  <button onClick={() => { setPoViewId(poSaved.id); setPoStep(1); }} className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">👁️ Voir Dossier</button>
-                  <button onClick={() => { setPoStep(2); poResetForm(); }}
-                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">+ Nouveau BC</button>
-                  <button onClick={() => setPoStep(1)} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Retour à la liste</button>
+            <SearchBar placeholder="Rechercher par n° BC, fournisseur..." />
+
+            {/* PO Cards — styled like parts orders */}
+            <div className="space-y-2">
+              {filteredPOs.length > 0 ? filteredPOs.map(po => {
+                const isLate = po.expected_date && !['delivered','invoiced','paid','cancelled'].includes(po.status) && new Date(po.expected_date) < now;
+                const tc = typeColors[po.po_type] || 'gray';
+                const currentStep = statusSteps.indexOf(po.status);
+                return (
+                  <div key={po.id} onClick={() => { setPoViewId(po.id); setPoTab('details'); loadPoAttachments(po.id); }}
+                    className={`bg-white rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer p-4 ${isLate ? 'border-l-4 border-l-red-400' : 'hover:border-gray-300'}`}>
+                    <div className="flex items-center gap-4">
+                      {/* Status icon */}
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+                        po.status === 'paid' ? 'bg-green-100' : po.status === 'invoiced' ? 'bg-purple-100' :
+                        po.status === 'delivered' ? 'bg-emerald-100' : po.status === 'ordered' ? 'bg-blue-100' : 'bg-gray-100'
+                      }`}>
+                        {statusIcons[po.status] || '📝'}
+                      </div>
+                      {/* Main info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-mono font-bold text-gray-800">{po.po_number}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium bg-${tc}-50 text-${tc}-700`}>
+                            {typeLabels[po.po_type] || '📦 Général'}
+                          </span>
+                          {isLate && <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600">⚠️ En retard</span>}
+                        </div>
+                        <p className="text-sm text-gray-600 truncate">{po.supplier_name}{po.supplier_ref ? ` — Réf: ${po.supplier_ref}` : ''}</p>
+                      </div>
+                      {/* Amount */}
+                      <div className="text-right shrink-0">
+                        <p className="font-bold text-gray-800 text-lg">{fmt(po.subtotal_ht)}</p>
+                        <p className="text-xs text-gray-400">{po.created_at?.split('T')[0]}</p>
+                      </div>
+                      {/* Progress mini */}
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {statusSteps.map((st, i) => (
+                          <div key={st} className={`w-2 h-2 rounded-full ${i <= currentStep ? 'bg-[#2D5A7B]' : 'bg-gray-200'}`}></div>
+                        ))}
+                      </div>
+                      <span className="text-gray-400 text-lg shrink-0">›</span>
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div className="bg-white rounded-xl border shadow-sm p-8">
+                  <EmptyState icon={poShowArchived ? '✅' : '🛒'}
+                    title={poShowArchived ? 'Aucun BC archivé' : 'Aucun BC en cours'}
+                    subtitle={poShowArchived ? 'Les BC payés apparaîtront ici' : 'Créez votre premier bon de commande'} />
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         );
+
+        /* =====================================================================
+           DETAIL VIEW — Parts Order Style with Tabs
+         ===================================================================== */
+        if (poStep === 1 && poViewId && viewPO) {
+          const currentStep = statusSteps.indexOf(viewPO.status === 'cancelled' ? 'draft' : viewPO.status);
+          const tc = typeColors[viewPO.po_type] || 'gray';
+          return (
+            <div className="space-y-0">
+              {/* Header bar */}
+              <div className={`bg-gradient-to-r from-[#1E3A5F] to-[#2D5A7B] text-white rounded-t-xl p-5`}>
+                <div className="flex items-center justify-between mb-3">
+                  <button onClick={() => setPoViewId(null)} className="text-white/70 hover:text-white text-sm flex items-center gap-1">← Retour à la liste</button>
+                  <div className="flex items-center gap-2">
+                    {viewPO.pdf_url && <a href={viewPO.pdf_url} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium">📄 PDF</a>}
+                    <StatusBadge status={viewPO.status} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center text-2xl`}>
+                    {statusIcons[viewPO.status] || '📝'}
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold">{viewPO.po_number}</h2>
+                    <p className="text-white/80">{viewPO.supplier_name}{viewPO.supplier_ref ? ` — ${viewPO.supplier_ref}` : ''}</p>
+                  </div>
+                  <div className="ml-auto text-right">
+                    <p className="text-2xl font-bold">{fmt(viewPO.subtotal_ht)}</p>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/20`}>{typeLabels[viewPO.po_type] || '📦 Général'}</span>
+                  </div>
+                </div>
+                {/* Progress */}
+                <div className="flex items-center gap-1 mt-4">
+                  {statusSteps.map((st, i) => (
+                    <Fragment key={st}>
+                      {i > 0 && <div className={`flex-1 h-1 rounded ${i <= currentStep ? 'bg-white' : 'bg-white/20'}`}></div>}
+                      <div className={`flex flex-col items-center gap-0.5`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                          i === currentStep ? 'bg-white text-[#1E3A5F] font-bold ring-2 ring-white/50' :
+                          i < currentStep ? 'bg-white/90 text-[#1E3A5F]' : 'bg-white/20 text-white/60'
+                        }`}>{statusIcons[st]}</div>
+                        <span className="text-[9px] text-white/60">{statusLabels[st]}</span>
+                      </div>
+                    </Fragment>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tab bar */}
+              <div className="bg-white border-x border-b rounded-b-xl shadow-sm">
+                <div className="flex border-b">
+                  {[
+                    { id: 'details', label: 'Détails', icon: '📋' },
+                    { id: 'documents', label: 'Documents', icon: '📄', badge: poAttachments.length + (viewPO.pdf_url ? 1 : 0) },
+                    { id: 'history', label: 'Historique', icon: '📜' }
+                  ].map(tab => (
+                    <button key={tab.id} onClick={() => setPoTab(tab.id)}
+                      className={`flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                        poTab === tab.id ? 'bg-blue-50 text-[#2D5A7B] border-b-2 border-[#2D5A7B]' : 'text-gray-500 hover:bg-gray-50'
+                      }`}>
+                      <span>{tab.icon}</span> {tab.label}
+                      {tab.badge > 0 && <span className="bg-gray-200 text-gray-700 text-[10px] px-1.5 py-0.5 rounded-full">{tab.badge}</span>}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="p-6">
+                  {/* ---- DETAILS TAB ---- */}
+                  {poTab === 'details' && (
+                    <div className="space-y-6">
+                      {/* Info grid */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[
+                          { label: 'Fournisseur', value: viewPO.supplier_name, sub: viewPO.supplier_ref ? `Réf: ${viewPO.supplier_ref}` : null },
+                          { label: 'Type', value: typeLabels[viewPO.po_type] || '📦 Général' },
+                          { label: 'Date', value: viewPO.created_at?.split('T')[0] },
+                          { label: 'Livraison prévue', value: viewPO.expected_date || '—' },
+                        ].map((item, i) => (
+                          <div key={i} className="bg-gray-50 rounded-lg p-3 border">
+                            <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">{item.label}</p>
+                            <p className="font-medium text-gray-800 text-sm">{item.value}</p>
+                            {item.sub && <p className="text-xs text-gray-500">{item.sub}</p>}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Line items */}
+                      <div>
+                        <h4 className="font-bold text-gray-800 mb-3">📝 Articles commandés</h4>
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead><tr className="bg-gray-50 border-b">
+                              <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">Description</th>
+                              <th className="px-4 py-2.5 text-center text-xs font-medium text-gray-500 w-20">Qté</th>
+                              <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 w-28">P.U. HT</th>
+                              <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 w-28">Total HT</th>
+                            </tr></thead>
+                            <tbody>
+                              {(viewPO.supplier_po_lines || []).sort((a,b) => (a.sort_order||0) - (b.sort_order||0)).map((l, i) => (
+                                <tr key={l.id} className={`border-b last:border-0 ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
+                                  <td className="px-4 py-2.5 text-gray-700">{l.description}</td>
+                                  <td className="px-4 py-2.5 text-center text-gray-600">{l.quantity}</td>
+                                  <td className="px-4 py-2.5 text-right text-gray-600">{fmt(l.unit_price_ht)}</td>
+                                  <td className="px-4 py-2.5 text-right font-medium text-gray-800">{fmt(l.total_ht)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="bg-[#2D5A7B] text-white px-4 py-3 flex justify-between items-center">
+                            <span className="font-bold">Total HT</span>
+                            <span className="text-xl font-bold">{fmt(viewPO.subtotal_ht)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      {viewPO.notes && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                          <p className="text-xs text-amber-500 uppercase font-bold mb-1">Notes</p>
+                          <p className="text-sm text-gray-700">{viewPO.notes}</p>
+                        </div>
+                      )}
+
+                      {/* Linked invoice info */}
+                      {viewPO.supplier_invoice_ref && (
+                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 flex items-center gap-3">
+                          <span className="text-2xl">🧾</span>
+                          <div>
+                            <p className="font-bold text-purple-800">Facture fournisseur: {viewPO.supplier_invoice_ref}</p>
+                            {viewPO.supplier_invoice_amount && <p className="text-sm text-purple-600">Montant: {fmt(viewPO.supplier_invoice_amount)}</p>}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Payment info */}
+                      {viewPO.status === 'paid' && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+                          <span className="text-2xl">💰</span>
+                          <div>
+                            <p className="font-bold text-green-800">Payé — Dossier clôturé</p>
+                            <p className="text-sm text-green-600">
+                              {viewPO.payment_amount && `${fmt(viewPO.payment_amount)}`}
+                              {viewPO.payment_date && ` le ${viewPO.payment_date}`}
+                              {viewPO.payment_method && ` par ${viewPO.payment_method}`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ==== ACTION SECTION ==== */}
+                      {viewPO.status !== 'paid' && viewPO.status !== 'cancelled' && (
+                        <div className="bg-white border-2 border-dashed border-gray-200 rounded-xl p-5">
+                          <h4 className="font-bold text-gray-800 mb-4">⚡ Prochaine étape</h4>
+                          
+                          {viewPO.status === 'draft' && (
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <button onClick={() => poUpdateStatus(viewPO, 'ordered')} className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center gap-2">📦 Marquer Commandé</button>
+                              <button onClick={async () => {
+                                if (!confirm('Supprimer ce BC ?')) return;
+                                await supabase.from('supplier_po_lines').delete().eq('po_id', viewPO.id);
+                                await supabase.from('po_attachments').delete().eq('po_id', viewPO.id);
+                                await supabase.from('supplier_purchase_orders').delete().eq('id', viewPO.id);
+                                setPoViewId(null); loadPurchaseOrders(); notify('BC supprimé');
+                              }} className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium">🗑️ Supprimer</button>
+                            </div>
+                          )}
+
+                          {viewPO.status === 'ordered' && (
+                            <div>
+                              <p className="text-sm text-gray-500 mb-3">Marchandises livrées ou service complété ?</p>
+                              <button onClick={() => poUpdateStatus(viewPO, 'delivered')} className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium flex items-center gap-2">✅ Marquer Reçu / Complété</button>
+                            </div>
+                          )}
+
+                          {viewPO.status === 'delivered' && (
+                            <div>
+                              <p className="text-sm text-gray-500 mb-3">Lier la facture fournisseur:</p>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <input type="text" value={poSupplierInvoiceRef} onChange={e => setPoSupplierInvoiceRef(e.target.value)}
+                                  placeholder="N° facture fournisseur" className="px-3 py-2.5 border rounded-lg text-sm w-52" />
+                                <input type="number" value={poSupplierInvoiceAmount} onChange={e => setPoSupplierInvoiceAmount(e.target.value)}
+                                  placeholder="Montant TTC" step="0.01" className="px-3 py-2.5 border rounded-lg text-sm w-36" />
+                                <button onClick={() => poLinkInvoice(viewPO)} className="px-5 py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium">🧾 Lier Facture</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {viewPO.status === 'invoiced' && (
+                            <div>
+                              <p className="text-sm text-gray-500 mb-3">Enregistrer le paiement:</p>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <input type="number" value={poPaymentAmount} onChange={e => setPoPaymentAmount(e.target.value)}
+                                  placeholder={`Montant (${viewPO.supplier_invoice_amount || viewPO.subtotal_ht})`} step="0.01"
+                                  className="px-3 py-2.5 border rounded-lg text-sm w-40" />
+                                <input type="date" value={poPaymentDate} onChange={e => setPoPaymentDate(e.target.value)}
+                                  className="px-3 py-2.5 border rounded-lg text-sm" />
+                                <select value={poPaymentMethod} onChange={e => setPoPaymentMethod(e.target.value)}
+                                  className="px-3 py-2.5 border rounded-lg text-sm">
+                                  <option value="virement">Virement</option>
+                                  <option value="carte">Carte</option>
+                                  <option value="cheque">Chèque</option>
+                                  <option value="prelevement">Prélèvement</option>
+                                </select>
+                                <button onClick={() => poMarkPaid(viewPO)} className="px-5 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">💰 Marquer Payé</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ---- DOCUMENTS TAB ---- */}
+                  {poTab === 'documents' && (
+                    <div className="space-y-4">
+                      {/* System docs */}
+                      <h4 className="font-bold text-gray-800">📄 Documents du dossier</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* BC PDF */}
+                        {viewPO.pdf_url && (
+                          <a href={viewPO.pdf_url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🛒</div>
+                            <div>
+                              <p className="font-medium text-gray-800">Bon de Commande</p>
+                              <p className="text-sm text-blue-600">N° {viewPO.po_number}</p>
+                            </div>
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Uploaded docs */}
+                      {poAttachments.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-600 mb-2">Fichiers ajoutés</h4>
+                          <div className="space-y-2">
+                            {poAttachments.map(doc => {
+                              const catIcons = { devis_fournisseur: '💰', facture_fournisseur: '🧾', bon_livraison: '📋', contrat: '📝', general: '📎' };
+                              const catLabels = { devis_fournisseur: 'Devis', facture_fournisseur: 'Facture', bon_livraison: 'BL', contrat: 'Contrat', general: 'Document' };
+                              return (
+                                <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-white hover:bg-gray-50">
+                                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 flex-1 min-w-0">
+                                    <span className="text-xl shrink-0">{doc.file_type?.includes('pdf') ? '📄' : '📎'}</span>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-sm truncate">{doc.file_name}</p>
+                                      <p className="text-xs text-gray-400">{catLabels[doc.category] || 'Document'} • {new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                                    </div>
+                                  </a>
+                                  <button onClick={async () => {
+                                    if (!confirm('Supprimer ce document ?')) return;
+                                    await supabase.from('po_attachments').delete().eq('id', doc.id);
+                                    loadPoAttachments(viewPO.id); notify('Document supprimé');
+                                  }} className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs shrink-0">🗑️</button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Upload form */}
+                      <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-5">
+                        <h4 className="font-medium text-gray-700 mb-3">➕ Ajouter un document</h4>
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Catégorie</label>
+                            <select value={poDocCategory} onChange={e => setPoDocCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm">
+                              <option value="devis_fournisseur">💰 Devis fournisseur</option>
+                              <option value="facture_fournisseur">🧾 Facture fournisseur</option>
+                              <option value="bon_livraison">📋 Bon de livraison</option>
+                              <option value="contrat">📝 Contrat</option>
+                              <option value="general">📎 Autre document</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Nom personnalisé</label>
+                            <input type="text" value={poDocName} onChange={e => setPoDocName(e.target.value)}
+                              placeholder="Optionnel..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <label className="flex-1 flex items-center gap-2 px-4 py-3 border-2 border-dashed rounded-lg cursor-pointer hover:bg-white transition-colors">
+                            <span className="text-lg">{poDocFile ? '✅' : '📎'}</span>
+                            <span className="text-sm text-gray-500">{poDocFile ? poDocFile.name : 'Choisir un fichier...'}</span>
+                            <input type="file" className="hidden" onChange={e => setPoDocFile(e.target.files?.[0] || null)} />
+                          </label>
+                          <button onClick={() => handlePoDocUpload(viewPO.id)} disabled={!poDocFile || poDocUploading}
+                            className="px-5 py-3 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-[#1a3d5c]">
+                            {poDocUploading ? '⏳...' : '📤 Ajouter'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {!viewPO.pdf_url && poAttachments.length === 0 && (
+                        <p className="text-gray-400 text-center py-4 text-sm">Aucun document. Ajoutez un devis, une facture ou tout autre fichier lié.</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ---- HISTORY TAB ---- */}
+                  {poTab === 'history' && (
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-gray-800">📜 Historique du dossier</h4>
+                      <div className="relative pl-6">
+                        <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-gray-200"></div>
+                        {[
+                          { date: viewPO.created_at, label: 'BC créé', icon: '📝', detail: `${viewPO.po_number} — ${viewPO.supplier_name}` },
+                          viewPO.ordered_at ? { date: viewPO.ordered_at, label: 'Commandé', icon: '📦' } : null,
+                          viewPO.delivered_at ? { date: viewPO.delivered_at, label: 'Reçu / Complété', icon: '✅' } : null,
+                          viewPO.supplier_invoice_ref ? { date: viewPO.updated_at, label: `Facture liée: ${viewPO.supplier_invoice_ref}`, icon: '🧾', detail: viewPO.supplier_invoice_amount ? `Montant: ${fmt(viewPO.supplier_invoice_amount)}` : null } : null,
+                          viewPO.payment_date ? { date: viewPO.payment_date, label: `Payé${viewPO.payment_method ? ' par ' + viewPO.payment_method : ''}`, icon: '💰', detail: viewPO.payment_amount ? `${fmt(viewPO.payment_amount)}` : null } : null,
+                        ].filter(Boolean).map((event, i) => (
+                          <div key={i} className="relative mb-4 pl-4">
+                            <div className="absolute -left-4 top-1 w-4 h-4 rounded-full bg-[#2D5A7B] flex items-center justify-center">
+                              <div className="w-2 h-2 rounded-full bg-white"></div>
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span>{event.icon}</span>
+                                <span className="font-medium text-gray-800 text-sm">{event.label}</span>
+                              </div>
+                              <p className="text-xs text-gray-400">{event.date ? new Date(event.date).toLocaleString('fr-FR') : '—'}</p>
+                              {event.detail && <p className="text-xs text-gray-500 mt-0.5">{event.detail}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* =====================================================================
+           CREATION FORM
+         ===================================================================== */
+        if (poStep === 2) return (
+          <div className="space-y-4">
+            <SectionHeader title="Nouveau Bon de Commande" icon="🛒" actions={
+              <button onClick={() => setPoStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
+            } />
+
+            {/* Type */}
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <h3 className="font-bold text-gray-800 mb-3">Type de commande</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {Object.entries(typeLabels).map(([key, label]) => (
+                  <button key={key} onClick={() => setPoType(key)}
+                    className={`p-3.5 rounded-xl border-2 text-sm font-medium text-center transition-all ${
+                      poType === key ? `border-[#2D5A7B] bg-blue-50 shadow-sm` : 'border-gray-200 hover:border-gray-300'
+                    }`}>
+                    <div className="text-xl mb-1">{label.split(' ')[0]}</div>
+                    <div>{label.split(' ').slice(1).join(' ')}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Supplier */}
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <h3 className="font-bold text-gray-800 mb-3">🏭 Fournisseur</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Nom *</label>
+                  <input type="text" value={poSupplier} onChange={e => setPoSupplier(e.target.value)}
+                    placeholder="Lighthouse USA, Fisher Scientific..." className="w-full px-3 py-2.5 border rounded-lg text-sm" autoFocus />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Réf. fournisseur / N° devis</label>
+                  <input type="text" value={poSupplierRef} onChange={e => setPoSupplierRef(e.target.value)}
+                    placeholder="Devis, contrat..." className="w-full px-3 py-2.5 border rounded-lg text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mt-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Date livraison / completion</label>
+                  <input type="date" value={poExpectedDate} onChange={e => setPoExpectedDate(e.target.value)} className="w-full px-3 py-2.5 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+                  <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Notes..." className="w-full px-3 py-2.5 border rounded-lg text-sm" />
+                </div>
+              </div>
+            </div>
+
+            {/* Lines */}
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-gray-800">📝 {poType === 'service' ? 'Prestations' : 'Articles'}</h3>
+                <button onClick={poAddLine} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100">+ Ajouter</button>
+              </div>
+              <div className="space-y-2">
+                <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-400 font-medium uppercase px-1">
+                  <div className="col-span-6">Description</div>
+                  <div className="col-span-2 text-center">Qté</div>
+                  <div className="col-span-2 text-right">P.U. HT</div>
+                  <div className="col-span-1 text-right">Total</div>
+                  <div className="col-span-1"></div>
+                </div>
+                {poLines.map(l => (
+                  <div key={l.id} className="grid grid-cols-12 gap-2 items-center">
+                    <input type="text" value={l.description} onChange={e => poUpdateLine(l.id, 'description', e.target.value)}
+                      placeholder={poType === 'service' ? 'Prestation...' : 'Pièce, article...'} className="col-span-6 px-3 py-2.5 border rounded-lg text-sm" />
+                    <input type="number" value={l.quantity} onChange={e => poUpdateLine(l.id, 'quantity', e.target.value)}
+                      min="1" className="col-span-2 px-3 py-2.5 border rounded-lg text-sm text-center" />
+                    <input type="number" value={l.unitPrice} onChange={e => poUpdateLine(l.id, 'unitPrice', e.target.value)}
+                      step="0.01" className="col-span-2 px-3 py-2.5 border rounded-lg text-sm text-right" />
+                    <p className="col-span-1 text-right text-sm font-medium text-gray-700">{(parseFloat(l.total) || 0).toFixed(2)}</p>
+                    <button onClick={() => poRemoveLine(l.id)} disabled={poLines.length <= 1}
+                      className="col-span-1 text-center text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 pt-4 border-t flex justify-end items-center gap-4">
+                <span className="font-bold text-gray-800 text-lg">Total HT</span>
+                <span className="font-bold text-[#2D5A7B] text-2xl">{fmt(poSubtotal)}</span>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setPoStep(1)} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
+              <button onClick={poHandleSave} disabled={poSaving || !poSupplier.trim() || poLines.filter(l => l.description).length === 0}
+                className="px-6 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
+                {poSaving ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Création...</>) : '🛒 Créer BC + Générer PDF'}
+              </button>
+            </div>
+          </div>
+        );
+
+        /* =====================================================================
+           SUCCESS
+         ===================================================================== */
+        if (poStep === 3 && poSaved) return (
+          <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
+            <div className="text-6xl mb-4">✅</div>
+            <h3 className="text-2xl font-bold text-green-700 mb-2">Bon de Commande Créé!</h3>
+            <p className="text-lg font-mono text-gray-700 mb-1">{poSaved.po_number}</p>
+            <p className="text-gray-500 mb-6">{poSupplier} — {fmt(poSubtotal)}</p>
+            <div className="flex items-center justify-center gap-3 flex-wrap">
+              {poSaved.pdf_url && (
+                <a href={poSaved.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium flex items-center gap-2">📄 Télécharger PDF</a>
+              )}
+              <button onClick={() => { setPoViewId(poSaved.id); setPoStep(1); setPoTab('details'); loadPoAttachments(poSaved.id); }}
+                className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">👁️ Ouvrir Dossier</button>
+              <button onClick={() => { setPoStep(2); poResetForm(); }}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium">+ Nouveau BC</button>
+            </div>
+          </div>
+        );
+
+        return null;
       })()}
 
       {/* ================================================================
