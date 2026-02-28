@@ -11352,9 +11352,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 </tbody>
                 <tfoot>
                   <tr className="bg-[#2D5A7B] text-white">
-                    <td colSpan={2} className="px-3 py-3"></td>
-                    <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
-                    <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{total.toFixed(2)} €</td>
+                    <td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td>
+                    <td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{total.toFixed(2)} €</td>
                   </tr>
                 </tfoot>
               </table>
@@ -11583,9 +11582,8 @@ function RequestDetail({ request, profile, t, setPage, notify, refresh, previous
                 </tbody>
                 <tfoot>
                   <tr className={isFullyContractCovered ? "bg-emerald-600 text-white" : "bg-[#2D5A7B] text-white"}>
-                    <td colSpan={2} className="px-3 py-3"></td>
-                    <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
-                    <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}</td>
+                    <td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td>
+                    <td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{isFullyContractCovered ? 'Contrat' : `${grandTotal.toFixed(2)} €`}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -14065,7 +14063,7 @@ function ContractsPage({ profile, t, notify, setPage, perms, pendingContractId, 
                     <td className="px-3 py-2 text-right font-medium whitespace-nowrap">{shippingTotal.toFixed(2)} €</td>
                   </tr>)}
                 </tbody>
-                <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={2} className="px-3 py-3"></td><td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td><td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{grandTotalFromQuote.toFixed(2)} €</td></tr></tfoot>
+                <tfoot><tr className="bg-[#2D5A7B] text-white"><td colSpan={3} className="px-4 py-3 text-right font-bold text-base whitespace-nowrap">TOTAL HT</td><td className="px-4 py-3 text-right font-bold text-lg whitespace-nowrap">{grandTotalFromQuote.toFixed(2)} €</td></tr></tfoot>
               </table>
               {hasNettoyage && <p className="text-xs text-gray-500 mt-3 italic">* Le nettoyage cellule sera facturé uniquement si nécessaire selon l'état du capteur à réception.</p>}
             </div>
@@ -15979,8 +15977,7 @@ function RentalsPage({ profile, addresses, t, notify, setPage, refresh, pendingR
                 </tbody>
                 <tfoot>
                   <tr className="bg-[#2D5A7B] text-white">
-                    <td colSpan={3} className="px-3 py-3"></td>
-                    <td className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
+                    <td colSpan={4} className="px-3 py-3 text-right font-bold text-lg whitespace-nowrap">TOTAL HT</td>
                     <td className="px-3 py-3 text-right font-bold text-xl whitespace-nowrap">{(qd.totalHT || rental.quote_total_ht || 0).toFixed(2)} €</td>
                   </tr>
                 </tfoot>
