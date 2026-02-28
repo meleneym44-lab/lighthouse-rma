@@ -27781,6 +27781,8 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [poDocCategory, setPoDocCategory] = useState('devis_fournisseur');
   const [poDocUploading, setPoDocUploading] = useState(false);
   const [poAttachments, setPoAttachments] = useState([]);
+  const [poPaymentReceipt, setPoPaymentReceipt] = useState(null);
+  const [poShowPaymentForm, setPoShowPaymentForm] = useState(false);
 
   const biz = businessSettings || {};
 
@@ -28473,7 +28475,27 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             if (poPaymentMethod) updateData.payment_method = poPaymentMethod;
             const { error } = await supabase.from('supplier_purchase_orders').update(updateData).eq('id', po.id);
             if (error) throw error;
+
+            // Upload receipt if provided
+            if (poPaymentReceipt) {
+              try {
+                const ext = poPaymentReceipt.name.split('.').pop();
+                const fileName = `po_receipt_${po.id}_${Date.now()}.${ext}`;
+                const filePath = `purchase_orders/${fileName}`;
+                const { error: upErr } = await supabase.storage.from('documents').upload(filePath, poPaymentReceipt, { contentType: poPaymentReceipt.type });
+                if (!upErr) {
+                  const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+                  await supabase.from('po_attachments').insert({
+                    po_id: po.id, file_name: `Justificatif paiement - ${updateData.payment_date}`,
+                    file_url: urlData?.publicUrl, file_type: poPaymentReceipt.type,
+                    category: 'general', uploaded_by: profile?.id
+                  });
+                }
+              } catch (receiptErr) { console.error('Receipt upload error:', receiptErr); }
+            }
+
             setPoPaymentAmount(''); setPoPaymentDate(''); setPoPaymentMethod('virement');
+            setPoPaymentReceipt(null); setPoShowPaymentForm(false);
             setPoViewId(null);
             notify('✅ Payé! Dossier archivé.');
             loadPurchaseOrders();
@@ -28763,22 +28785,61 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
 
                           {viewPO.status === 'invoiced' && (
                             <div className="space-y-3">
-                              <p className="text-sm text-gray-600">Enregistrer le paiement :</p>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <input type="number" value={poPaymentAmount} onChange={e => setPoPaymentAmount(e.target.value)}
-                                  placeholder={`Montant (${viewPO.supplier_invoice_amount || viewPO.subtotal_ht})`} step="0.01"
-                                  className="px-3 py-2.5 border rounded-lg text-sm w-40 bg-white" />
-                                <input type="date" value={poPaymentDate} onChange={e => setPoPaymentDate(e.target.value)}
-                                  className="px-3 py-2.5 border rounded-lg text-sm bg-white" />
-                                <select value={poPaymentMethod} onChange={e => setPoPaymentMethod(e.target.value)}
-                                  className="px-3 py-2.5 border rounded-lg text-sm bg-white">
-                                  <option value="virement">Virement</option>
-                                  <option value="carte">Carte</option>
-                                  <option value="cheque">Chèque</option>
-                                  <option value="prelevement">Prélèvement</option>
-                                </select>
-                                <button onClick={() => poMarkPaid(viewPO)} className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">💰 Marquer Payé</button>
-                              </div>
+                              {!poShowPaymentForm ? (
+                                <div>
+                                  <p className="text-sm text-gray-600 mb-3">Cette commande a été facturée. Prêt à enregistrer le paiement ?</p>
+                                  <button onClick={() => { setPoShowPaymentForm(true); setPoPaymentReceipt(null); setPoPaymentAmount(''); setPoPaymentDate(''); setPoPaymentMethod('virement'); }}
+                                    className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">💰 Enregistrer un paiement</button>
+                                </div>
+                              ) : (
+                                <div className="bg-green-50 border border-green-200 rounded-xl p-5 space-y-4">
+                                  <h5 className="font-bold text-green-800 flex items-center gap-2">💰 Enregistrer le paiement</h5>
+                                  
+                                  {/* Payment details */}
+                                  <div className="grid grid-cols-3 gap-3">
+                                    <div>
+                                      <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">Montant</label>
+                                      <input type="number" value={poPaymentAmount} onChange={e => setPoPaymentAmount(e.target.value)}
+                                        placeholder={`${viewPO.supplier_invoice_amount || viewPO.subtotal_ht}`} step="0.01"
+                                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white" />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">Date</label>
+                                      <input type="date" value={poPaymentDate} onChange={e => setPoPaymentDate(e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white" />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">Moyen</label>
+                                      <select value={poPaymentMethod} onChange={e => setPoPaymentMethod(e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white">
+                                        <option value="virement">Virement</option>
+                                        <option value="carte">Carte</option>
+                                        <option value="cheque">Chèque</option>
+                                        <option value="prelevement">Prélèvement</option>
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  {/* Receipt upload */}
+                                  <div>
+                                    <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">Justificatif de paiement (optionnel)</label>
+                                    <label className="flex items-center gap-3 px-4 py-3 border-2 border-dashed border-green-300 rounded-lg cursor-pointer hover:bg-green-100/50 transition-colors bg-white">
+                                      <span className="text-lg">{poPaymentReceipt ? '✅' : '📎'}</span>
+                                      <span className="text-sm text-gray-600 flex-1">{poPaymentReceipt ? poPaymentReceipt.name : 'Relevé bancaire, capture virement, reçu...'}</span>
+                                      {poPaymentReceipt && <button onClick={(e) => { e.preventDefault(); setPoPaymentReceipt(null); }} className="text-red-400 hover:text-red-600 text-xs">✕</button>}
+                                      <input type="file" className="hidden" onChange={e => setPoPaymentReceipt(e.target.files?.[0] || null)} accept=".pdf,.png,.jpg,.jpeg" />
+                                    </label>
+                                  </div>
+
+                                  {/* Actions */}
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <button onClick={() => poMarkPaid(viewPO)} className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">
+                                      💰 Confirmer le paiement
+                                    </button>
+                                    <button onClick={() => setPoShowPaymentForm(false)} className="px-4 py-2.5 text-gray-500 hover:bg-gray-100 rounded-lg text-sm">Annuler</button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
