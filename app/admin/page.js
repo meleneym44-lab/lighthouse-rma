@@ -27590,6 +27590,30 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [loading, setLoading] = useState({});
   const [expandedClients, setExpandedClients] = useState(new Set());
 
+  // Standalone invoice creation state
+  const [siSelectedClient, setSiSelectedClient] = useState(null);
+  const [siSelectedBillingAddr, setSiSelectedBillingAddr] = useState(null);
+  const [siClientSearch, setSiClientSearch] = useState('');
+  const [siLines, setSiLines] = useState([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]);
+  const [siIsExonerated, setSiIsExonerated] = useState(false);
+  const [siPaymentDays, setSiPaymentDays] = useState(businessSettings?.payment_terms_days || 30);
+  const [siClientRef, setSiClientRef] = useState('');
+  const [siBcNumber, setSiBcNumber] = useState('');
+  const [siNotes, setSiNotes] = useState('');
+  const [siSaving, setSiSaving] = useState(false);
+  const [siSaved, setSiSaved] = useState(null);
+  const [siSendingB2b, setSiSendingB2b] = useState(false);
+  const [siStep, setSiStep] = useState(1);
+
+  // Credit note creation state
+  const [cnInvoiceId, setCnInvoiceId] = useState(null);
+  const [cnSearch, setCnSearch] = useState('');
+  const [cnReason, setCnReason] = useState('');
+  const [cnPartial, setCnPartial] = useState(false);
+  const [cnLines, setCnLines] = useState([]);
+  const [cnSaving, setCnSaving] = useState(false);
+  const [cnSaved, setCnSaved] = useState(null);
+
   const biz = businessSettings || {};
 
   // ===== DATA LOADING =====
@@ -27925,7 +27949,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
           <SectionHeader title={lang === 'en' ? 'Outgoing Invoices' : 'Factures Émises'} icon="📤" actions={
             <div className="flex items-center gap-2">
               <button onClick={loadInvoices} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">🔄</button>
-              <button onClick={() => { setActiveTab('outgoing_new'); }} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouvelle Facture</button>
+              <button onClick={() => { setSiStep(1); setSiSaved(null); setSiSelectedClient(null); setSiSelectedBillingAddr(null); setSiLines([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setSiClientRef(''); setSiBcNumber(''); setSiNotes(''); setSiIsExonerated(false); setActiveTab('outgoing_new'); }} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouvelle Facture</button>
             </div>
           } />
           <SearchBar placeholder="Rechercher par n° facture, client..." />
@@ -28083,7 +28107,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
         return (
           <div className="space-y-4">
             <SectionHeader title={lang === 'en' ? 'Credit Notes' : 'Avoirs'} icon="↩️" actions={
-              <button onClick={() => setActiveTab('credit_note_new')} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium">+ Créer Avoir</button>
+              <button onClick={() => { setCnInvoiceId(null); setCnSearch(''); setCnReason(''); setCnLines([]); setCnSaving(false); setCnSaved(null); setActiveTab('credit_note_new'); }} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium">+ Créer Avoir</button>
             } />
 
             {allAvoirs.length > 0 ? (
@@ -28587,21 +28611,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
            STANDALONE INVOICE CREATION (placeholder)
          ================================================================ */}
       {activeTab === 'outgoing_new' && (() => {
-        // Standalone invoice creation state — uses closure to keep component clean
-        const [siSelectedClient, setSiSelectedClient] = useState(null);
-        const [siSelectedBillingAddr, setSiSelectedBillingAddr] = useState(null);
-        const [siClientSearch, setSiClientSearch] = useState('');
-        const [siLines, setSiLines] = useState([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]);
-        const [siIsExonerated, setSiIsExonerated] = useState(false);
-        const [siPaymentDays, setSiPaymentDays] = useState(biz.payment_terms_days || 30);
-        const [siClientRef, setSiClientRef] = useState('');
-        const [siBcNumber, setSiBcNumber] = useState('');
-        const [siNotes, setSiNotes] = useState('');
-        const [siSaving, setSiSaving] = useState(false);
-        const [siSaved, setSiSaved] = useState(null);
-        const [siSendingB2b, setSiSendingB2b] = useState(false);
-        const [siStep, setSiStep] = useState(1); // 1=setup, 2=confirm, 3=done
-
         const siClientBAs = siSelectedClient ? billingAddresses.filter(ba => ba.company_id === siSelectedClient.id) : [];
         const filteredClients = siClientSearch ? (clients || []).filter(c => c.name?.toLowerCase().includes(siClientSearch.toLowerCase())) : (clients || []);
 
@@ -28954,14 +28963,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
            CREDIT NOTE CREATION
          ================================================================ */}
       {activeTab === 'credit_note_new' && (() => {
-        const [cnInvoiceId, setCnInvoiceId] = useState(null);
-        const [cnSearch, setCnSearch] = useState('');
-        const [cnReason, setCnReason] = useState('');
-        const [cnPartial, setCnPartial] = useState(false);
-        const [cnLines, setCnLines] = useState([]);
-        const [cnSaving, setCnSaving] = useState(false);
-        const [cnSaved, setCnSaved] = useState(null);
-
         const cnInvoice = cnInvoiceId ? activeInvoices.find(i => i.id === cnInvoiceId) : null;
         const filteredInvs = cnSearch ? activeInvoices.filter(i =>
           (i.invoice_number || '').toLowerCase().includes(cnSearch.toLowerCase()) ||
