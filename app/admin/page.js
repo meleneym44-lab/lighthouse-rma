@@ -27676,25 +27676,26 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const thisYear = now.getFullYear();
   
   const activeInvoices = invoices.filter(i => i.status !== 'cancelled');
-  const thisMonthInvoices = activeInvoices.filter(i => { const d = new Date(i.invoice_date); return d.getMonth() === thisMonth && d.getFullYear() === thisYear; });
-  const thisYearInvoices = activeInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear);
+  const outgoingInvoices = activeInvoices.filter(i => !(i.invoice_number || '').startsWith('AVO'));
+  const thisMonthInvoices = outgoingInvoices.filter(i => { const d = new Date(i.invoice_date); return d.getMonth() === thisMonth && d.getFullYear() === thisYear; });
+  const thisYearInvoices = outgoingInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear);
   
   const totalRevenueYear = thisYearInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
   const totalRevenueMonth = thisMonthInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
   const totalHTYear = thisYearInvoices.reduce((s, i) => s + (parseFloat(i.subtotal_ht) || 0), 0);
   const totalTVAYear = thisYearInvoices.reduce((s, i) => s + (parseFloat(i.tva_amount) || 0), 0);
   
-  const unpaidInvoices = activeInvoices.filter(i => !['paid', 'cancelled'].includes(i.status));
+  const unpaidInvoices = outgoingInvoices.filter(i => !['paid', 'cancelled'].includes(i.status));
   const overdueInvoices = unpaidInvoices.filter(i => i.due_date && new Date(i.due_date) < now);
   const totalOutstanding = unpaidInvoices.reduce((s, i) => s + ((parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0)), 0);
   const totalOverdue = overdueInvoices.reduce((s, i) => s + ((parseFloat(i.total_ttc) || 0) - (parseFloat(i.paid_amount) || 0)), 0);
   
-  const paidInvoices = activeInvoices.filter(i => i.status === 'paid');
+  const paidInvoices = outgoingInvoices.filter(i => i.status === 'paid');
   const totalCollected = paidInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
   
   // Service vs parts breakdown
-  const serviceInvoices = activeInvoices.filter(i => i.service_requests?.request_type !== 'parts');
-  const partsInvoices = activeInvoices.filter(i => i.service_requests?.request_type === 'parts');
+  const serviceInvoices = outgoingInvoices.filter(i => i.service_requests?.request_type !== 'parts');
+  const partsInvoices = outgoingInvoices.filter(i => i.service_requests?.request_type === 'parts');
   const serviceRevenue = serviceInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
   const partsRevenue = partsInvoices.filter(i => new Date(i.invoice_date).getFullYear() === thisYear).reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
   
@@ -27967,7 +27968,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   </tr>
                 </thead>
                 <tbody>
-                  {filterByDate(filterBySearch(activeInvoices, ['invoice_number', 'companies.name']), 'invoice_date').map((inv, i) => {
+                  {filterByDate(filterBySearch(activeInvoices.filter(i => !(i.invoice_number || '').startsWith('AVO')), ['invoice_number', 'companies.name']), 'invoice_date').map((inv, i) => {
                     const isOd = inv.due_date && !['paid','cancelled'].includes(inv.status) && new Date(inv.due_date) < now;
                     return (
                       <tr key={inv.id} className={`border-b last:border-0 hover:bg-gray-50 ${isOd ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
@@ -28076,25 +28077,58 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
       {/* ================================================================
            CREDIT NOTES TAB
          ================================================================ */}
-      {activeTab === 'credit_notes' && (
-        <div className="space-y-4">
-          <SectionHeader title={lang === 'en' ? 'Credit Notes' : 'Avoirs'} icon="↩️" actions={
-            <button className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Créer Avoir</button>
-          } />
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <EmptyState icon="↩️" title={lang === 'en' ? 'Credit Notes' : 'Avoirs'} subtitle={lang === 'en' ? 'Create credit notes to correct sent invoices. Coming in Phase 2.6' : 'Créez des avoirs pour corriger des factures envoyées. Disponible Phase 2.6'} />
-            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="font-medium text-blue-800 mb-2">ℹ️ {lang === 'en' ? 'How it works' : 'Comment ça marche'}</h4>
+      {activeTab === 'credit_notes' && (() => {
+        const avoirs = activeInvoices.filter(i => (i.invoice_number || '').startsWith('AVO'));
+        const allAvoirs = invoices.filter(i => (i.invoice_number || '').startsWith('AVO'));
+        return (
+          <div className="space-y-4">
+            <SectionHeader title={lang === 'en' ? 'Credit Notes' : 'Avoirs'} icon="↩️" actions={
+              <button onClick={() => setActiveTab('credit_note_new')} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium">+ Créer Avoir</button>
+            } />
+
+            {allAvoirs.length > 0 ? (
+              <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-gray-50 border-b">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Avoir</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Réf. Facture</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Montant</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
+                  </tr></thead>
+                  <tbody>
+                    {allAvoirs.map((avo, i) => (
+                      <tr key={avo.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                        <td className="px-4 py-3 font-mono font-medium text-red-700">{avo.invoice_number}</td>
+                        <td className="px-4 py-3 text-gray-700">{avo.companies?.name || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{avo.invoice_date?.split('T')[0] || '—'}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{avo.notes?.match(/facture (FAC-[^\s.]+)/i)?.[1] || '—'}</td>
+                        <td className="px-4 py-3 text-right font-bold text-red-600">{fmt(Math.abs(avo.total_ttc || 0))}</td>
+                        <td className="px-4 py-3 text-center"><StatusBadge status={avo.status} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border shadow-sm p-6">
+                <EmptyState icon="↩️" title="Aucun avoir" subtitle="Les avoirs créés apparaîtront ici" />
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-800 mb-2">ℹ️ Comment ça marche</h4>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• {lang === 'en' ? 'Select an invoice to correct → system creates a credit note (AVO-MMYY-XXX)' : 'Sélectionnez une facture à corriger → le système crée un avoir (AVO-MMYY-XXX)'}</li>
-                <li>• {lang === 'en' ? 'Credit note cancels the original invoice' : 'L\'avoir annule la facture originale'}</li>
-                <li>• {lang === 'en' ? 'Reissue a corrected invoice if needed' : 'Réémettez une facture corrigée si nécessaire'}</li>
-                <li>• {lang === 'en' ? 'Synced to B2BRouter for compliance' : 'Synchronisé avec B2BRouter pour conformité'}</li>
+                <li>• Sélectionnez une facture à corriger → le système crée un avoir (AVO-MMYY-XXX)</li>
+                <li>• Choisissez les lignes à créditer (tout ou partie)</li>
+                <li>• L'avoir est lié à la facture originale</li>
+                <li>• Émettez une nouvelle facture corrigée si nécessaire</li>
               </ul>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ================================================================
            PURCHASE ORDERS TAB
@@ -28532,7 +28566,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             <div className="grid grid-cols-2 gap-2 text-sm">
               {[
                 { phase: '2.5', status: '✅', label: 'Dashboard + gestion factures', done: true },
-                { phase: '2.6', status: '⏳', label: 'Facture libre + avoirs' },
+                { phase: '2.6', status: '✅', label: 'Facture libre + avoirs', done: true },
                 { phase: '2.7', status: '⏳', label: 'Bons de commande fournisseurs' },
                 { phase: '2.8', status: '⏳', label: 'Upload bancaire + rapprochement' },
                 { phase: '2.9', status: '⏳', label: 'PO → Facture matching' },
@@ -28552,16 +28586,548 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
       {/* ================================================================
            STANDALONE INVOICE CREATION (placeholder)
          ================================================================ */}
-      {activeTab === 'outgoing_new' && (
-        <div className="space-y-4">
-          <SectionHeader title={lang === 'en' ? 'Create Invoice' : 'Nouvelle Facture'} icon="✏️" actions={
-            <button onClick={() => setActiveTab('outgoing')} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">← Retour</button>
-          } />
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <EmptyState icon="✏️" title={lang === 'en' ? 'Standalone Invoice Creation' : 'Création Facture Libre'} subtitle={lang === 'en' ? 'Create invoices not tied to an RMA. Coming in Phase 2.6' : 'Créez des factures non liées à un RMA. Disponible Phase 2.6'} />
+      {activeTab === 'outgoing_new' && (() => {
+        // Standalone invoice creation state — uses closure to keep component clean
+        const [siSelectedClient, setSiSelectedClient] = useState(null);
+        const [siSelectedBillingAddr, setSiSelectedBillingAddr] = useState(null);
+        const [siClientSearch, setSiClientSearch] = useState('');
+        const [siLines, setSiLines] = useState([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]);
+        const [siIsExonerated, setSiIsExonerated] = useState(false);
+        const [siPaymentDays, setSiPaymentDays] = useState(biz.payment_terms_days || 30);
+        const [siClientRef, setSiClientRef] = useState('');
+        const [siBcNumber, setSiBcNumber] = useState('');
+        const [siNotes, setSiNotes] = useState('');
+        const [siSaving, setSiSaving] = useState(false);
+        const [siSaved, setSiSaved] = useState(null);
+        const [siSendingB2b, setSiSendingB2b] = useState(false);
+        const [siStep, setSiStep] = useState(1); // 1=setup, 2=confirm, 3=done
+
+        const siClientBAs = siSelectedClient ? billingAddresses.filter(ba => ba.company_id === siSelectedClient.id) : [];
+        const filteredClients = siClientSearch ? (clients || []).filter(c => c.name?.toLowerCase().includes(siClientSearch.toLowerCase())) : (clients || []);
+
+        const siUpdateLine = (id, field, value) => {
+          setSiLines(prev => prev.map(l => {
+            if (l.id !== id) return l;
+            const u = { ...l, [field]: value };
+            if (field === 'quantity' || field === 'unitPrice') u.total = (parseFloat(u.quantity) || 0) * (parseFloat(u.unitPrice) || 0);
+            return u;
+          }));
+        };
+        const siAddLine = () => setSiLines(prev => [...prev, { id: `l${Date.now()}`, description: '', quantity: 1, unitPrice: 0, total: 0 }]);
+        const siRemoveLine = (id) => setSiLines(prev => prev.filter(l => l.id !== id));
+
+        const siSubtotalHT = siLines.reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
+        const siTvaRate = siIsExonerated ? 0 : 20;
+        const siTvaAmount = siIsExonerated ? 0 : siSubtotalHT * 0.20;
+        const siTotalTTC = siSubtotalHT + siTvaAmount;
+
+        const baTva = siSelectedBillingAddr?.tva_number || siSelectedClient?.tva_number || '';
+        const baSiret = siSelectedBillingAddr?.siret || siSelectedClient?.siret || '';
+        const baName = siSelectedBillingAddr?.company_name || siSelectedBillingAddr?.label || siSelectedClient?.name || '';
+
+        const siHandleSave = async () => {
+          if (!siSelectedClient) { notify('Sélectionnez un client', 'error'); return; }
+          if (siLines.filter(l => l.description).length === 0) { notify('Ajoutez au moins une ligne', 'error'); return; }
+          setSiSaving(true);
+          try {
+            let invoiceNumber;
+            try {
+              const { data: docNum } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'FAC' });
+              if (docNum) invoiceNumber = docNum;
+            } catch (e) {
+              const now = new Date();
+              invoiceNumber = `FAC-${String(now.getMonth()+1).padStart(2,'0')}${String(now.getFullYear()).slice(-2)}-001`;
+            }
+
+            const invoiceDate = new Date().toISOString();
+            const dueDate = new Date(Date.now() + siPaymentDays * 86400000).toISOString();
+
+            // Generate PDF
+            let pdfUrl = null;
+            try {
+              const pdfLines = siLines.filter(l => l.description).map(l => ({
+                description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, total: l.total
+              }));
+              const pdfBlob = await generateInvoicePDF({
+                invoiceNumber, invoiceDate, dueDate,
+                company: {
+                  name: baName,
+                  attention: siSelectedBillingAddr?.attention || siSelectedClient?.contact_name || '',
+                  address: siSelectedBillingAddr?.address_line1 || siSelectedClient?.billing_address || siSelectedClient?.address || '',
+                  postal_code: siSelectedBillingAddr?.postal_code || siSelectedClient?.billing_postal_code || siSelectedClient?.postal_code || '',
+                  city: siSelectedBillingAddr?.city || siSelectedClient?.billing_city || siSelectedClient?.city || '',
+                  country: siSelectedBillingAddr?.country || siSelectedClient?.country || 'France',
+                  tva_number: baTva, siret_number: baSiret
+                },
+                clientRef: siClientRef, rmaNumber: null, quoteNumber: null, bcNumber: siBcNumber,
+                lines: pdfLines, subtotalHT: siSubtotalHT, tvaRate: siTvaRate, tvaAmount: siTvaAmount,
+                totalTTC: siTotalTTC, isExonerated: siIsExonerated, paymentTermsDays: siPaymentDays, notes: siNotes
+              }, businessSettings);
+              const fileName = `Facture_${invoiceNumber.replace(/[^a-zA-Z0-9-]/g,'_')}_${Date.now()}.pdf`;
+              pdfUrl = await uploadPDFToStorage(pdfBlob, `invoices/standalone`, fileName);
+            } catch (pdfErr) { console.error('PDF error:', pdfErr); }
+
+            const { data: newInv, error } = await supabase.from('invoices').insert({
+              invoice_number: invoiceNumber, company_id: siSelectedClient.id, status: 'created',
+              invoice_date: invoiceDate, due_date: dueDate, payment_terms_days: siPaymentDays,
+              subtotal_ht: siSubtotalHT, tva_rate: siTvaRate, tva_amount: siTvaAmount, total_ttc: siTotalTTC,
+              is_tva_exonerated: siIsExonerated, client_ref: siClientRef, client_tva_number: baTva,
+              pdf_url: pdfUrl, notes: siNotes, created_by: profile?.id
+            }).select().single();
+            if (error) throw error;
+
+            if (newInv) {
+              const lineInserts = siLines.filter(l => l.description).map((l, idx) => ({
+                invoice_id: newInv.id, line_type: 'service', description: l.description,
+                quantity: parseInt(l.quantity) || 1, unit_price_ht: parseFloat(l.unitPrice) || 0,
+                total_ht: parseFloat(l.total) || 0, sort_order: idx
+              }));
+              await supabase.from('invoice_lines').insert(lineInserts);
+            }
+
+            setSiSaved({ ...newInv, pdf_url: pdfUrl, invoice_number: invoiceNumber });
+            setSiStep(3);
+            notify(`✅ Facture ${invoiceNumber} créée!`);
+            loadInvoices();
+          } catch (err) {
+            notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+          }
+          setSiSaving(false);
+        };
+
+        const siHandleB2b = async () => {
+          if (!siSaved || !baTva) { notify('TVA client requise pour e-facturation', 'error'); return; }
+          setSiSendingB2b(true);
+          try {
+            const res = await fetch('/api/b2brouter', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'create_einvoice',
+                contact_data: {
+                  name: baName, tin_value: baTva, tin_scheme: '9957',
+                  country: (siSelectedBillingAddr?.country || 'France').toLowerCase() === 'france' ? 'fr' : 'fr',
+                  email: siSelectedClient?.email || '',
+                  address: siSelectedBillingAddr?.address_line1 || '', postalcode: siSelectedBillingAddr?.postal_code || '',
+                  city: siSelectedBillingAddr?.city || '',
+                  transport_type_code: siSelectedBillingAddr?.chorus_invoicing ? 'fr.chorus' : 'b2brouter',
+                  document_type_code: 'xml.ubl.invoice',
+                  public_sector: siSelectedBillingAddr?.chorus_invoicing || false
+                },
+                invoice_data: {
+                  number: siSaved.invoice_number,
+                  date: siSaved.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+                  due_date: siSaved.due_date?.split('T')[0] || '',
+                  po_number: siBcNumber || '',
+                  lines: siLines.filter(l => l.description).map(l => ({
+                    description: l.description, quantity: parseInt(l.quantity) || 1,
+                    unit_price: parseFloat(l.unitPrice) || 0, tva_rate: siIsExonerated ? 0 : 20, tva_exempt: siIsExonerated
+                  }))
+                },
+                pdf_url: siSaved.pdf_url
+              })
+            });
+            const result = await res.json();
+            if (result.success) {
+              await supabase.from('invoices').update({
+                b2brouter_invoice_id: result.b2brouter_invoice_id,
+                b2brouter_contact_id: result.b2brouter_contact_id,
+                einvoice_status: result.state || 'new'
+              }).eq('id', siSaved.id);
+              setSiSaved({ ...siSaved, b2brouter_invoice_id: result.b2brouter_invoice_id });
+              notify('🏦 e-Facture créée dans B2BRouter!');
+            } else {
+              notify('e-Facture: ' + (typeof result.error === 'string' ? result.error : JSON.stringify(result.error)), 'error');
+            }
+          } catch (err) { notify('e-Facture: ' + err.message, 'error'); }
+          setSiSendingB2b(false);
+        };
+
+        return (
+          <div className="space-y-4">
+            <SectionHeader title={lang === 'en' ? 'Create Invoice' : 'Nouvelle Facture Libre'} icon="✏️" actions={
+              <button onClick={() => setActiveTab('outgoing')} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
+            } />
+
+            {/* STEP 1: Build invoice */}
+            {siStep === 1 && (
+              <div className="space-y-4">
+                {/* Client selection */}
+                <div className="bg-white rounded-xl border shadow-sm p-6">
+                  <h3 className="font-bold text-gray-800 mb-4">👥 Client</h3>
+                  {!siSelectedClient ? (
+                    <div>
+                      <input type="text" value={siClientSearch} onChange={e => setSiClientSearch(e.target.value)}
+                        placeholder="Rechercher un client..." className="w-full px-4 py-2.5 border rounded-lg mb-3" autoFocus />
+                      <div className="max-h-48 overflow-y-auto border rounded-lg">
+                        {filteredClients.slice(0, 20).map(c => (
+                          <button key={c.id} onClick={() => { setSiSelectedClient(c); setSiClientSearch(''); }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b last:border-0 flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-gray-800">{c.name}</p>
+                              <p className="text-xs text-gray-400">{c.email || ''} {c.city ? `• ${c.city}` : ''}</p>
+                            </div>
+                            {c.tva_number && <span className="text-[10px] font-mono text-gray-400">{c.tva_number}</span>}
+                          </button>
+                        ))}
+                        {filteredClients.length === 0 && <p className="px-4 py-3 text-gray-400 text-sm text-center">Aucun client trouvé</p>}
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                        <div>
+                          <p className="font-bold text-blue-800">{siSelectedClient.name}</p>
+                          <p className="text-xs text-blue-600">{siSelectedClient.email || ''}</p>
+                        </div>
+                        <button onClick={() => { setSiSelectedClient(null); setSiSelectedBillingAddr(null); }} className="text-blue-400 hover:text-red-500 text-sm">✕ Changer</button>
+                      </div>
+
+                      {/* Billing address selection */}
+                      {siClientBAs.length > 0 && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-2">Adresse de facturation</label>
+                          <div className="grid gap-2">
+                            {siClientBAs.map(ba => (
+                              <button key={ba.id} onClick={() => setSiSelectedBillingAddr(ba)}
+                                className={`text-left p-3 rounded-lg border-2 transition-colors ${siSelectedBillingAddr?.id === ba.id ? 'border-[#2D5A7B] bg-blue-50/50' : 'border-gray-200 hover:border-gray-300'}`}>
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="font-medium text-gray-800">{ba.company_name || ba.label || 'Adresse'}</p>
+                                    <p className="text-xs text-gray-500">{[ba.address_line1, ba.postal_code, ba.city].filter(Boolean).join(', ')}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    {ba.tva_number && <p className="text-[10px] font-mono text-green-600">{ba.tva_number}</p>}
+                                    {ba.siret && <p className="text-[10px] font-mono text-gray-400">{ba.siret}</p>}
+                                    {ba.chorus_invoicing && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">Chorus</span>}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {siClientBAs.length === 0 && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                          <p className="text-sm text-amber-700">⚠️ Aucune adresse de facturation. Les données du compte client seront utilisées.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* References */}
+                {siSelectedClient && (
+                  <div className="bg-white rounded-xl border shadow-sm p-6">
+                    <h3 className="font-bold text-gray-800 mb-4">📋 Références</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Réf. client</label>
+                        <input type="text" value={siClientRef} onChange={e => setSiClientRef(e.target.value)} placeholder="Vos réf." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">N° BC client</label>
+                        <input type="text" value={siBcNumber} onChange={e => setSiBcNumber(e.target.value)} placeholder="Purchase order" className="w-full px-3 py-2 border rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">Délai paiement</label>
+                        <div className="flex items-center gap-2">
+                          <input type="number" value={siPaymentDays} onChange={e => setSiPaymentDays(parseInt(e.target.value) || 30)} className="w-20 px-3 py-2 border rounded-lg text-sm text-center" />
+                          <span className="text-sm text-gray-500">jours</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={siIsExonerated} onChange={e => setSiIsExonerated(e.target.checked)} className="rounded" />
+                        <span className="text-sm text-gray-600">TVA exonérée (export hors UE)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Line items */}
+                {siSelectedClient && (
+                  <div className="bg-white rounded-xl border shadow-sm p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-gray-800">📝 Lignes de facture</h3>
+                      <button onClick={siAddLine} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100">+ Ajouter ligne</button>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium px-1">
+                        <div className="col-span-6">Description</div>
+                        <div className="col-span-2 text-center">Qté</div>
+                        <div className="col-span-2 text-right">P.U. HT</div>
+                        <div className="col-span-1 text-right">Total</div>
+                        <div className="col-span-1"></div>
+                      </div>
+                      {siLines.map(l => (
+                        <div key={l.id} className="grid grid-cols-12 gap-2 items-center">
+                          <input type="text" value={l.description} onChange={e => siUpdateLine(l.id, 'description', e.target.value)}
+                            placeholder="Description..." className="col-span-6 px-3 py-2 border rounded-lg text-sm" />
+                          <input type="number" value={l.quantity} onChange={e => siUpdateLine(l.id, 'quantity', e.target.value)}
+                            min="1" className="col-span-2 px-3 py-2 border rounded-lg text-sm text-center" />
+                          <input type="number" value={l.unitPrice} onChange={e => siUpdateLine(l.id, 'unitPrice', e.target.value)}
+                            step="0.01" className="col-span-2 px-3 py-2 border rounded-lg text-sm text-right" />
+                          <p className="col-span-1 text-right text-sm font-medium text-gray-700">{(parseFloat(l.total) || 0).toFixed(2)}</p>
+                          <button onClick={() => siRemoveLine(l.id)} disabled={siLines.length <= 1}
+                            className="col-span-1 text-center text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Totals */}
+                    <div className="mt-4 pt-4 border-t space-y-1">
+                      <div className="flex justify-end gap-8 text-sm">
+                        <span className="text-gray-500">Sous-total HT</span>
+                        <span className="font-medium w-28 text-right">{fmt(siSubtotalHT)}</span>
+                      </div>
+                      <div className="flex justify-end gap-8 text-sm">
+                        <span className="text-gray-500">TVA {siIsExonerated ? '(exonéré)' : `${siTvaRate}%`}</span>
+                        <span className="font-medium w-28 text-right">{siIsExonerated ? '0,00 €' : fmt(siTvaAmount)}</span>
+                      </div>
+                      <div className="flex justify-end gap-8 text-lg pt-1 border-t">
+                        <span className="font-bold text-gray-800">Total TTC</span>
+                        <span className="font-bold text-[#2D5A7B] w-28 text-right">{fmt(siTotalTTC)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {siSelectedClient && (
+                  <div className="bg-white rounded-xl border shadow-sm p-6">
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Notes internes</label>
+                    <textarea value={siNotes} onChange={e => setSiNotes(e.target.value)} rows={2}
+                      placeholder="Notes internes (non visibles sur la facture)..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  </div>
+                )}
+
+                {/* Submit */}
+                {siSelectedClient && (
+                  <div className="flex justify-end gap-3">
+                    <button onClick={() => setActiveTab('outgoing')} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
+                    <button onClick={siHandleSave} disabled={siSaving || siLines.filter(l => l.description).length === 0}
+                      className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
+                      {siSaving ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Génération...</>) : '📄 Générer Facture PDF & Enregistrer'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* STEP 3: Done */}
+            {siStep === 3 && siSaved && (
+              <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
+                <div className="text-6xl mb-4">✅</div>
+                <h3 className="text-2xl font-bold text-green-700 mb-2">Facture Créée!</h3>
+                <p className="text-lg font-mono text-gray-700 mb-1">{siSaved.invoice_number}</p>
+                <p className="text-gray-500 mb-6">{siSelectedClient?.name} — {fmt(siTotalTTC)}</p>
+
+                {siSaved.b2brouter_invoice_id && (
+                  <div className="mb-4 inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-lg">
+                    <span className="text-emerald-600">🏦</span>
+                    <span className="text-sm font-medium text-emerald-800">e-Facture B2BRouter (ID: {siSaved.b2brouter_invoice_id})</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-center gap-3 flex-wrap">
+                  {siSaved.pdf_url && (
+                    <a href={siSaved.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#2a4f7a] text-white rounded-lg font-medium flex items-center gap-2">📄 Voir PDF</a>
+                  )}
+                  {!siSaved.b2brouter_invoice_id && baTva && (
+                    <button onClick={siHandleB2b} disabled={siSendingB2b}
+                      className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
+                      {siSendingB2b ? '⏳ Sync...' : '🏦 Créer e-Facture'}
+                    </button>
+                  )}
+                  <button onClick={() => { setSiStep(1); setSiSaved(null); setSiSelectedClient(null); setSiSelectedBillingAddr(null); setSiLines([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setSiClientRef(''); setSiBcNumber(''); setSiNotes(''); }}
+                    className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">+ Nouvelle Facture</button>
+                  <button onClick={() => setActiveTab('outgoing')} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Retour aux factures</button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* ================================================================
+           CREDIT NOTE CREATION
+         ================================================================ */}
+      {activeTab === 'credit_note_new' && (() => {
+        const [cnInvoiceId, setCnInvoiceId] = useState(null);
+        const [cnSearch, setCnSearch] = useState('');
+        const [cnReason, setCnReason] = useState('');
+        const [cnPartial, setCnPartial] = useState(false);
+        const [cnLines, setCnLines] = useState([]);
+        const [cnSaving, setCnSaving] = useState(false);
+        const [cnSaved, setCnSaved] = useState(null);
+
+        const cnInvoice = cnInvoiceId ? activeInvoices.find(i => i.id === cnInvoiceId) : null;
+        const filteredInvs = cnSearch ? activeInvoices.filter(i =>
+          (i.invoice_number || '').toLowerCase().includes(cnSearch.toLowerCase()) ||
+          (i.companies?.name || '').toLowerCase().includes(cnSearch.toLowerCase())
+        ) : activeInvoices.filter(i => i.status !== 'cancelled');
+
+        const cnSelectInvoice = (inv) => {
+          setCnInvoiceId(inv.id);
+          setCnLines((inv.invoice_lines || []).filter(l => l.line_type !== 'device_header').map(l => ({
+            id: l.id, description: l.description, quantity: l.quantity || 1,
+            unitPrice: parseFloat(l.unit_price_ht) || 0, total: parseFloat(l.total_ht) || 0, included: true
+          })));
+        };
+
+        const cnSubtotal = cnLines.filter(l => l.included).reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
+        const cnTvaRate = cnInvoice?.is_tva_exonerated ? 0 : (cnInvoice?.tva_rate || 20);
+        const cnTvaAmount = cnInvoice?.is_tva_exonerated ? 0 : cnSubtotal * (cnTvaRate / 100);
+        const cnTotal = cnSubtotal + cnTvaAmount;
+
+        const cnHandleSave = async () => {
+          if (!cnInvoice) return;
+          setCnSaving(true);
+          try {
+            let avoNumber;
+            try {
+              const { data: docNum } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'AVO' });
+              if (docNum) avoNumber = docNum;
+            } catch (e) {
+              const now = new Date();
+              avoNumber = `AVO-${String(now.getMonth()+1).padStart(2,'0')}${String(now.getFullYear()).slice(-2)}-001`;
+            }
+
+            const { data: cn, error } = await supabase.from('invoices').insert({
+              invoice_number: avoNumber, company_id: cnInvoice.company_id, request_id: cnInvoice.request_id,
+              status: 'created', invoice_date: new Date().toISOString(),
+              subtotal_ht: -cnSubtotal, tva_rate: cnTvaRate, tva_amount: -cnTvaAmount, total_ttc: -cnTotal,
+              is_tva_exonerated: cnInvoice.is_tva_exonerated, client_tva_number: cnInvoice.client_tva_number,
+              notes: `Avoir pour facture ${cnInvoice.invoice_number}. ${cnReason}`.trim(),
+              created_by: profile?.id
+            }).select().single();
+            if (error) throw error;
+
+            // Save credit note lines
+            if (cn) {
+              const lineInserts = cnLines.filter(l => l.included).map((l, idx) => ({
+                invoice_id: cn.id, line_type: 'credit', description: l.description,
+                quantity: l.quantity, unit_price_ht: l.unitPrice, total_ht: l.total, sort_order: idx
+              }));
+              await supabase.from('invoice_lines').insert(lineInserts);
+
+              // Link original invoice
+              await supabase.from('invoices').update({
+                notes: [cnInvoice.notes, `Avoir ${avoNumber} émis`].filter(Boolean).join(' | ')
+              }).eq('id', cnInvoice.id);
+            }
+
+            setCnSaved(cn);
+            notify(`✅ Avoir ${avoNumber} créé!`);
+            loadInvoices();
+          } catch (err) {
+            notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+          }
+          setCnSaving(false);
+        };
+
+        return (
+          <div className="space-y-4">
+            <SectionHeader title="Créer un Avoir" icon="↩️" actions={
+              <button onClick={() => setActiveTab('credit_notes')} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
+            } />
+
+            {!cnSaved ? (
+              <div className="space-y-4">
+                {/* Invoice selection */}
+                <div className="bg-white rounded-xl border shadow-sm p-6">
+                  <h3 className="font-bold text-gray-800 mb-4">📄 Facture à créditer</h3>
+                  {!cnInvoice ? (
+                    <div>
+                      <input type="text" value={cnSearch} onChange={e => setCnSearch(e.target.value)}
+                        placeholder="Rechercher par n° facture ou client..." className="w-full px-4 py-2.5 border rounded-lg mb-3" autoFocus />
+                      <div className="max-h-64 overflow-y-auto border rounded-lg">
+                        {filteredInvs.slice(0, 15).map(inv => (
+                          <button key={inv.id} onClick={() => cnSelectInvoice(inv)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b last:border-0 flex items-center justify-between">
+                            <div>
+                              <p className="font-mono font-medium text-gray-800">{inv.invoice_number}</p>
+                              <p className="text-xs text-gray-400">{inv.companies?.name} • {inv.invoice_date?.split('T')[0]}</p>
+                            </div>
+                            <span className="font-bold text-gray-700">{fmt(inv.total_ttc)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-red-800">{cnInvoice.invoice_number} — {cnInvoice.companies?.name}</p>
+                          <p className="text-sm text-red-600">Total: {fmt(cnInvoice.total_ttc)} • {cnInvoice.invoice_date?.split('T')[0]}</p>
+                        </div>
+                        <button onClick={() => { setCnInvoiceId(null); setCnLines([]); }} className="text-red-400 hover:text-red-600 text-sm">✕ Changer</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Lines to credit */}
+                {cnInvoice && (
+                  <div className="bg-white rounded-xl border shadow-sm p-6">
+                    <h3 className="font-bold text-gray-800 mb-4">📝 Lignes à créditer</h3>
+                    <div className="space-y-2">
+                      {cnLines.map(l => (
+                        <div key={l.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50">
+                          <input type="checkbox" checked={l.included} onChange={e => setCnLines(prev => prev.map(x => x.id === l.id ? { ...x, included: e.target.checked } : x))} className="rounded" />
+                          <span className="flex-1 text-sm text-gray-700">{l.description}</span>
+                          <span className="text-sm text-gray-500">×{l.quantity}</span>
+                          <span className="font-medium text-sm">{fmt(l.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 pt-3 border-t">
+                      <div className="flex justify-end gap-8">
+                        <span className="font-bold text-red-700">Total Avoir TTC</span>
+                        <span className="font-bold text-red-700 text-lg">-{fmt(cnTotal)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Reason */}
+                {cnInvoice && (
+                  <div className="bg-white rounded-xl border shadow-sm p-6">
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Motif de l'avoir</label>
+                    <input type="text" value={cnReason} onChange={e => setCnReason(e.target.value)}
+                      placeholder="Ex: Erreur de prix, annulation partielle, geste commercial..."
+                      className="w-full px-3 py-2 border rounded-lg text-sm" />
+                  </div>
+                )}
+
+                {/* Submit */}
+                {cnInvoice && (
+                  <div className="flex justify-end gap-3">
+                    <button onClick={() => setActiveTab('credit_notes')} className="px-5 py-2.5 bg-gray-200 rounded-lg font-medium">Annuler</button>
+                    <button onClick={cnHandleSave} disabled={cnSaving || cnLines.filter(l => l.included).length === 0}
+                      className="px-6 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
+                      {cnSaving ? '⏳ Création...' : '↩️ Créer l\'Avoir'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
+                <div className="text-6xl mb-4">✅</div>
+                <h3 className="text-2xl font-bold text-red-700 mb-2">Avoir Créé!</h3>
+                <p className="text-lg font-mono text-gray-700 mb-1">{cnSaved.invoice_number}</p>
+                <p className="text-gray-500 mb-2">Référence: {cnInvoice?.invoice_number}</p>
+                <p className="text-red-600 font-bold text-xl mb-6">-{fmt(cnTotal)}</p>
+                <div className="flex items-center justify-center gap-3">
+                  <button onClick={() => setActiveTab('credit_notes')} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Retour aux avoirs</button>
+                  <button onClick={() => setActiveTab('outgoing')} className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium">Voir factures</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
