@@ -26636,6 +26636,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [sendingEInvoice, setSendingEInvoice] = useState(false);
 
   const invoiceLines = inv.invoice_lines || [];
   const company = inv.companies || {};
@@ -26861,6 +26862,64 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
             {(inv.status === 'created' || inv.status === 'draft') && (
               <button onClick={markAsSent} className="px-5 py-2 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm">{lang === 'en' ? '📤 Send to client' : '📤 Envoyer au client'}</button>
             )}
+            {inv.status !== 'paid' && inv.status !== 'cancelled' && !inv.b2brouter_invoice_id && (
+              <button disabled={sendingEInvoice} onClick={async () => {
+                setSendingEInvoice(true);
+                try {
+                  const invLines = (inv.invoice_lines || []).filter(l => l.line_type !== 'device_header');
+                  const res = await fetch('/api/b2brouter', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'create_einvoice',
+                      contact_data: {
+                        name: company.name || '',
+                        tin_value: inv.client_tva_number || company.tva_number || '',
+                        tin_scheme: '9957', country: 'fr',
+                        email: company.email || '',
+                        address: company.billing_address || company.address || '',
+                        postalcode: company.billing_postal_code || company.postal_code || '',
+                        city: company.billing_city || company.city || '',
+                        transport_type_code: company.chorus_invoicing ? 'fr.chorus' : 'b2brouter',
+                        document_type_code: 'xml.ubl.invoice',
+                        public_sector: company.chorus_invoicing || false
+                      },
+                      invoice_data: {
+                        number: inv.invoice_number,
+                        date: inv.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+                        due_date: inv.due_date?.split('T')[0] || '',
+                        po_number: rma.bc_number || '',
+                        file_reference: rma.request_number || '',
+                        lines: invLines.map(l => ({
+                          description: l.description, quantity: l.quantity || 1,
+                          unit_price: parseFloat(l.unit_price_ht) || 0,
+                          tva_rate: inv.is_tva_exonerated ? 0 : (inv.tva_rate || 20),
+                          tva_exempt: inv.is_tva_exonerated || false
+                        }))
+                      },
+                      pdf_url: inv.pdf_url
+                    })
+                  });
+                  const result = await res.json();
+                  if (result.success) {
+                    await supabase.from('invoices').update({
+                      b2brouter_invoice_id: result.b2brouter_invoice_id,
+                      b2brouter_contact_id: result.b2brouter_contact_id,
+                      einvoice_status: result.state || 'new'
+                    }).eq('id', inv.id);
+                    setInv({ ...inv, b2brouter_invoice_id: result.b2brouter_invoice_id });
+                    notify(lang === 'en' ? '🏦 e-Invoice created in B2BRouter!' : '🏦 e-Facture créée dans B2BRouter!');
+                  } else {
+                    notify('e-Facture: ' + (typeof result.error === 'string' ? result.error : JSON.stringify(result.error)), 'error');
+                  }
+                } catch (err) { notify('e-Facture: ' + err.message, 'error'); }
+                setSendingEInvoice(false);
+              }} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium text-sm disabled:opacity-50 flex items-center gap-1">
+                {sendingEInvoice ? '⏳...' : '🏦 e-Facture'}
+              </button>
+            )}
+            {inv.b2brouter_invoice_id && (
+              <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium border border-emerald-200">🏦 B2B #{inv.b2brouter_invoice_id}</span>
+            )}
             {inv.status !== 'paid' && inv.status !== 'cancelled' && (
               <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">{lang === 'en' ? '💰 Record payment' : '💰 Enregistrer paiement'}</button>
             )}
@@ -26887,6 +26946,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
   const [notes, setNotes] = useState('');
   const [savedInvoice, setSavedInvoice] = useState(null);
   const [shippingPrice, setShippingPrice] = useState(0);
+  const [sendingEInvoice, setSendingEInvoice] = useState(false);
 
   const biz = businessSettings || {};
   const company = rma.companies || {};
@@ -27321,7 +27381,16 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
               <h3 className="text-2xl font-bold text-green-700 mb-2">{lang === 'en' ? 'Invoice Created!' : 'Facture Créée!'}</h3>
               <p className="text-lg font-mono text-gray-700 mb-1">{savedInvoice.invoice_number}</p>
               <p className="text-gray-500 mb-6">{company.name} — {totalTTC.toFixed(2)} € TTC</p>
-              <div className="flex items-center justify-center gap-3">
+              
+              {/* e-Invoice status */}
+              {savedInvoice.b2brouter_invoice_id && (
+                <div className="mb-4 inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-lg">
+                  <span className="text-emerald-600">🏦</span>
+                  <span className="text-sm font-medium text-emerald-800">{lang === 'en' ? 'e-Invoice synced to B2BRouter' : 'e-Facture synchronisée sur B2BRouter'} (ID: {savedInvoice.b2brouter_invoice_id})</span>
+                </div>
+              )}
+              
+              <div className="flex items-center justify-center gap-3 flex-wrap">
                 {savedInvoice.pdf_url && (
                   <a href={savedInvoice.pdf_url} target="_blank" rel="noopener noreferrer" className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#2a4f7a] text-white rounded-lg font-medium flex items-center gap-2">
                     📄 Voir Facture PDF
@@ -27342,6 +27411,71 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                 }} className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium flex items-center gap-2">
                   📤 Envoyer au client
                 </button>
+                
+                {/* e-Invoice / B2BRouter button */}
+                {!savedInvoice.b2brouter_invoice_id && (
+                  <button
+                    disabled={sendingEInvoice}
+                    onClick={async () => {
+                      setSendingEInvoice(true);
+                      try {
+                        const res = await fetch('/api/b2brouter', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            action: 'create_einvoice',
+                            contact_data: {
+                              name: company.name,
+                              tin_value: clientTVA || company.tva_number || '',
+                              tin_scheme: '9957',
+                              country: 'fr',
+                              email: company.email || '',
+                              address: company.billing_address || company.address || '',
+                              postalcode: company.billing_postal_code || company.postal_code || '',
+                              city: company.billing_city || company.city || '',
+                              transport_type_code: company.chorus_invoicing ? 'fr.chorus' : 'b2brouter',
+                              document_type_code: 'xml.ubl.invoice',
+                              public_sector: company.chorus_invoicing || false
+                            },
+                            invoice_data: {
+                              number: savedInvoice.invoice_number,
+                              date: savedInvoice.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
+                              due_date: savedInvoice.due_date?.split('T')[0] || new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
+                              po_number: rma.bc_number || '',
+                              file_reference: rma.request_number || '',
+                              lines: serviceLines.map(l => ({
+                                description: l.description,
+                                quantity: parseInt(l.quantity) || 1,
+                                unit_price: parseFloat(l.unitPrice) || 0,
+                                tva_rate: isExonerated ? 0 : 20,
+                                tva_exempt: isExonerated
+                              }))
+                            },
+                            pdf_url: savedInvoice.pdf_url
+                          })
+                        });
+                        const result = await res.json();
+                        if (result.success) {
+                          await supabase.from('invoices').update({
+                            b2brouter_invoice_id: result.b2brouter_invoice_id,
+                            b2brouter_contact_id: result.b2brouter_contact_id,
+                            einvoice_status: result.state || 'new'
+                          }).eq('id', savedInvoice.id);
+                          setSavedInvoice({ ...savedInvoice, b2brouter_invoice_id: result.b2brouter_invoice_id });
+                          notify(lang === 'en' ? '🏦 e-Invoice created in B2BRouter!' : '🏦 e-Facture créée dans B2BRouter!');
+                        } else {
+                          notify((lang === 'en' ? 'e-Invoice error: ' : 'Erreur e-Facture: ') + (typeof result.error === 'string' ? result.error : JSON.stringify(result.error)), 'error');
+                        }
+                      } catch (err) {
+                        notify('e-Invoice error: ' + err.message, 'error');
+                      }
+                      setSendingEInvoice(false);
+                    }}
+                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {sendingEInvoice ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> {lang === 'en' ? 'Syncing...' : 'Synchronisation...'}</>) : (<>🏦 {lang === 'en' ? 'Create e-Invoice' : 'Créer e-Facture'}</>)}
+                  </button>
+                )}
               </div>
             </div>
           )}
