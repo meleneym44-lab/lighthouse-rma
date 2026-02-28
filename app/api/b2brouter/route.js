@@ -291,6 +291,7 @@ export async function POST(request) {
             due_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
             terms: 'custom',
             currency: 'EUR',
+            document_type_code: 'xml.ubl.invoice',
             bank_account: { type: 'iban' },
             invoice_lines_attributes: payload.lines || [
               {
