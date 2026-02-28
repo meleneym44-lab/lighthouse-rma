@@ -27570,6 +27570,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [invoices, setInvoices] = useState([]);
   const [creditNotes, setCreditNotes] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [billingAddresses, setBillingAddresses] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   
   // B2BRouter state
@@ -27587,20 +27588,29 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [showRaw, setShowRaw] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
   const [loading, setLoading] = useState({});
+  const [expandedClients, setExpandedClients] = useState(new Set());
 
   const biz = businessSettings || {};
 
   // ===== DATA LOADING =====
   const loadInvoices = async () => {
     const { data } = await supabase.from('invoices')
-      .select('*, companies(name, email, tva_number, siret, chorus_invoicing), service_requests(request_number, status, quote_data, request_type), invoice_lines(*)')
+      .select('*, companies(name, email, tva_number, siret, chorus_invoicing), service_requests(request_number, status, quote_data, request_type, billing_address_id), invoice_lines(*)')
       .order('created_at', { ascending: false });
     if (data) setInvoices(data);
   };
 
+  const loadBillingAddresses = async () => {
+    const { data } = await supabase.from('shipping_addresses')
+      .select('*')
+      .eq('is_billing', true)
+      .order('company_id, label');
+    if (data) setBillingAddresses(data);
+  };
+
   const loadAll = async () => {
     setLoadingData(true);
-    await Promise.all([loadInvoices()]);
+    await Promise.all([loadInvoices(), loadBillingAddresses()]);
     setLoadingData(false);
   };
 
@@ -28114,43 +28124,163 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
          ================================================================ */}
       {activeTab === 'clients' && (
         <div className="space-y-4">
-          <SectionHeader title="Clients" icon="👥" />
-          <SearchBar placeholder="Rechercher par nom, TVA, SIRET..." />
+          <SectionHeader title={lang === 'en' ? 'Clients & Billing Entities' : 'Clients & Entités de Facturation'} icon="👥" actions={
+            <div className="flex items-center gap-2">
+              <button onClick={() => setExpandedClients(new Set(clients.map(c => c.id)))} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs">Tout ouvrir</button>
+              <button onClick={() => setExpandedClients(new Set())} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs">Tout fermer</button>
+            </div>
+          } />
+          <SearchBar placeholder="Rechercher par nom, TVA, SIRET, ville..." />
 
           <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
             <table className="w-full text-sm">
               <thead><tr className="bg-gray-50 border-b">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-8"></th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Compte / Entité</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">TVA Intra.</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SIRET</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ville</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Chorus</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Entités</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Factures</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">CA TTC</th>
               </tr></thead>
               <tbody>
-                {filterBySearch(clients || [], ['name', 'tva_number', 'siret', 'city']).map((c, i) => {
+                {(clients || []).filter(c => {
+                  if (!searchTerm) return true;
+                  const s = searchTerm.toLowerCase();
+                  const companyMatch = [c.name, c.tva_number, c.siret, c.city, c.email].some(v => v && String(v).toLowerCase().includes(s));
+                  const clientBAs = billingAddresses.filter(ba => ba.company_id === c.id);
+                  const baMatch = clientBAs.some(ba => 
+                    [ba.company_name, ba.label, ba.tva_number, ba.siret, ba.city, ba.address_line1].some(v => v && String(v).toLowerCase().includes(s))
+                  );
+                  return companyMatch || baMatch;
+                }).map((c, ci) => {
                   const clientInvs = activeInvoices.filter(inv => inv.company_id === c.id);
                   const clientRevenue = clientInvs.reduce((s, inv) => s + (parseFloat(inv.total_ttc) || 0), 0);
+                  const clientBillingAddrs = billingAddresses.filter(ba => ba.company_id === c.id);
+                  const isExpanded = expandedClients.has(c.id);
+                  const hasEntities = clientBillingAddrs.length > 0;
+                  const toggleExpand = () => {
+                    setExpandedClients(prev => {
+                      const next = new Set(prev);
+                      if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                      return next;
+                    });
+                  };
+
+                  // Match invoices to billing entities by billing_address_id on the service_request
+                  const getEntityInvoices = (baId) => clientInvs.filter(inv => inv.service_requests?.billing_address_id === baId);
+                  const unmatched = clientInvs.filter(inv => !clientBillingAddrs.some(ba => inv.service_requests?.billing_address_id === ba.id));
+
                   return (
-                    <tr key={c.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-800">{c.name}</p>
-                        {c.email && <p className="text-xs text-gray-400">{c.email}</p>}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs">{c.tva_number || <span className="text-gray-300">—</span>}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{c.siret || <span className="text-gray-300">—</span>}</td>
-                      <td className="px-4 py-3 text-gray-600">{c.city || c.billing_city || '—'}</td>
-                      <td className="px-4 py-3 text-center">{c.chorus_invoicing ? <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">Chorus</span> : <span className="text-gray-300">—</span>}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{clientInvs.length || '—'}</td>
-                      <td className="px-4 py-3 text-right font-medium text-gray-800">{clientRevenue > 0 ? fmt(clientRevenue) : '—'}</td>
-                    </tr>
+                    <React.Fragment key={c.id}>
+                      {/* Parent company row */}
+                      <tr className={`border-b hover:bg-gray-50 cursor-pointer ${ci % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`} onClick={hasEntities ? toggleExpand : undefined}>
+                        <td className="px-3 py-3 text-center">
+                          {hasEntities ? (
+                            <span className={`text-gray-400 text-xs transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                          ) : <span className="text-gray-200 text-xs">•</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-gray-800">{c.name}</p>
+                            {hasEntities && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">Groupe</span>}
+                          </div>
+                          {c.email && <p className="text-xs text-gray-400">{c.email}</p>}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs">{c.tva_number || <span className="text-gray-300">—</span>}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{c.siret || <span className="text-gray-300">—</span>}</td>
+                        <td className="px-4 py-3 text-gray-600">{c.city || c.billing_city || '—'}</td>
+                        <td className="px-4 py-3 text-center">{c.chorus_invoicing ? <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">Chorus</span> : <span className="text-gray-300">—</span>}</td>
+                        <td className="px-4 py-3 text-center">
+                          {hasEntities ? <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">{clientBillingAddrs.length}</span> : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-600 font-medium">{clientInvs.length || '—'}</td>
+                        <td className="px-4 py-3 text-right font-bold text-gray-800">{clientRevenue > 0 ? fmt(clientRevenue) : '—'}</td>
+                      </tr>
+
+                      {/* Expanded billing entities */}
+                      {isExpanded && clientBillingAddrs.map((ba, bi) => {
+                        const entityInvs = getEntityInvoices(ba.id);
+                        const entityRevenue = entityInvs.reduce((s, inv) => s + (parseFloat(inv.total_ttc) || 0), 0);
+                        return (
+                          <tr key={`ba-${ba.id}`} className="border-b bg-blue-50/20 hover:bg-blue-50/40">
+                            <td className="px-3 py-2.5"></td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-2 pl-4">
+                                <span className="text-blue-400 text-xs">└</span>
+                                <div>
+                                  <p className="font-medium text-gray-700">{ba.company_name || ba.label || 'Entité ' + (bi + 1)}</p>
+                                  <p className="text-[10px] text-gray-400">{[ba.address_line1, ba.postal_code, ba.city].filter(Boolean).join(', ')}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {ba.tva_number ? (
+                                <span className="font-mono text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{ba.tva_number}</span>
+                              ) : <span className="text-gray-300 text-xs">—</span>}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {ba.siret ? (
+                                <span className="font-mono text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">{ba.siret}</span>
+                              ) : <span className="text-gray-300 text-xs">—</span>}
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-600 text-sm">{ba.city || '—'}</td>
+                            <td className="px-4 py-2.5 text-center">
+                              {ba.chorus_invoicing ? (
+                                <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                                  Chorus{ba.chorus_service_code ? ` (${ba.chorus_service_code})` : ''}
+                                </span>
+                              ) : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-4 py-2.5 text-center"><span className="text-[10px] text-gray-400">entité</span></td>
+                            <td className="px-4 py-2.5 text-right text-gray-500 text-sm">{entityInvs.length || '—'}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-gray-600 text-sm">{entityRevenue > 0 ? fmt(entityRevenue) : '—'}</td>
+                          </tr>
+                        );
+                      })}
+
+                      {/* Unmatched invoices row (no billing address linked) */}
+                      {isExpanded && unmatched.length > 0 && (
+                        <tr className="border-b bg-amber-50/30">
+                          <td className="px-3 py-2"></td>
+                          <td className="px-4 py-2 pl-8" colSpan="6">
+                            <span className="text-xs text-amber-600">⚠️ {unmatched.length} facture{unmatched.length > 1 ? 's' : ''} sans entité de facturation rattachée</span>
+                          </td>
+                          <td className="px-4 py-2 text-right text-xs text-amber-600">{unmatched.length}</td>
+                          <td className="px-4 py-2 text-right text-xs font-medium text-amber-700">{fmt(unmatched.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0))}</td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
             </table>
             {(!clients || clients.length === 0) && <EmptyState icon="👥" title="Aucun client" />}
           </div>
+
+          {/* Summary footer */}
+          {clients && clients.length > 0 && (
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-white rounded-lg border p-3 text-center">
+                <p className="text-xl font-bold text-gray-800">{clients.length}</p>
+                <p className="text-xs text-gray-500">Comptes</p>
+              </div>
+              <div className="bg-white rounded-lg border p-3 text-center">
+                <p className="text-xl font-bold text-blue-600">{billingAddresses.length}</p>
+                <p className="text-xs text-gray-500">Entités de facturation</p>
+              </div>
+              <div className="bg-white rounded-lg border p-3 text-center">
+                <p className="text-xl font-bold text-indigo-600">{billingAddresses.filter(ba => ba.chorus_invoicing).length}</p>
+                <p className="text-xs text-gray-500">Chorus Pro</p>
+              </div>
+              <div className="bg-white rounded-lg border p-3 text-center">
+                <p className="text-xl font-bold text-green-600">{billingAddresses.filter(ba => ba.tva_number).length}</p>
+                <p className="text-xs text-gray-500">TVA renseignée</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
