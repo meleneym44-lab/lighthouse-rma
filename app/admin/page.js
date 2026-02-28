@@ -4731,6 +4731,7 @@ export default function AdminPortal() {
     { id: 'usa_orders', label: t('usaOrders'), icon: '🇺🇸' },
     { id: 'clients', label: t('clients'), icon: '👥' },
     { id: 'pricing', label: t('pricing'), icon: '💰' },
+    { id: 'accounting', label: lang === 'en' ? 'Accounting' : 'Comptabilité', icon: '🏦' },
     ...(isAdmin ? [{ id: 'admin', label: t('admin'), icon: '🔐' }] : [])
   ];
 
@@ -4893,6 +4894,7 @@ export default function AdminPortal() {
               profile={profile}
               businessSettings={businessSettings}
             />}
+            {activeSheet === 'accounting' && <AccountingSheet notify={notify} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} requests={requests} clients={clients} t={t} lang={lang} setLang={setLang} />}
           </>
         )}
@@ -27371,6 +27373,587 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 }
 
 
+
+// ============================================
+// ACCOUNTING SHEET — B2BRouter e-Invoicing Integration
+// ============================================
+function AccountingSheet({ notify, profile, t = k=>k, lang = 'fr' }) {
+  const [activeTab, setActiveTab] = useState('connection');
+  const [connectionStatus, setConnectionStatus] = useState(null); // null = untested, 'loading', 'success', 'error'
+  const [accountData, setAccountData] = useState(null);
+  const [transports, setTransports] = useState(null);
+  const [contacts, setContacts] = useState(null);
+  const [issuedInvoices, setIssuedInvoices] = useState(null);
+  const [receivedInvoices, setReceivedInvoices] = useState(null);
+  const [events, setEvents] = useState(null);
+  const [docTypes, setDocTypes] = useState(null);
+  const [transportTypes, setTransportTypes] = useState(null);
+  const [schemes, setSchemes] = useState(null);
+  const [loading, setLoading] = useState({});
+  const [error, setError] = useState(null);
+  const [testInvoiceResult, setTestInvoiceResult] = useState(null);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [rawResponse, setRawResponse] = useState(null);
+  const [showRaw, setShowRaw] = useState(false);
+
+  // Generic fetch helper
+  const b2bFetch = async (action, params = {}) => {
+    const qs = new URLSearchParams({ action, ...params }).toString();
+    const res = await fetch(`/api/b2brouter?${qs}`);
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+    return data;
+  };
+
+  const b2bPost = async (body) => {
+    const res = await fetch('/api/b2brouter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+    return data;
+  };
+
+  // Test connection
+  const testConnection = async () => {
+    setConnectionStatus('loading');
+    setError(null);
+    try {
+      const data = await b2bFetch('test');
+      setConnectionStatus('success');
+      setAccountData(data.account);
+      setRawResponse(data);
+    } catch (err) {
+      setConnectionStatus('error');
+      setError(err.message);
+    }
+  };
+
+  // Load various data
+  const loadTransports = async () => {
+    setLoading(p => ({ ...p, transports: true }));
+    try { const data = await b2bFetch('transports'); setTransports(data.transports || data); }
+    catch (err) { notify?.(err.message, 'error'); }
+    setLoading(p => ({ ...p, transports: false }));
+  };
+
+  const loadContacts = async () => {
+    setLoading(p => ({ ...p, contacts: true }));
+    try { const data = await b2bFetch('contacts', { limit: '50' }); setContacts(data); }
+    catch (err) { notify?.(err.message, 'error'); }
+    setLoading(p => ({ ...p, contacts: false }));
+  };
+
+  const loadIssuedInvoices = async () => {
+    setLoading(p => ({ ...p, issued: true }));
+    try { const data = await b2bFetch('issued_invoices', { limit: '25' }); setIssuedInvoices(data); }
+    catch (err) { notify?.(err.message, 'error'); }
+    setLoading(p => ({ ...p, issued: false }));
+  };
+
+  const loadReceivedInvoices = async () => {
+    setLoading(p => ({ ...p, received: true }));
+    try { const data = await b2bFetch('received_invoices', { limit: '25' }); setReceivedInvoices(data); }
+    catch (err) { notify?.(err.message, 'error'); }
+    setLoading(p => ({ ...p, received: false }));
+  };
+
+  const loadEvents = async () => {
+    setLoading(p => ({ ...p, events: true }));
+    try { const data = await b2bFetch('events', { limit: '50' }); setEvents(data); }
+    catch (err) { notify?.(err.message, 'error'); }
+    setLoading(p => ({ ...p, events: false }));
+  };
+
+  const loadCodeLists = async () => {
+    setLoading(p => ({ ...p, codes: true }));
+    try {
+      const [dt, tt, sc] = await Promise.all([
+        b2bFetch('document_types'),
+        b2bFetch('transport_types'),
+        b2bFetch('schemes')
+      ]);
+      setDocTypes(dt);
+      setTransportTypes(tt);
+      setSchemes(sc);
+    } catch (err) { notify?.(err.message, 'error'); }
+    setLoading(p => ({ ...p, codes: false }));
+  };
+
+  // Send test invoice
+  const sendTestInvoice = async () => {
+    setSendingTest(true);
+    setTestInvoiceResult(null);
+    try {
+      const data = await b2bPost({ action: 'send_test_invoice' });
+      setTestInvoiceResult(data);
+      notify?.('Test invoice created successfully!', 'success');
+    } catch (err) {
+      setTestInvoiceResult({ error: err.message });
+      notify?.(err.message, 'error');
+    }
+    setSendingTest(false);
+  };
+
+  const tabs = [
+    { id: 'connection', label: '🔌 Connection', labelFr: '🔌 Connexion' },
+    { id: 'account', label: '🏢 Account', labelFr: '🏢 Compte' },
+    { id: 'contacts', label: '👥 Contacts', labelFr: '👥 Contacts' },
+    { id: 'invoices', label: '📄 Invoices', labelFr: '📄 Factures' },
+    { id: 'events', label: '📋 Activity', labelFr: '📋 Activité' },
+    { id: 'reference', label: '📚 Reference', labelFr: '📚 Référence' },
+  ];
+
+  const StatusBadge = ({ status }) => {
+    const colors = { new: 'bg-blue-100 text-blue-800', sending: 'bg-yellow-100 text-yellow-800', sent: 'bg-green-100 text-green-800', accepted: 'bg-emerald-100 text-emerald-800', refused: 'bg-red-100 text-red-800', paid: 'bg-purple-100 text-purple-800', error: 'bg-red-100 text-red-800', draft: 'bg-gray-100 text-gray-800' };
+    return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] || 'bg-gray-100 text-gray-600'}`}>{status}</span>;
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">🏦 {lang === 'en' ? 'Accounting & e-Invoicing' : 'Comptabilité & Facturation Électronique'}</h1>
+          <p className="text-gray-500 text-sm mt-1">B2BRouter — {lang === 'en' ? 'PDP integration for France e-invoicing compliance' : 'Intégration PDP pour la conformité facturation électronique France'}</p>
+        </div>
+        {connectionStatus === 'success' && (
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
+            <span className="text-sm font-medium text-green-800">{lang === 'en' ? 'Connected' : 'Connecté'} — Staging</span>
+          </div>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b overflow-x-auto">
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id ? 'border-[#2D5A7B] text-[#2D5A7B]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {lang === 'en' ? tab.label : tab.labelFr}
+          </button>
+        ))}
+      </div>
+
+      {/* ===== CONNECTION TAB ===== */}
+      {activeTab === 'connection' && (
+        <div className="space-y-6">
+          {/* Connection Test Card */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">🧪 {lang === 'en' ? 'API Connection Test' : 'Test de Connexion API'}</h2>
+            <p className="text-sm text-gray-500 mb-6">{lang === 'en' ? 'Test the connection to B2BRouter staging environment. This verifies your API key, account ID, and network connectivity.' : 'Tester la connexion à l\'environnement staging B2BRouter. Cela vérifie votre clé API, votre ID de compte et la connectivité réseau.'}</p>
+            
+            <div className="flex items-center gap-4 mb-6">
+              <button onClick={testConnection} disabled={connectionStatus === 'loading'}
+                className="px-6 py-3 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
+                {connectionStatus === 'loading' ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Testing...</>) : '🔌 Test Connection'}
+              </button>
+              {connectionStatus === 'success' && <span className="text-green-600 font-medium flex items-center gap-1">✅ {lang === 'en' ? 'Connection successful!' : 'Connexion réussie !'}</span>}
+              {connectionStatus === 'error' && <span className="text-red-600 font-medium flex items-center gap-1">❌ {lang === 'en' ? 'Connection failed' : 'Connexion échouée'}</span>}
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-red-800 font-medium">Error:</p>
+                <pre className="text-xs text-red-600 mt-1 whitespace-pre-wrap break-all">{error}</pre>
+              </div>
+            )}
+
+            {connectionStatus === 'success' && accountData && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-sm font-bold text-green-800 mb-3">{lang === 'en' ? 'Account found:' : 'Compte trouvé :'}</p>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="text-gray-500">Name:</span> <span className="font-medium">{accountData.name}</span></div>
+                  <div><span className="text-gray-500">ID:</span> <span className="font-mono text-xs bg-white px-2 py-0.5 rounded">{accountData.id}</span></div>
+                  <div><span className="text-gray-500">Country:</span> <span className="font-medium">{accountData.country?.toUpperCase()}</span></div>
+                  <div><span className="text-gray-500">TIN:</span> <span className="font-mono text-xs">{accountData.tin_value}</span></div>
+                  {accountData.email && <div><span className="text-gray-500">Email:</span> <span className="font-medium">{accountData.email}</span></div>}
+                  {accountData.city && <div><span className="text-gray-500">City:</span> <span className="font-medium">{accountData.city}</span></div>}
+                </div>
+              </div>
+            )}
+
+            {rawResponse && (
+              <div className="mt-4">
+                <button onClick={() => setShowRaw(!showRaw)} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                  {showRaw ? '▼' : '▶'} {lang === 'en' ? 'Raw API response' : 'Réponse API brute'}
+                </button>
+                {showRaw && <pre className="mt-2 bg-gray-900 text-green-400 text-xs p-4 rounded-lg overflow-auto max-h-64">{JSON.stringify(rawResponse, null, 2)}</pre>}
+              </div>
+            )}
+          </div>
+
+          {/* Environment Info */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">⚙️ {lang === 'en' ? 'Configuration' : 'Configuration'}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">API URL</p>
+                <p className="font-mono text-gray-800">api-staging.b2brouter.net</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">API Version</p>
+                <p className="font-mono text-gray-800">2025-10-13</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">API Key</p>
+                <p className="font-mono text-gray-800">••••••••••••••••</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-gray-400 text-xs uppercase tracking-wider mb-1">Environment</p>
+                <p className="font-medium text-amber-600">🟡 Staging (Test)</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-4 italic">{lang === 'en' ? 'Environment variables stored securely in Vercel. Switch to production by updating B2BROUTER_API_URL.' : 'Variables d\'environnement stockées de manière sécurisée dans Vercel.'}</p>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">⚡ {lang === 'en' ? 'Quick Actions' : 'Actions Rapides'}</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              <button onClick={() => { setActiveTab('account'); loadTransports(); }} className="p-4 border-2 border-dashed border-gray-200 rounded-lg hover:border-[#2D5A7B] hover:bg-blue-50 transition-colors text-left">
+                <p className="font-medium text-gray-800">🚀 {lang === 'en' ? 'Check Transports' : 'Vérifier Transports'}</p>
+                <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'Peppol, Chorus Pro, email' : 'Peppol, Chorus Pro, email'}</p>
+              </button>
+              <button onClick={() => { setActiveTab('contacts'); loadContacts(); }} className="p-4 border-2 border-dashed border-gray-200 rounded-lg hover:border-[#2D5A7B] hover:bg-blue-50 transition-colors text-left">
+                <p className="font-medium text-gray-800">👥 {lang === 'en' ? 'View Contacts' : 'Voir les Contacts'}</p>
+                <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'Clients & suppliers in B2BRouter' : 'Clients & fournisseurs dans B2BRouter'}</p>
+              </button>
+              <button onClick={() => { setActiveTab('invoices'); loadIssuedInvoices(); loadReceivedInvoices(); }} className="p-4 border-2 border-dashed border-gray-200 rounded-lg hover:border-[#2D5A7B] hover:bg-blue-50 transition-colors text-left">
+                <p className="font-medium text-gray-800">📄 {lang === 'en' ? 'View Invoices' : 'Voir les Factures'}</p>
+                <p className="text-xs text-gray-500 mt-1">{lang === 'en' ? 'Sent & received invoices' : 'Factures envoyées & reçues'}</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Roadmap */}
+          <div className="bg-gradient-to-r from-[#2D5A7B] to-[#1a3d5c] rounded-xl p-6 text-white">
+            <h2 className="text-lg font-bold mb-3">🗺️ {lang === 'en' ? 'e-Invoicing Roadmap' : 'Feuille de Route e-Facturation'}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              {[
+                { phase: 'Phase 1', status: '🔄', label: lang === 'en' ? 'Connect & test API' : 'Connexion & test API', desc: lang === 'en' ? 'Current — API connection, view account' : 'En cours — connexion API, voir le compte' },
+                { phase: 'Phase 2', status: '⏳', label: lang === 'en' ? 'Send invoices' : 'Envoyer des factures', desc: lang === 'en' ? 'Generate from RMA/parts/contracts → e-invoice' : 'Générer depuis RMA/pièces/contrats → e-facture' },
+                { phase: 'Phase 3', status: '⏳', label: lang === 'en' ? 'Receive invoices' : 'Recevoir des factures', desc: lang === 'en' ? 'Poll incoming supplier invoices, display' : 'Recevoir les factures fournisseurs' },
+                { phase: 'Phase 4', status: '⏳', label: lang === 'en' ? 'Full tracking' : 'Suivi complet', desc: lang === 'en' ? 'Payment tracking, accept/reject, dashboards' : 'Suivi paiements, accepter/refuser, tableaux' },
+              ].map((item, i) => (
+                <div key={i} className="bg-white/10 rounded-lg p-3">
+                  <p className="font-medium">{item.status} {item.phase}: {item.label}</p>
+                  <p className="text-white/70 text-xs mt-0.5">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-white/60 text-xs mt-4">⚠️ {lang === 'en' ? 'France B2B e-invoicing mandatory from September 1, 2026' : 'Facturation électronique B2B obligatoire en France à partir du 1er septembre 2026'}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ACCOUNT TAB ===== */}
+      {activeTab === 'account' && (
+        <div className="space-y-6">
+          {/* Account Info */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">🏢 {lang === 'en' ? 'Account Details' : 'Détails du Compte'}</h2>
+              <button onClick={async () => { setLoading(p => ({...p, account: true})); try { const d = await b2bFetch('account'); setAccountData(d.account || d); } catch(e) { notify?.(e.message, 'error'); } setLoading(p => ({...p, account: false})); }}
+                disabled={loading.account} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
+                {loading.account ? '...' : '🔄 Refresh'}
+              </button>
+            </div>
+            {accountData ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.entries(accountData).filter(([k]) => !['id','created_at','updated_at'].includes(k) && accountData[k]).map(([k, v]) => (
+                  <div key={k} className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-gray-400 text-xs uppercase tracking-wider mb-0.5">{k.replace(/_/g, ' ')}</p>
+                    <p className="font-medium text-gray-800 text-sm">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-400 text-sm">{lang === 'en' ? 'Test connection first to load account data.' : 'Testez la connexion d\'abord.'}</p>
+            )}
+          </div>
+
+          {/* Transports */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">🚀 {lang === 'en' ? 'Active Transports' : 'Transports Actifs'}</h2>
+              <button onClick={loadTransports} disabled={loading.transports} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
+                {loading.transports ? '...' : '🔄 Load'}
+              </button>
+            </div>
+            {transports ? (
+              Array.isArray(transports) && transports.length > 0 ? (
+                <div className="space-y-3">
+                  {transports.map((tr, i) => (
+                    <div key={i} className="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-gray-800">{tr.code || tr.transport_type_code || 'Unknown'}</p>
+                        {tr.pin_value && <p className="text-xs text-gray-500 font-mono mt-0.5">PIN: {tr.pin_scheme}:{tr.pin_value}</p>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {tr.enabled && <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs">Active</span>}
+                        {tr.reception && <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">Reception</span>}
+                        {tr.invoice && <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-xs">Invoice</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-amber-800 text-sm font-medium">{lang === 'en' ? 'No transports configured yet' : 'Aucun transport configuré'}</p>
+                  <p className="text-amber-600 text-xs mt-1">{lang === 'en' ? 'You may need to activate Peppol, Chorus Pro, or B2BRouter transport in the B2BRouter app.' : 'Vous devrez peut-être activer Peppol, Chorus Pro ou le transport B2BRouter dans l\'application B2BRouter.'}</p>
+                </div>
+              )
+            ) : (
+              <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch transport config.' : 'Cliquez sur Load pour charger.'}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== CONTACTS TAB ===== */}
+      {activeTab === 'contacts' && (
+        <div className="bg-white rounded-xl border shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-800">👥 {lang === 'en' ? 'B2BRouter Contacts' : 'Contacts B2BRouter'}</h2>
+            <button onClick={loadContacts} disabled={loading.contacts} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
+              {loading.contacts ? '...' : '🔄 Load'}
+            </button>
+          </div>
+          {contacts ? (
+            <div>
+              {contacts.meta && <p className="text-xs text-gray-400 mb-3">Total: {contacts.meta.total_count} contacts</p>}
+              {(contacts.contacts || []).length > 0 ? (
+                <div className="overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-gray-50 text-left"><th className="px-3 py-2 text-xs text-gray-500">ID</th><th className="px-3 py-2 text-xs text-gray-500">Name</th><th className="px-3 py-2 text-xs text-gray-500">Country</th><th className="px-3 py-2 text-xs text-gray-500">TIN</th><th className="px-3 py-2 text-xs text-gray-500">Transport</th><th className="px-3 py-2 text-xs text-gray-500">Type</th></tr></thead>
+                    <tbody>
+                      {(contacts.contacts || []).map((c, i) => (
+                        <tr key={c.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 font-mono text-xs">{c.id}</td>
+                          <td className="px-3 py-2 font-medium">{c.name}</td>
+                          <td className="px-3 py-2">{c.country?.toUpperCase()}</td>
+                          <td className="px-3 py-2 font-mono text-xs">{c.tin_value || '—'}</td>
+                          <td className="px-3 py-2 text-xs">{c.transport_type_code || '—'}</td>
+                          <td className="px-3 py-2">
+                            {c.is_client && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs mr-1">Client</span>}
+                            {c.is_provider && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">Supplier</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No contacts found.' : 'Aucun contact trouvé.'}</p>}
+            </div>
+          ) : (
+            <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch contacts.' : 'Cliquez sur Load pour charger.'}</p>
+          )}
+        </div>
+      )}
+
+      {/* ===== INVOICES TAB ===== */}
+      {activeTab === 'invoices' && (
+        <div className="space-y-6">
+          {/* Test Invoice */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-2">🧪 {lang === 'en' ? 'Send Test Invoice' : 'Envoyer une Facture Test'}</h2>
+            <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Creates a test contact and sends a sample invoice through B2BRouter staging.' : 'Crée un contact test et envoie une facture exemple via B2BRouter staging.'}</p>
+            <button onClick={sendTestInvoice} disabled={sendingTest}
+              className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
+              {sendingTest ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Sending...</>) : '📤 Send Test Invoice'}
+            </button>
+            {testInvoiceResult && (
+              <div className={`mt-4 rounded-lg p-4 ${testInvoiceResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
+                {testInvoiceResult.error ? (
+                  <pre className="text-xs text-red-700 whitespace-pre-wrap break-all">{testInvoiceResult.error}</pre>
+                ) : (
+                  <div>
+                    <p className="text-green-800 font-medium mb-2">✅ Test invoice created!</p>
+                    <pre className="text-xs text-green-700 bg-white/50 rounded p-3 overflow-auto max-h-40">{JSON.stringify(testInvoiceResult, null, 2)}</pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Issued Invoices */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">📤 {lang === 'en' ? 'Issued Invoices' : 'Factures Émises'}</h2>
+              <button onClick={loadIssuedInvoices} disabled={loading.issued} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
+                {loading.issued ? '...' : '🔄 Load'}
+              </button>
+            </div>
+            {issuedInvoices ? (
+              <div>
+                {issuedInvoices.meta && <p className="text-xs text-gray-400 mb-3">Total: {issuedInvoices.meta.total_count}</p>}
+                {(issuedInvoices.invoices || []).length > 0 ? (
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">ID</th><th className="px-3 py-2 text-left text-xs text-gray-500">Number</th><th className="px-3 py-2 text-left text-xs text-gray-500">Date</th><th className="px-3 py-2 text-right text-xs text-gray-500">Total</th><th className="px-3 py-2 text-left text-xs text-gray-500">Status</th></tr></thead>
+                      <tbody>
+                        {(issuedInvoices.invoices || []).map((inv, i) => (
+                          <tr key={inv.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-3 py-2 font-mono text-xs">{inv.id}</td>
+                            <td className="px-3 py-2 font-medium">{inv.number || '—'}</td>
+                            <td className="px-3 py-2 text-gray-600">{inv.date || inv.created_at?.split('T')[0] || '—'}</td>
+                            <td className="px-3 py-2 text-right font-medium">{inv.total ? `${inv.total} ${inv.currency || '€'}` : '—'}</td>
+                            <td className="px-3 py-2"><StatusBadge status={inv.state} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No issued invoices found.' : 'Aucune facture émise.'}</p>}
+              </div>
+            ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch invoices.' : 'Cliquez sur Load.'}</p>}
+          </div>
+
+          {/* Received Invoices */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">📥 {lang === 'en' ? 'Received Invoices' : 'Factures Reçues'}</h2>
+              <button onClick={loadReceivedInvoices} disabled={loading.received} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
+                {loading.received ? '...' : '🔄 Load'}
+              </button>
+            </div>
+            {receivedInvoices ? (
+              <div>
+                {receivedInvoices.meta && <p className="text-xs text-gray-400 mb-3">Total: {receivedInvoices.meta.total_count}</p>}
+                {(receivedInvoices.invoices || []).length > 0 ? (
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-gray-50"><th className="px-3 py-2 text-left text-xs text-gray-500">ID</th><th className="px-3 py-2 text-left text-xs text-gray-500">From</th><th className="px-3 py-2 text-left text-xs text-gray-500">Number</th><th className="px-3 py-2 text-left text-xs text-gray-500">Date</th><th className="px-3 py-2 text-right text-xs text-gray-500">Total</th><th className="px-3 py-2 text-left text-xs text-gray-500">Status</th></tr></thead>
+                      <tbody>
+                        {(receivedInvoices.invoices || []).map((inv, i) => (
+                          <tr key={inv.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <td className="px-3 py-2 font-mono text-xs">{inv.id}</td>
+                            <td className="px-3 py-2 font-medium">{inv.from_name || inv.contact_name || '—'}</td>
+                            <td className="px-3 py-2">{inv.number || '—'}</td>
+                            <td className="px-3 py-2 text-gray-600">{inv.date || '—'}</td>
+                            <td className="px-3 py-2 text-right font-medium">{inv.total ? `${inv.total} ${inv.currency || '€'}` : '—'}</td>
+                            <td className="px-3 py-2"><StatusBadge status={inv.state} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No received invoices.' : 'Aucune facture reçue.'}</p>}
+              </div>
+            ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch.' : 'Cliquez sur Load.'}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* ===== EVENTS TAB ===== */}
+      {activeTab === 'events' && (
+        <div className="bg-white rounded-xl border shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-800">📋 {lang === 'en' ? 'Activity Log' : 'Journal d\'Activité'}</h2>
+            <button onClick={loadEvents} disabled={loading.events} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
+              {loading.events ? '...' : '🔄 Load'}
+            </button>
+          </div>
+          {events ? (
+            <div>
+              {events.meta && <p className="text-xs text-gray-400 mb-3">Total: {events.meta.total_count} events</p>}
+              {(events.events || []).length > 0 ? (
+                <div className="space-y-2">
+                  {(events.events || []).map((ev, i) => (
+                    <div key={ev.id || i} className="bg-gray-50 rounded-lg px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{ev.name || ev.event_type || ev.action || 'Event'}</p>
+                        {ev.invoice_id && <p className="text-xs text-gray-500">Invoice #{ev.invoice_id}</p>}
+                      </div>
+                      <p className="text-xs text-gray-400">{ev.created_at ? new Date(ev.created_at).toLocaleString('fr-FR') : ''}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'No events found.' : 'Aucun événement.'}</p>}
+            </div>
+          ) : <p className="text-gray-400 text-sm">{lang === 'en' ? 'Click Load to fetch.' : 'Cliquez sur Load.'}</p>}
+        </div>
+      )}
+
+      {/* ===== REFERENCE TAB ===== */}
+      {activeTab === 'reference' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-800">📚 {lang === 'en' ? 'API Code Lists' : 'Listes de Codes API'}</h2>
+              <button onClick={loadCodeLists} disabled={loading.codes} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm hover:bg-[#1a3d5c] disabled:opacity-50">
+                {loading.codes ? '...' : '🔄 Load All'}
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">{lang === 'en' ? 'Reference data from B2BRouter API — document types, transport types, identification schemes.' : 'Données de référence de l\'API B2BRouter — types de documents, types de transport, schémas d\'identification.'}</p>
+            
+            {docTypes && (
+              <div className="mb-6">
+                <h3 className="font-bold text-gray-700 mb-2 text-sm">Document Types ({(docTypes.document_types || []).length})</h3>
+                <div className="max-h-48 overflow-auto bg-gray-50 rounded-lg p-3">
+                  {(docTypes.document_types || []).map((dt, i) => (
+                    <div key={i} className="flex justify-between py-1 text-xs border-b border-gray-100 last:border-0">
+                      <span className="font-mono text-gray-800">{dt.code}</span>
+                      <span className="text-gray-500">{dt.name || dt.description || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {transportTypes && (
+              <div className="mb-6">
+                <h3 className="font-bold text-gray-700 mb-2 text-sm">Transport Types ({(transportTypes.transport_types || []).length})</h3>
+                <div className="max-h-48 overflow-auto bg-gray-50 rounded-lg p-3">
+                  {(transportTypes.transport_types || []).map((tt, i) => (
+                    <div key={i} className="flex justify-between py-1 text-xs border-b border-gray-100 last:border-0">
+                      <span className="font-mono text-gray-800">{tt.code}</span>
+                      <span className="text-gray-500">{tt.name || tt.description || ''}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {schemes && (
+              <div>
+                <h3 className="font-bold text-gray-700 mb-2 text-sm">Identification Schemes ({(schemes.schemes || []).length})</h3>
+                <div className="max-h-48 overflow-auto bg-gray-50 rounded-lg p-3">
+                  {(schemes.schemes || []).slice(0, 50).map((sc, i) => (
+                    <div key={i} className="flex justify-between py-1 text-xs border-b border-gray-100 last:border-0">
+                      <span className="font-mono text-gray-800">{sc.code}</span>
+                      <span className="text-gray-500 truncate ml-4">{sc.name || sc.description || ''}</span>
+                    </div>
+                  ))}
+                  {(schemes.schemes || []).length > 50 && <p className="text-xs text-gray-400 mt-2">...and {(schemes.schemes || []).length - 50} more</p>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Useful Links */}
+          <div className="bg-white rounded-xl border shadow-sm p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-4">🔗 {lang === 'en' ? 'Useful Links' : 'Liens Utiles'}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                { label: 'B2BRouter App (Staging)', url: 'https://app-staging.b2brouter.net' },
+                { label: 'API Docs', url: 'https://developer.b2brouter.net/docs/setting_up_guide' },
+                { label: 'API Reference', url: 'https://developer.b2brouter.net/reference' },
+                { label: 'France Chorus Pro Guide', url: 'https://developer.b2brouter.net/docs/send_an_invoice_through_chorus_pro' },
+                { label: 'France DGFiP Guide (Beta)', url: 'https://developer.b2brouter.net/docs/dgfip' },
+                { label: 'Chorus Pro Portal', url: 'https://chorus-pro.gouv.fr' },
+              ].map((link, i) => (
+                <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors text-sm text-[#2D5A7B] font-medium">
+                  🔗 {link.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function AdminSheet({ profile, staffMembers, notify, reload, businessSettings, setBusinessSettings, requests = [], clients = [], t = k=>k, lang = 'fr', setLang }) {
   const [editingSettings, setEditingSettings] = useState(false);
