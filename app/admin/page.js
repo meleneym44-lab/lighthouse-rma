@@ -1841,7 +1841,16 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   // Client box — clean border, no thick accent bar
   const clientBoxX = pageWidth / 2 + 8;
   const clientBoxW = pageWidth / 2 - margin - 8;
-  const clientBoxH = 36;
+  
+  // Calculate dynamic client box height
+  let clientBoxLines = 2; // name + "FACTURER À"
+  if (company?.attention) clientBoxLines++;
+  if (company?.address) clientBoxLines++;
+  if ([company?.postal_code, company?.city].filter(Boolean).join('')) clientBoxLines++;
+  if (company?.country && company.country !== 'France') clientBoxLines++;
+  if (company?.tva_number) clientBoxLines++;
+  if (company?.siret_number) clientBoxLines++;
+  const clientBoxH = Math.max(36, 12 + clientBoxLines * 4.5 + 2);
   
   pdf.setFillColor(248, 250, 252);
   pdf.setDrawColor(...lightLine);
@@ -1870,7 +1879,14 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
   if (company?.tva_number) {
     pdf.setFontSize(8);
     pdf.setTextColor(...medGray);
-    pdf.text('TVA: ' + company.tva_number, clientBoxX + 5, clientY);
+    pdf.text('TVA Intra. : ' + company.tva_number, clientBoxX + 5, clientY);
+    clientY += 4;
+  }
+  if (company?.siret_number) {
+    pdf.setFontSize(8);
+    pdf.setTextColor(...medGray);
+    pdf.text('SIRET : ' + company.siret_number, clientBoxX + 5, clientY);
+    clientY += 4;
   }
   
   y = Math.max(refY, blockY + clientBoxH) + 6;
@@ -26641,6 +26657,7 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
   const invoiceLines = inv.invoice_lines || [];
   const company = inv.companies || {};
   const rma = inv.service_requests || {};
+  const billingAddr = (rma.quote_data || {}).billingAddress || null;
   
   const isOverdue = inv.due_date && !['paid', 'cancelled'].includes(inv.status) && new Date(inv.due_date) < new Date();
   const daysPastDue = inv.due_date ? Math.max(0, Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24))) : 0;
@@ -26866,22 +26883,33 @@ function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings
               <button disabled={sendingEInvoice} onClick={async () => {
                 setSendingEInvoice(true);
                 try {
+                  const clientTVANum = inv.client_tva_number || billingAddr?.tva_number || company.tva_number || '';
+                  const clientName = billingAddr?.company_name || company.name || '';
+                  if (!clientTVANum) {
+                    notify(lang === 'en' ? '⚠️ Client TVA number is required for e-invoicing. Add it in the billing address.' : '⚠️ Le numéro de TVA du client est requis pour la e-facturation. Ajoutez-le dans l\'adresse de facturation.', 'error');
+                    setSendingEInvoice(false); return;
+                  }
+                  if (!clientName) {
+                    notify(lang === 'en' ? '⚠️ Client name is missing.' : '⚠️ Le nom du client est manquant.', 'error');
+                    setSendingEInvoice(false); return;
+                  }
                   const invLines = (inv.invoice_lines || []).filter(l => l.line_type !== 'device_header');
                   const res = await fetch('/api/b2brouter', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       action: 'create_einvoice',
                       contact_data: {
-                        name: company.name || '',
-                        tin_value: inv.client_tva_number || company.tva_number || '',
-                        tin_scheme: '9957', country: 'fr',
+                        name: clientName,
+                        tin_value: clientTVANum,
+                        tin_scheme: '9957',
+                        country: billingAddr?.country?.toLowerCase() === 'france' ? 'fr' : (billingAddr?.country || 'fr'),
                         email: company.email || '',
-                        address: company.billing_address || company.address || '',
-                        postalcode: company.billing_postal_code || company.postal_code || '',
-                        city: company.billing_city || company.city || '',
-                        transport_type_code: company.chorus_invoicing ? 'fr.chorus' : 'b2brouter',
+                        address: billingAddr?.address_line1 || company.billing_address || company.address || '',
+                        postalcode: billingAddr?.postal_code || company.billing_postal_code || company.postal_code || '',
+                        city: billingAddr?.city || company.billing_city || company.city || '',
+                        transport_type_code: (billingAddr?.chorus_invoicing || company.chorus_invoicing) ? 'fr.chorus' : 'b2brouter',
                         document_type_code: 'xml.ubl.invoice',
-                        public_sector: company.chorus_invoicing || false
+                        public_sector: billingAddr?.chorus_invoicing || company.chorus_invoicing || false
                       },
                       invoice_data: {
                         number: inv.invoice_number,
@@ -26940,7 +26968,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
   const [lines, setLines] = useState([]);
   const [saving, setSaving] = useState(false);
   const [clientRef, setClientRef] = useState('');
-  const [clientTVA, setClientTVA] = useState('');
+  const [clientTVA, setClientTVA] = useState((rma.quote_data || {}).billingAddress?.tva_number || rma.companies?.tva_number || '');
   const [isExonerated, setIsExonerated] = useState(false);
   const [paymentTermsDays, setPaymentTermsDays] = useState(businessSettings?.payment_terms_days || 30);
   const [notes, setNotes] = useState('');
@@ -26952,6 +26980,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
   const company = rma.companies || {};
   const devices = rma.request_devices || [];
   const quoteData = rma.quote_data || {};
+  const billingAddr = quoteData.billingAddress || null;
 
   // Build initial line items from quote_data + supplement data
   useEffect(() => {
@@ -27145,6 +27174,18 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
         isDevice: l.lineType === 'device_header'
       }));
 
+      // Resolve billing address — same source as quotes
+      const billingAddr = quoteData.billingAddress || null;
+      const bName = billingAddr?.company_name || company.name || 'Client';
+      const bAttn = billingAddr?.attention || company.billing_contact || company.contact_name || '';
+      const bAddr = billingAddr?.address_line1 || company.billing_address || company.address || '';
+      const bPostal = billingAddr?.postal_code || company.billing_postal_code || company.postal_code || '';
+      const bCity = billingAddr?.city || company.billing_city || company.city || '';
+      const bCountry = billingAddr?.country || company.billing_country || company.country || 'France';
+      const bTva = clientTVA || billingAddr?.tva_number || company.tva_number || '';
+      const bSiret = billingAddr?.siret || company.siret || '';
+      const bChorus = billingAddr?.chorus_invoicing || company.chorus_invoicing || false;
+
       // Generate PDF
       let pdfUrl = null;
       try {
@@ -27153,13 +27194,14 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           invoiceDate,
           dueDate,
           company: {
-            name: company.name,
-            attention: company.billing_contact || company.contact_name || '',
-            address: company.billing_address || company.address || '',
-            postal_code: company.billing_postal_code || company.postal_code || '',
-            city: company.billing_city || company.city || '',
-            country: company.billing_country || company.country || 'France',
-            tva_number: clientTVA || company.tva_number || ''
+            name: bName,
+            attention: bAttn,
+            address: bAddr,
+            postal_code: bPostal,
+            city: bCity,
+            country: bCountry,
+            tva_number: bTva,
+            siret_number: bSiret
           },
           clientRef,
           rmaNumber: rma.request_number,
@@ -27200,7 +27242,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           total_ttc: totalTTC,
           is_tva_exonerated: isExonerated,
           client_ref: clientRef,
-          client_tva_number: clientTVA,
+          client_tva_number: clientTVA || billingAddr?.tva_number || company.tva_number || '',
           pdf_url: pdfUrl,
           notes,
           created_by: profile?.id
@@ -27419,23 +27461,32 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                     onClick={async () => {
                       setSendingEInvoice(true);
                       try {
+                        const clientTVANum = clientTVA || billingAddr?.tva_number || company.tva_number || '';
+                        if (!clientTVANum) {
+                          notify(lang === 'en' ? '⚠️ Client TVA number required for e-invoicing. Enter it in the TVA field above or in the billing address.' : '⚠️ Numéro de TVA client requis pour la e-facturation. Saisissez-le dans le champ TVA ou dans l\'adresse de facturation.', 'error');
+                          setSendingEInvoice(false); return;
+                        }
+                        if (!company.name) {
+                          notify(lang === 'en' ? '⚠️ Client name is missing.' : '⚠️ Nom du client manquant.', 'error');
+                          setSendingEInvoice(false); return;
+                        }
                         const res = await fetch('/api/b2brouter', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
                             action: 'create_einvoice',
                             contact_data: {
-                              name: company.name,
-                              tin_value: clientTVA || company.tva_number || '',
+                              name: billingAddr?.company_name || company.name,
+                              tin_value: clientTVA || billingAddr?.tva_number || company.tva_number || '',
                               tin_scheme: '9957',
-                              country: 'fr',
+                              country: billingAddr?.country?.toLowerCase() === 'france' ? 'fr' : (billingAddr?.country || 'fr'),
                               email: company.email || '',
-                              address: company.billing_address || company.address || '',
-                              postalcode: company.billing_postal_code || company.postal_code || '',
-                              city: company.billing_city || company.city || '',
-                              transport_type_code: company.chorus_invoicing ? 'fr.chorus' : 'b2brouter',
+                              address: billingAddr?.address_line1 || company.billing_address || company.address || '',
+                              postalcode: billingAddr?.postal_code || company.billing_postal_code || company.postal_code || '',
+                              city: billingAddr?.city || company.billing_city || company.city || '',
+                              transport_type_code: (billingAddr?.chorus_invoicing || company.chorus_invoicing) ? 'fr.chorus' : 'b2brouter',
                               document_type_code: 'xml.ubl.invoice',
-                              public_sector: company.chorus_invoicing || false
+                              public_sector: billingAddr?.chorus_invoicing || company.chorus_invoicing || false
                             },
                             invoice_data: {
                               number: savedInvoice.invoice_number,
