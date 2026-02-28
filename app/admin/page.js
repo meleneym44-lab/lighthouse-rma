@@ -28441,38 +28441,43 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             const updates = { status: newStatus };
             if (newStatus === 'ordered') updates.ordered_at = new Date().toISOString();
             if (newStatus === 'delivered') updates.delivered_at = new Date().toISOString();
-            await supabase.from('supplier_purchase_orders').update(updates).eq('id', po.id);
+            const { error } = await supabase.from('supplier_purchase_orders').update(updates).eq('id', po.id);
+            if (error) throw error;
             notify(`✅ ${po.po_number} → ${({ ordered: 'Commandé', delivered: 'Reçu' })[newStatus] || newStatus}`);
             loadPurchaseOrders();
-          } catch (err) { notify(err.message, 'error'); }
+          } catch (err) { notify('Erreur: ' + (err.message || JSON.stringify(err)), 'error'); console.error('PO status error:', err); }
         };
 
         const poLinkInvoice = async (po) => {
           if (!poSupplierInvoiceRef.trim()) { notify('N° facture requis', 'error'); return; }
           try {
-            await supabase.from('supplier_purchase_orders').update({
+            const { error } = await supabase.from('supplier_purchase_orders').update({
               supplier_invoice_ref: poSupplierInvoiceRef.trim(),
               supplier_invoice_amount: parseFloat(poSupplierInvoiceAmount) || null, status: 'invoiced'
             }).eq('id', po.id);
+            if (error) throw error;
             setPoSupplierInvoiceRef(''); setPoSupplierInvoiceAmount('');
             notify('🧾 Facture liée!');
             loadPurchaseOrders();
-          } catch (err) { notify(err.message, 'error'); }
+          } catch (err) { notify('Erreur: ' + (err.message || JSON.stringify(err)), 'error'); console.error('PO invoice error:', err); }
         };
 
         const poMarkPaid = async (po) => {
           try {
-            await supabase.from('supplier_purchase_orders').update({
-              status: 'paid',
-              payment_amount: parseFloat(poPaymentAmount) || parseFloat(po.supplier_invoice_amount) || po.subtotal_ht,
-              payment_date: poPaymentDate || new Date().toISOString().split('T')[0],
-              payment_method: poPaymentMethod
-            }).eq('id', po.id);
+            const updateData = { status: 'paid' };
+            if (poPaymentAmount) updateData.payment_amount = parseFloat(poPaymentAmount);
+            else if (po.supplier_invoice_amount) updateData.payment_amount = parseFloat(po.supplier_invoice_amount);
+            else updateData.payment_amount = parseFloat(po.subtotal_ht);
+            if (poPaymentDate) updateData.payment_date = poPaymentDate;
+            else updateData.payment_date = new Date().toISOString().split('T')[0];
+            if (poPaymentMethod) updateData.payment_method = poPaymentMethod;
+            const { error } = await supabase.from('supplier_purchase_orders').update(updateData).eq('id', po.id);
+            if (error) throw error;
             setPoPaymentAmount(''); setPoPaymentDate(''); setPoPaymentMethod('virement');
             setPoViewId(null);
             notify('✅ Payé! Dossier archivé.');
             loadPurchaseOrders();
-          } catch (err) { notify(err.message, 'error'); }
+          } catch (err) { notify('Erreur: ' + (err.message || JSON.stringify(err)), 'error'); console.error('PO paid error:', err); }
         };
 
         const viewPO = poViewId ? purchaseOrders.find(p => p.id === poViewId) : null;
@@ -28482,7 +28487,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
         const statusIcons = { draft: '📝', ordered: '📦', delivered: '✅', invoiced: '🧾', paid: '💰' };
 
         // Chevron progress bar component (matches parts order style)
-        const POProgressBar = ({ status }) => {
+        const POProgressBar = ({ status, compact }) => {
           const currentIdx = statusSteps.indexOf(status) >= 0 ? statusSteps.indexOf(status) : 0;
           return (
             <div className="flex items-center w-full">
@@ -28493,7 +28498,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                 return (
                   <div key={st} className="flex items-center flex-1">
                     <div
-                      className={`relative flex items-center justify-center flex-1 py-2 px-1 text-xs font-medium ${
+                      className={`relative flex items-center justify-center flex-1 ${compact ? 'py-1 text-[10px]' : 'py-2 text-xs'} px-1 font-medium ${
                         isCompleted ? 'bg-[#2D5A7B] text-white' : isCurrent ? 'bg-[#007A3D] text-white' : 'bg-gray-200 text-gray-500'
                       } ${i === 0 ? 'rounded-l-md' : ''} ${isLast ? 'rounded-r-md' : ''}`}
                       style={{
@@ -28504,7 +28509,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                             : 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%, 8px 50%)'
                       }}
                     >
-                      <span className="mr-1">{statusIcons[st]}</span>
+                      <span className="mr-0.5">{statusIcons[st]}</span>
                       <span className="hidden sm:inline">{statusLabels[st]}</span>
                     </div>
                   </div>
@@ -28568,33 +28573,24 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                 return (
                   <div key={po.id} onClick={() => { setPoViewId(po.id); setPoTab('details'); loadPoAttachments(po.id); }}
                     className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden">
-                    {/* Chevron progress at top of card */}
-                    <POProgressBar status={po.status} />
-                    <div className="p-4">
-                      <div className="flex items-start justify-between gap-4">
+                    <POProgressBar status={po.status} compact />
+                    <div className="px-4 py-2.5">
+                      <div className="flex items-center justify-between gap-4">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-mono font-bold text-[#2D5A7B] text-base">{po.po_number}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600`}>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="font-mono font-bold text-[#2D5A7B] text-sm">{po.po_number}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
                               {typeIcons[po.po_type] || '📦'} {typeLabels[po.po_type] || 'Général'}
                             </span>
-                            {isLate && <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-600 animate-pulse">⚠️ En retard</span>}
+                            {isLate && <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-600">⚠️ Retard</span>}
                           </div>
-                          <p className="text-lg font-semibold text-gray-800">{po.supplier_name}</p>
-                          {po.supplier_ref && <p className="text-sm text-gray-400">Réf: {po.supplier_ref}</p>}
+                          <p className="text-base font-semibold text-gray-800">{po.supplier_name}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="text-xl font-bold text-gray-800">{fmt(po.subtotal_ht)}</p>
-                          <p className="text-xs text-gray-400 mt-1">{po.created_at?.split('T')[0]}</p>
-                          {po.expected_date && <p className={`text-xs mt-0.5 ${isLate ? 'text-red-500 font-medium' : 'text-gray-400'}`}>🚚 {po.expected_date}</p>}
+                          <p className="text-lg font-bold text-gray-800">{fmt(po.subtotal_ht)}</p>
+                          <p className="text-[10px] text-gray-400">{po.created_at?.split('T')[0]}</p>
                         </div>
-                      </div>
-                      {/* Bottom info strip */}
-                      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100">
-                        <StatusBadge status={po.status} />
-                        {po.supplier_invoice_ref && <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded">🧾 {po.supplier_invoice_ref}</span>}
-                        {po.pdf_url && <span className="text-xs text-gray-400">📄 PDF</span>}
-                        <span className="ml-auto text-gray-300 text-lg">›</span>
+                        <span className="text-gray-300 text-lg shrink-0">›</span>
                       </div>
                     </div>
                   </div>
