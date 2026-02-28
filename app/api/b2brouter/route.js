@@ -287,7 +287,18 @@ export async function POST(request) {
         }
       }
 
-      // Step 2: Create and send a test invoice
+      // Step 2: Ensure contact has document_type_code set
+      const updateRes = await fetch(`${B2B_API_URL}/contacts/${contactId}`, {
+        method: 'PUT', headers: headers(),
+        body: JSON.stringify({ contact: { transport_type_code: 'b2brouter', document_type_code: 'xml.ubl.invoice' } })
+      });
+      if (!updateRes.ok) {
+        const updateErr = await updateRes.json().catch(() => ({}));
+        // Non-fatal — continue anyway
+        console.warn('Contact update warning:', updateErr);
+      }
+
+      // Step 3: Create and send a test invoice
       const invoiceRes = await fetch(`${B2B_API_URL}/accounts/${B2B_ACCOUNT_ID}/invoices`, {
         method: 'POST', headers: headers(),
         body: JSON.stringify({
