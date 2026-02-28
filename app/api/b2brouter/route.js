@@ -250,32 +250,41 @@ export async function POST(request) {
 
     // --- Send a test invoice (convenience wrapper) ---
     if (action === 'send_test_invoice') {
-      // Step 1: Create a test contact if not provided
+      // Step 1: Find or create test contact
       let contactId = payload.contact_id;
       if (!contactId) {
-        const contactRes = await fetch(`${B2B_API_URL}/accounts/${B2B_ACCOUNT_ID}/contacts`, {
-          method: 'POST', headers: headers(),
-          body: JSON.stringify({
-            contact: {
-              language: 'fr',
-              is_client: true,
-              is_provider: false,
-              name: payload.contact_name || 'B2Brouter Global S.L. (Test)',
-              tin_value: payload.contact_tin || 'ESB63276174',
-              tin_scheme: '9920',
-              country: payload.contact_country || 'es',
-              email: payload.contact_email || 'test@b2brouter.net',
-              address: payload.contact_address || 'Avda. Diagonal, 433 1º1ª',
-              postalcode: payload.contact_postal || '08036',
-              city: payload.contact_city || 'Barcelona',
-              transport_type_code: 'b2brouter',
-              document_type_code: 'xml.ubl.invoice'
-            }
-          })
-        });
-        const contactData = await contactRes.json();
-        if (!contactRes.ok) return Response.json({ error: contactData, step: 'create_contact', status: contactRes.status }, { status: contactRes.status });
-        contactId = contactData.contact?.id;
+        // Try to find existing contact first
+        const searchName = payload.contact_name || 'B2Brouter Global S.L.';
+        const lookupRes = await fetch(`${B2B_API_URL}/accounts/${B2B_ACCOUNT_ID}/contacts?name=${encodeURIComponent(searchName)}&limit=1`, { headers: headers() });
+        const lookupData = await lookupRes.json();
+        if (lookupRes.ok && lookupData.contacts && lookupData.contacts.length > 0) {
+          contactId = lookupData.contacts[0].id;
+        } else {
+          // Create if not found
+          const contactRes = await fetch(`${B2B_API_URL}/accounts/${B2B_ACCOUNT_ID}/contacts`, {
+            method: 'POST', headers: headers(),
+            body: JSON.stringify({
+              contact: {
+                language: 'fr',
+                is_client: true,
+                is_provider: false,
+                name: payload.contact_name || 'B2Brouter Global S.L. (Test)',
+                tin_value: payload.contact_tin || 'ESB63276174',
+                tin_scheme: '9920',
+                country: payload.contact_country || 'es',
+                email: payload.contact_email || 'test@b2brouter.net',
+                address: payload.contact_address || 'Avda. Diagonal, 433 1º1ª',
+                postalcode: payload.contact_postal || '08036',
+                city: payload.contact_city || 'Barcelona',
+                transport_type_code: 'b2brouter',
+                document_type_code: 'xml.ubl.invoice'
+              }
+            })
+          });
+          const contactData = await contactRes.json();
+          if (!contactRes.ok) return Response.json({ error: contactData, step: 'create_contact', status: contactRes.status }, { status: contactRes.status });
+          contactId = contactData.contact?.id;
+        }
       }
 
       // Step 2: Create and send a test invoice
