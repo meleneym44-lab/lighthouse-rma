@@ -27614,6 +27614,17 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [cnSaving, setCnSaving] = useState(false);
   const [cnSaved, setCnSaved] = useState(null);
 
+  // Purchase order state
+  const [poSupplier, setPoSupplier] = useState('');
+  const [poSupplierRef, setPoSupplierRef] = useState('');
+  const [poExpectedDate, setPoExpectedDate] = useState('');
+  const [poNotes, setPoNotes] = useState('');
+  const [poLines, setPoLines] = useState([{ id: 'p1', description: '', quantity: 1, unitPrice: 0, total: 0 }]);
+  const [poSaving, setPoSaving] = useState(false);
+  const [poSaved, setPoSaved] = useState(null);
+  const [poStep, setPoStep] = useState(1);
+  const [poViewId, setPoViewId] = useState(null);
+
   const biz = businessSettings || {};
 
   // ===== DATA LOADING =====
@@ -27632,9 +27643,16 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
     if (data) setBillingAddresses(data);
   };
 
+  const loadPurchaseOrders = async () => {
+    const { data } = await supabase.from('supplier_purchase_orders')
+      .select('*, supplier_po_lines(*)')
+      .order('created_at', { ascending: false });
+    if (data) setPurchaseOrders(data);
+  };
+
   const loadAll = async () => {
     setLoadingData(true);
-    await Promise.all([loadInvoices(), loadBillingAddresses()]);
+    await Promise.all([loadInvoices(), loadBillingAddresses(), loadPurchaseOrders()]);
     setLoadingData(false);
   };
 
@@ -28157,25 +28175,395 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
       {/* ================================================================
            PURCHASE ORDERS TAB
          ================================================================ */}
-      {activeTab === 'purchase_orders' && (
-        <div className="space-y-4">
-          <SectionHeader title={lang === 'en' ? 'Purchase Orders' : 'Bons de Commande Fournisseurs'} icon="🛒" actions={
-            <button className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouveau BC</button>
-          } />
-          <div className="bg-white rounded-xl border shadow-sm p-6">
-            <EmptyState icon="🛒" title={lang === 'en' ? 'Purchase Orders' : 'Bons de Commande'} subtitle={lang === 'en' ? 'Create and track purchase orders to suppliers. Coming in Phase 2.7' : 'Créez et suivez les bons de commande fournisseurs. Disponible Phase 2.7'} />
-            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="font-medium text-blue-800 mb-2">ℹ️ {lang === 'en' ? 'Planned workflow' : 'Workflow prévu'}</h4>
-              <ul className="text-sm text-blue-700 space-y-1">
-                <li>• {lang === 'en' ? 'Create PO → Send to supplier' : 'Créer BC → Envoyer au fournisseur'}</li>
-                <li>• {lang === 'en' ? 'Receive goods → Mark as delivered' : 'Recevoir marchandises → Marquer comme livré'}</li>
-                <li>• {lang === 'en' ? 'Match incoming invoice to PO' : 'Rapprocher facture fournisseur au BC'}</li>
-                <li>• {lang === 'en' ? 'Approve payment → Track in bank' : 'Approuver paiement → Suivre en banque'}</li>
-              </ul>
-            </div>
+      {activeTab === 'purchase_orders' && (() => {
+        const poUpdateLine = (id, field, value) => {
+          setPoLines(prev => prev.map(l => {
+            if (l.id !== id) return l;
+            const u = { ...l, [field]: value };
+            if (field === 'quantity' || field === 'unitPrice') u.total = (parseFloat(u.quantity) || 0) * (parseFloat(u.unitPrice) || 0);
+            return u;
+          }));
+        };
+        const poAddLine = () => setPoLines(prev => [...prev, { id: `p${Date.now()}`, description: '', quantity: 1, unitPrice: 0, total: 0 }]);
+        const poRemoveLine = (id) => setPoLines(prev => prev.filter(l => l.id !== id));
+        const poSubtotal = poLines.reduce((s, l) => s + (parseFloat(l.total) || 0), 0);
+
+        const filteredPOs = (() => {
+          let pos = purchaseOrders || [];
+          if (searchTerm) {
+            const s = searchTerm.toLowerCase();
+            pos = pos.filter(p => (p.po_number || '').toLowerCase().includes(s) || (p.supplier_name || '').toLowerCase().includes(s));
+          }
+          if (dateFrom) pos = pos.filter(p => p.created_at >= dateFrom);
+          if (dateTo) pos = pos.filter(p => p.created_at <= dateTo + 'T23:59:59');
+          return pos;
+        })();
+
+        const poStatusCounts = {
+          draft: purchaseOrders.filter(p => p.status === 'draft').length,
+          ordered: purchaseOrders.filter(p => p.status === 'ordered').length,
+          partial: purchaseOrders.filter(p => p.status === 'partial').length,
+          delivered: purchaseOrders.filter(p => p.status === 'delivered').length,
+          invoiced: purchaseOrders.filter(p => p.status === 'invoiced').length,
+        };
+
+        const poHandleSave = async () => {
+          if (!poSupplier.trim()) { notify('Nom du fournisseur requis', 'error'); return; }
+          if (poLines.filter(l => l.description).length === 0) { notify('Ajoutez au moins une ligne', 'error'); return; }
+          setPoSaving(true);
+          try {
+            let poNumber;
+            try {
+              const { data: docNum } = await supabase.rpc('get_next_doc_number', { p_doc_type: 'BC-INT' });
+              if (docNum) poNumber = docNum;
+            } catch (e) {
+              const now = new Date();
+              poNumber = `BC-INT-${String(now.getMonth()+1).padStart(2,'0')}${String(now.getFullYear()).slice(-2)}-001`;
+            }
+
+            const { data: newPO, error } = await supabase.from('supplier_purchase_orders').insert({
+              po_number: poNumber, supplier_name: poSupplier.trim(), supplier_ref: poSupplierRef,
+              status: 'draft', expected_date: poExpectedDate || null, notes: poNotes,
+              subtotal_ht: poSubtotal, created_by: profile?.id
+            }).select().single();
+            if (error) throw error;
+
+            if (newPO) {
+              const lineInserts = poLines.filter(l => l.description).map((l, idx) => ({
+                po_id: newPO.id, description: l.description,
+                quantity: parseInt(l.quantity) || 1, unit_price_ht: parseFloat(l.unitPrice) || 0,
+                total_ht: parseFloat(l.total) || 0, sort_order: idx
+              }));
+              await supabase.from('supplier_po_lines').insert(lineInserts);
+            }
+
+            setPoSaved(newPO);
+            setPoStep(3);
+            notify(`✅ BC ${poNumber} créé!`);
+            loadPurchaseOrders();
+          } catch (err) {
+            notify('Erreur: ' + (err.message || 'Erreur'), 'error');
+          }
+          setPoSaving(false);
+        };
+
+        const poUpdateStatus = async (po, newStatus) => {
+          try {
+            const updates = { status: newStatus };
+            if (newStatus === 'ordered') updates.ordered_at = new Date().toISOString();
+            if (newStatus === 'delivered') updates.delivered_at = new Date().toISOString();
+            await supabase.from('supplier_purchase_orders').update(updates).eq('id', po.id);
+            notify(`BC ${po.po_number} → ${newStatus}`);
+            loadPurchaseOrders();
+          } catch (err) { notify(err.message, 'error'); }
+        };
+
+        const viewPO = poViewId ? purchaseOrders.find(p => p.id === poViewId) : null;
+
+        return (
+          <div className="space-y-4">
+            {/* LIST VIEW */}
+            {poStep === 1 && !poViewId && (
+              <div className="space-y-4">
+                <SectionHeader title={lang === 'en' ? 'Supplier Purchase Orders' : 'Bons de Commande Fournisseurs'} icon="🛒" actions={
+                  <div className="flex items-center gap-2">
+                    <button onClick={loadPurchaseOrders} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">🔄</button>
+                    <button onClick={() => { setPoStep(2); setPoSupplier(''); setPoSupplierRef(''); setPoExpectedDate(''); setPoNotes(''); setPoLines([{ id: 'p1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setPoSaved(null); }}
+                      className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouveau BC</button>
+                  </div>
+                } />
+                <SearchBar placeholder="Rechercher par n° BC, fournisseur..." />
+
+                {/* Status summary */}
+                <div className="grid grid-cols-5 gap-3">
+                  {[
+                    { label: 'Brouillon', count: poStatusCounts.draft, color: 'gray' },
+                    { label: 'Commandé', count: poStatusCounts.ordered, color: 'blue' },
+                    { label: 'Partiel', count: poStatusCounts.partial, color: 'amber' },
+                    { label: 'Livré', count: poStatusCounts.delivered, color: 'green' },
+                    { label: 'Facturé', count: poStatusCounts.invoiced, color: 'purple' },
+                  ].map((s, i) => (
+                    <div key={i} className="bg-white rounded-lg border p-3 text-center">
+                      <p className={`text-xl font-bold text-${s.color}-600`}>{s.count}</p>
+                      <p className="text-xs text-gray-500">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* PO table */}
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                  {filteredPOs.length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-gray-50 border-b">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° BC</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fournisseur</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Livraison prévue</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total HT</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr></thead>
+                      <tbody>
+                        {filteredPOs.map((po, i) => {
+                          const isLate = po.expected_date && po.status !== 'delivered' && po.status !== 'invoiced' && new Date(po.expected_date) < now;
+                          return (
+                            <tr key={po.id} className={`border-b last:border-0 hover:bg-gray-50 ${isLate ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                              <td className="px-4 py-3 font-mono font-medium text-gray-800">{po.po_number}</td>
+                              <td className="px-4 py-3">
+                                <p className="text-gray-700">{po.supplier_name}</p>
+                                {po.supplier_ref && <p className="text-[10px] text-gray-400">Réf: {po.supplier_ref}</p>}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 text-xs">{po.created_at?.split('T')[0]}</td>
+                              <td className="px-4 py-3">
+                                <span className={isLate ? 'text-red-600 font-medium text-xs' : 'text-gray-600 text-xs'}>{po.expected_date || '—'}</span>
+                                {isLate && <span className="ml-1 text-[10px] text-red-500">⚠️ En retard</span>}
+                              </td>
+                              <td className="px-4 py-3 text-right font-medium text-gray-800">{fmt(po.subtotal_ht)}</td>
+                              <td className="px-4 py-3 text-center"><StatusBadge status={po.status} /></td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button onClick={() => setPoViewId(po.id)} className="p-1 hover:bg-gray-100 rounded text-sm" title="Détails">👁️</button>
+                                  {po.status === 'draft' && (
+                                    <button onClick={() => poUpdateStatus(po, 'ordered')} className="p-1 hover:bg-blue-100 rounded text-xs text-blue-600" title="Marquer commandé">📦</button>
+                                  )}
+                                  {(po.status === 'ordered' || po.status === 'partial') && (
+                                    <button onClick={() => poUpdateStatus(po, 'delivered')} className="p-1 hover:bg-green-100 rounded text-xs text-green-600" title="Marquer livré">✓</button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <EmptyState icon="🛒" title="Aucun bon de commande" subtitle="Créez votre premier BC fournisseur" />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* DETAIL VIEW */}
+            {poStep === 1 && poViewId && viewPO && (
+              <div className="space-y-4">
+                <SectionHeader title={`BC ${viewPO.po_number}`} icon="🛒" actions={
+                  <button onClick={() => setPoViewId(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
+                } />
+
+                <div className="bg-white rounded-xl border shadow-sm p-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase">Fournisseur</p>
+                      <p className="font-bold text-gray-800">{viewPO.supplier_name}</p>
+                      {viewPO.supplier_ref && <p className="text-xs text-gray-500">Réf: {viewPO.supplier_ref}</p>}
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase">Date création</p>
+                      <p className="font-medium text-gray-800">{viewPO.created_at?.split('T')[0]}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase">Livraison prévue</p>
+                      <p className="font-medium text-gray-800">{viewPO.expected_date || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase">Statut</p>
+                      <div className="mt-1"><StatusBadge status={viewPO.status} /></div>
+                    </div>
+                  </div>
+
+                  {/* Lines */}
+                  <h4 className="font-bold text-gray-800 mb-3">Lignes</h4>
+                  <table className="w-full text-sm mb-4">
+                    <thead><tr className="border-b">
+                      <th className="pb-2 text-left text-xs text-gray-500">Description</th>
+                      <th className="pb-2 text-center text-xs text-gray-500">Qté</th>
+                      <th className="pb-2 text-right text-xs text-gray-500">P.U. HT</th>
+                      <th className="pb-2 text-right text-xs text-gray-500">Total HT</th>
+                    </tr></thead>
+                    <tbody>
+                      {(viewPO.supplier_po_lines || []).sort((a,b) => (a.sort_order||0) - (b.sort_order||0)).map(l => (
+                        <tr key={l.id} className="border-b border-gray-100">
+                          <td className="py-2 text-gray-700">{l.description}</td>
+                          <td className="py-2 text-center text-gray-600">{l.quantity}</td>
+                          <td className="py-2 text-right text-gray-600">{fmt(l.unit_price_ht)}</td>
+                          <td className="py-2 text-right font-medium text-gray-800">{fmt(l.total_ht)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="flex justify-end border-t pt-3">
+                    <div className="text-right">
+                      <span className="text-gray-500 mr-4">Total HT</span>
+                      <span className="text-lg font-bold text-gray-800">{fmt(viewPO.subtotal_ht)}</span>
+                    </div>
+                  </div>
+
+                  {viewPO.notes && (
+                    <div className="mt-4 bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs text-gray-400 uppercase mb-1">Notes</p>
+                      <p className="text-sm text-gray-700">{viewPO.notes}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Status actions */}
+                <div className="bg-white rounded-xl border shadow-sm p-6">
+                  <h4 className="font-bold text-gray-800 mb-3">Progression</h4>
+                  <div className="flex items-center gap-2 mb-4">
+                    {['draft','ordered','partial','delivered','invoiced'].map((st, i) => {
+                      const labels = { draft: 'Brouillon', ordered: 'Commandé', partial: 'Partiel', delivered: 'Livré', invoiced: 'Facturé' };
+                      const statusOrder = ['draft','ordered','partial','delivered','invoiced'];
+                      const currentIdx = statusOrder.indexOf(viewPO.status);
+                      const isActive = i <= currentIdx;
+                      return (
+                        <Fragment key={st}>
+                          {i > 0 && <div className={`flex-1 h-0.5 ${i <= currentIdx ? 'bg-[#2D5A7B]' : 'bg-gray-200'}`}></div>}
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-500'}`}>{i+1}</div>
+                        </Fragment>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-400 mb-4 px-1">
+                    <span className="w-8 text-center">Brouillon</span><span className="flex-1"></span>
+                    <span className="w-8 text-center">Commandé</span><span className="flex-1"></span>
+                    <span className="w-8 text-center">Partiel</span><span className="flex-1"></span>
+                    <span className="w-8 text-center">Livré</span><span className="flex-1"></span>
+                    <span className="w-8 text-center">Facturé</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {viewPO.status === 'draft' && (
+                      <button onClick={() => poUpdateStatus(viewPO, 'ordered')} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium">📦 Marquer Commandé</button>
+                    )}
+                    {viewPO.status === 'ordered' && (
+                      <>
+                        <button onClick={() => poUpdateStatus(viewPO, 'partial')} className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium">📦 Réception Partielle</button>
+                        <button onClick={() => poUpdateStatus(viewPO, 'delivered')} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">✅ Tout Reçu</button>
+                      </>
+                    )}
+                    {viewPO.status === 'partial' && (
+                      <button onClick={() => poUpdateStatus(viewPO, 'delivered')} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium">✅ Tout Reçu</button>
+                    )}
+                    {viewPO.status === 'delivered' && (
+                      <button onClick={() => poUpdateStatus(viewPO, 'invoiced')} className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium">🧾 Facture Reçue</button>
+                    )}
+                    {viewPO.status === 'draft' && (
+                      <button onClick={async () => {
+                        if (!confirm('Supprimer ce BC brouillon ?')) return;
+                        await supabase.from('supplier_po_lines').delete().eq('po_id', viewPO.id);
+                        await supabase.from('supplier_purchase_orders').delete().eq('id', viewPO.id);
+                        setPoViewId(null); loadPurchaseOrders(); notify('BC supprimé');
+                      }} className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium">🗑️ Supprimer</button>
+                    )}
+                  </div>
+
+                  {viewPO.ordered_at && <p className="mt-3 text-xs text-gray-400">Commandé le: {new Date(viewPO.ordered_at).toLocaleDateString('fr-FR')}</p>}
+                  {viewPO.delivered_at && <p className="text-xs text-gray-400">Livré le: {new Date(viewPO.delivered_at).toLocaleDateString('fr-FR')}</p>}
+                </div>
+              </div>
+            )}
+
+            {/* CREATION FORM */}
+            {poStep === 2 && (
+              <div className="space-y-4">
+                <SectionHeader title="Nouveau Bon de Commande" icon="🛒" actions={
+                  <button onClick={() => setPoStep(1)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium">← Retour</button>
+                } />
+
+                {/* Supplier info */}
+                <div className="bg-white rounded-xl border shadow-sm p-6">
+                  <h3 className="font-bold text-gray-800 mb-4">🏭 Fournisseur</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Nom du fournisseur *</label>
+                      <input type="text" value={poSupplier} onChange={e => setPoSupplier(e.target.value)}
+                        placeholder="Ex: Lighthouse Worldwide Solutions, Fisher Scientific..."
+                        className="w-full px-3 py-2 border rounded-lg text-sm" autoFocus />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Réf. fournisseur</label>
+                      <input type="text" value={poSupplierRef} onChange={e => setPoSupplierRef(e.target.value)}
+                        placeholder="N° compte, réf. contrat..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Date livraison prévue</label>
+                      <input type="date" value={poExpectedDate} onChange={e => setPoExpectedDate(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Notes</label>
+                      <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)}
+                        placeholder="Notes internes..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Line items */}
+                <div className="bg-white rounded-xl border shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-gray-800">📝 Articles</h3>
+                    <button onClick={poAddLine} className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100">+ Ajouter ligne</button>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-12 gap-2 text-xs text-gray-500 font-medium px-1">
+                      <div className="col-span-6">Description</div>
+                      <div className="col-span-2 text-center">Qté</div>
+                      <div className="col-span-2 text-right">P.U. HT</div>
+                      <div className="col-span-1 text-right">Total</div>
+                      <div className="col-span-1"></div>
+                    </div>
+                    {poLines.map(l => (
+                      <div key={l.id} className="grid grid-cols-12 gap-2 items-center">
+                        <input type="text" value={l.description} onChange={e => poUpdateLine(l.id, 'description', e.target.value)}
+                          placeholder="Pièce, consommable, service..." className="col-span-6 px-3 py-2 border rounded-lg text-sm" />
+                        <input type="number" value={l.quantity} onChange={e => poUpdateLine(l.id, 'quantity', e.target.value)}
+                          min="1" className="col-span-2 px-3 py-2 border rounded-lg text-sm text-center" />
+                        <input type="number" value={l.unitPrice} onChange={e => poUpdateLine(l.id, 'unitPrice', e.target.value)}
+                          step="0.01" className="col-span-2 px-3 py-2 border rounded-lg text-sm text-right" />
+                        <p className="col-span-1 text-right text-sm font-medium text-gray-700">{(parseFloat(l.total) || 0).toFixed(2)}</p>
+                        <button onClick={() => poRemoveLine(l.id)} disabled={poLines.length <= 1}
+                          className="col-span-1 text-center text-gray-400 hover:text-red-500 disabled:opacity-30">✕</button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t flex justify-end gap-8">
+                    <span className="font-bold text-gray-800 text-lg">Total HT</span>
+                    <span className="font-bold text-[#2D5A7B] text-lg w-28 text-right">{fmt(poSubtotal)}</span>
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setPoStep(1)} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Annuler</button>
+                  <button onClick={poHandleSave} disabled={poSaving || !poSupplier.trim() || poLines.filter(l => l.description).length === 0}
+                    className="px-6 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2">
+                    {poSaving ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Création...</>) : '🛒 Créer BC'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* SUCCESS */}
+            {poStep === 3 && poSaved && (
+              <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
+                <div className="text-6xl mb-4">✅</div>
+                <h3 className="text-2xl font-bold text-green-700 mb-2">Bon de Commande Créé!</h3>
+                <p className="text-lg font-mono text-gray-700 mb-1">{poSaved.po_number}</p>
+                <p className="text-gray-500 mb-6">{poSupplier} — {fmt(poSubtotal)}</p>
+                <div className="flex items-center justify-center gap-3">
+                  <button onClick={() => { setPoViewId(poSaved.id); setPoStep(1); }} className="px-5 py-2.5 bg-[#2D5A7B] hover:bg-[#1a3d5c] text-white rounded-lg font-medium">👁️ Voir Détails</button>
+                  <button onClick={() => { setPoStep(2); setPoSupplier(''); setPoSupplierRef(''); setPoExpectedDate(''); setPoNotes(''); setPoLines([{ id: 'p1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setPoSaved(null); }}
+                    className="px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium">+ Nouveau BC</button>
+                  <button onClick={() => setPoStep(1)} className="px-5 py-2.5 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">Retour à la liste</button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ================================================================
            CLIENTS TAB
@@ -28591,7 +28979,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
               {[
                 { phase: '2.5', status: '✅', label: 'Dashboard + gestion factures', done: true },
                 { phase: '2.6', status: '✅', label: 'Facture libre + avoirs', done: true },
-                { phase: '2.7', status: '⏳', label: 'Bons de commande fournisseurs' },
+                { phase: '2.7', status: '✅', label: 'Bons de commande fournisseurs', done: true },
                 { phase: '2.8', status: '⏳', label: 'Upload bancaire + rapprochement' },
                 { phase: '2.9', status: '⏳', label: 'PO → Facture matching' },
                 { phase: '3.0', status: '⏳', label: 'P&L, balance âgée, FEC, TVA' },
