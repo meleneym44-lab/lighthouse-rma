@@ -28824,12 +28824,11 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   {poTab === 'details' && (
                     <div className="space-y-5">
                       {/* Info */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {[
                           { l: 'Fournisseur', v: viewPO.supplier_name, s: viewPO.supplier_ref ? `Réf: ${viewPO.supplier_ref}` : null, icon: '🏭' },
                           { l: 'Type', v: `${typeIcons[viewPO.po_type] || '📦'} ${typeLabels[viewPO.po_type] || 'Général'}`, icon: '' },
                           { l: 'Créé le', v: viewPO.created_at?.split('T')[0], icon: '📅' },
-                          { l: 'Livraison', v: viewPO.expected_date || '—', icon: '🚚' },
                         ].map((item, i) => (
                           <div key={i} className="bg-gray-50 rounded-lg p-3">
                             <p className="text-[10px] text-gray-400 uppercase font-bold">{item.l}</p>
@@ -29158,11 +29157,9 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-xs font-medium text-gray-500 mb-1">Réf. devis / contrat</label>
                       <input type="text" value={poSupplierRef} onChange={e => setPoSupplierRef(e.target.value)} placeholder="Optionnel..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
-                    <div><label className="block text-xs font-medium text-gray-500 mb-1">Date livraison</label>
-                      <input type="date" value={poExpectedDate} onChange={e => setPoExpectedDate(e.target.value)} className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
+                    <div><label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+                      <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Notes..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
                   </div>
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
-                    <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Notes..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -29201,11 +29198,9 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="block text-xs font-medium text-gray-500 mb-1">Réf. devis / contrat</label>
                       <input type="text" value={poSupplierRef} onChange={e => setPoSupplierRef(e.target.value)} placeholder="Optionnel..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
-                    <div><label className="block text-xs font-medium text-gray-500 mb-1">Date livraison</label>
-                      <input type="date" value={poExpectedDate} onChange={e => setPoExpectedDate(e.target.value)} className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
+                    <div><label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+                      <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Notes..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
                   </div>
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
-                    <input type="text" value={poNotes} onChange={e => setPoNotes(e.target.value)} placeholder="Notes..." className="w-full px-3 py-2.5 border rounded-lg text-sm" /></div>
                 </div>
               )}
             </div>
