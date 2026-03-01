@@ -2134,7 +2134,7 @@ const generateBCPDF = async (poData, businessSettings, pdfLang = 'fr') => {
   const isFr = pdfLang === 'fr';
   const t = {
     title: isFr ? 'BON DE COMMANDE' : 'PURCHASE ORDER',
-    no: isFr ? 'N\u00B0 ' : 'No. ',
+    no: isFr ? 'N\u00B0 ' : 'PO# ',
     date: 'Date:',
     quoteRef: isFr ? 'R\u00E9f. devis:' : 'Quote ref:',
     issuer: isFr ? '\u00C9METTEUR' : 'ISSUER',
@@ -2237,6 +2237,13 @@ const generateBCPDF = async (poData, businessSettings, pdfLang = 'fr') => {
   pdf.setFontSize(14);
   pdf.text(t.no + (poNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
   y += 20;
+
+  // English version reference
+  if (!isFr) {
+    pdf.setFontSize(8); pdf.setFont('helvetica', 'italic'); pdf.setTextColor(...medGray);
+    pdf.text('English version of Bon de Commande N\u00B0 ' + (poNumber || ''), pageWidth - margin, y - 3, { align: 'right' });
+    y += 4;
+  }
 
   // ---- OUR INFO (left) | SUPPLIER (right) — SAME HEIGHT ----
   const blockY = y;
@@ -29087,7 +29094,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                           <a href={viewPO.pdf_url_en} target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
                             <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🇬🇧</div>
-                            <div><p className="font-medium text-gray-800">Purchase Order</p><p className="text-sm text-indigo-600">No. {viewPO.po_number}</p></div>
+                            <div><p className="font-medium text-gray-800">Purchase Order</p><p className="text-sm text-indigo-600">PO# {viewPO.po_number}</p></div>
                           </a>
                         ) : (
                           <button onClick={() => generateEnglishBC(viewPO)} disabled={poGenEnLoading}
