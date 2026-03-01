@@ -27518,6 +27518,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                 <>
                   <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">🔧 RMA / Services ({rmasToInvoice.length})</h3>
               {rmasToInvoice.map(rma => {
+                const company = rma.companies || {};
                 const devices = rma.request_devices || [];
                 const quoteData = rma.quote_data || {};
                 const quoteTotal = parseFloat(rma.quote_total) || quoteData.devices?.reduce((s, d) => {
