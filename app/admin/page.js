@@ -27397,9 +27397,10 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   };
 
   const loadContracts = async () => {
-    const { data } = await supabase.from('contracts')
+    const { data, error } = await supabase.from('contracts')
       .select('*, companies(id, name, email, country, billing_country, tva_number, siret, address, city, postal_code), contract_devices(*)')
       .order('created_at', { ascending: false });
+    console.log('📋 Accounting loadContracts:', { count: data?.length, error, statuses: data?.map(c => c.status), activeCount: data?.filter(c => c.status === 'active').length });
     if (data) setAcctContracts(data);
   };
 
@@ -27572,10 +27573,15 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
     });
   });
 
-  // Contracts — active, not already invoiced
+  // Contracts — active with actual quote pricing (client-requested), not tarif templates
   const invoicedContractIds = new Set(invoices.map(inv => inv.contract_id).filter(Boolean));
   (acctContracts || []).filter(c => {
     if (c.status !== 'active') return false;
+    // Exclude pricing/tarif template contracts — not invoiceable
+    if (c.contract_type === 'pricing') return false;
+    // Must have a quote with pricing (client-requested go through quote flow)
+    const ctrAmt = parseFloat(c.quote_data?.grandTotal) || parseFloat(c.quote_total) || 0;
+    if (ctrAmt <= 0) return false;
     // Check by contract_id first (most reliable)
     if (invoicedContractIds.has(c.id)) return false;
     // Fallback: check contract_number in any invoice's client_ref or notes
@@ -27603,6 +27609,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
 
   // Sort by date descending (newest first)
   itemsToInvoice.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  console.log('🔔 À facturer items:', itemsToInvoice.map(i => ({ type: i.type, ref: i.ref, amount: i.amount })));
 
   // Fiscal zone helper
   const getFiscalZone = (company) => {
