@@ -5026,7 +5026,6 @@ export default function AdminPortal() {
     { id: 'parts', label: t('parts'), icon: '🔩', badge: partsOrdersActionCount > 0 ? partsOrdersActionCount : null },
     { id: 'rentals', label: t('rentals'), icon: '📅', badge: rentalActionCount > 0 ? rentalActionCount : null },
     { id: 'contracts', label: t('contracts'), icon: '📄', badge: contractActionCount > 0 ? contractActionCount : null },
-    { id: 'invoices', label: t('invoices'), icon: '📋' },
     { id: 'usa_orders', label: t('usaOrders'), icon: '🇺🇸' },
     { id: 'clients', label: t('clients'), icon: '👥' },
     { id: 'pricing', label: t('pricing'), icon: '💰' },
@@ -5182,7 +5181,6 @@ export default function AdminPortal() {
             />}
             {activeSheet === 'pricing' && <PricingSheet notify={notify} isAdmin={isAdmin} t={t} lang={lang} />}
             {activeSheet === 'contracts' && <ContractsSheet clients={clients} notify={notify} profile={profile} t={t} lang={lang} reloadMain={loadData} />}
-            {activeSheet === 'invoices' && <InvoicesSheet requests={requests} rentals={rentalRequests} clients={clients} notify={notify} reload={loadData} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'usa_orders' && <USAOrdersSheet clients={clients} notify={notify} reload={loadData} profile={profile} t={t} lang={lang} />}
             {activeSheet === 'rentals' && <RentalsSheet
               t={t} lang={lang} 
@@ -5193,7 +5191,7 @@ export default function AdminPortal() {
               profile={profile}
               businessSettings={businessSettings}
             />}
-            {activeSheet === 'accounting' && <AccountingSheet notify={notify} profile={profile} clients={clients} requests={requests} businessSettings={businessSettings} t={t} lang={lang} />}
+            {activeSheet === 'accounting' && <AccountingSheet notify={notify} profile={profile} clients={clients} requests={requests} rentals={rentalRequests} businessSettings={businessSettings} t={t} lang={lang} />}
             {activeSheet === 'admin' && isAdmin && <AdminSheet profile={profile} staffMembers={staffMembers} notify={notify} reload={loadData} businessSettings={businessSettings} setBusinessSettings={setBusinessSettings} requests={requests} clients={clients} t={t} lang={lang} setLang={setLang} />}
           </>
         )}
@@ -13761,7 +13759,6 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
   const [showShipping, setShowShipping] = useState(false);
   const [messages, setMessages] = useState([]);
   const [attachments, setAttachments] = useState([]);
-  const [orderInvoices, setOrderInvoices] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [showDocUploadModal, setShowDocUploadModal] = useState(false);
@@ -13834,14 +13831,6 @@ function PartsOrderFullPage({ order: orderProp, onBack, notify, reload, profile,
       setAttachments(atts || []);
 
       // Fetch invoices (only sent/paid visible to customer)
-      const { data: invs } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('request_id', order.id)
-        .in('status', ['sent', 'paid', 'overdue', 'partially_paid'])
-        .order('created_at', { ascending: false });
-      setOrderInvoices(invs || []);
-      
       // Fetch shipping document for own_label
       if (order.return_shipping === 'own_label') {
         const { data: sdoc } = await supabase.from('shipping_documents').select('*').eq('request_id', order.id).eq('request_type', 'parts').order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -14574,31 +14563,6 @@ const STATUS_STYLES = {
                         </a>
                       )}
 
-                      {/* Invoices */}
-                      {orderInvoices.map(inv => (
-                        <a key={inv.id} href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
-                          className={`flex items-center gap-4 p-4 border rounded-lg transition-colors ${
-                            inv.status === 'paid' ? 'hover:bg-green-50 border-green-200' :
-                            new Date(inv.due_date) < new Date() ? 'hover:bg-red-50 border-red-200' :
-                            'hover:bg-amber-50 border-amber-200'
-                          }`}>
-                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-2xl shrink-0 ${
-                            inv.status === 'paid' ? 'bg-green-100' :
-                            new Date(inv.due_date) < new Date() ? 'bg-red-100' : 'bg-amber-100'
-                          }`}>📋</div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-800">{lang === 'en' ? 'Invoice' : 'Facture'}</p>
-                            <p className={`text-sm ${
-                              inv.status === 'paid' ? 'text-green-600' :
-                              new Date(inv.due_date) < new Date() ? 'text-red-600' : 'text-amber-600'
-                            }`}>
-                              N° {inv.invoice_number} — {parseFloat(inv.total_ttc || 0).toFixed(2)} € TTC
-                              {inv.status === 'paid' ? ' ✅' : 
-                               new Date(inv.due_date) < new Date() ? (lang === 'en' ? ' ⚠️ Overdue' : ' ⚠️ En retard') : ''}
-                            </p>
-                          </div>
-                        </a>
-                      ))}
                     </div>
                     
                     {/* Uploaded Documents with manage controls */}
@@ -26430,817 +26394,6 @@ Lighthouse France`
   );
 }
 
-// ============================================
-// INVOICES SHEET - Full invoicing workflow v1
-// ============================================
-function InvoicesSheet({ requests, rentals = [], clients, notify, reload, profile, businessSettings, t = k=>k, lang = 'fr' }) {
-  const [activeTab, setActiveTab] = useState('to_create');
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [creatingFor, setCreatingFor] = useState(null);
-  const [viewingInvoice, setViewingInvoice] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  // Export date range state
-  const [exportFrom, setExportFrom] = useState('');
-  const [exportTo, setExportTo] = useState('');
-  const [exporting, setExporting] = useState(false);
-
-  const biz = businessSettings || {};
-
-  // Load invoices
-  const loadInvoices = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('invoices')
-      .select('*, companies(name, email), service_requests(request_number, status, quote_data, quote_total, quote_number, bc_number, request_devices(*)), invoice_lines(*)')
-      .order('created_at', { ascending: false });
-    if (data) setInvoices(data);
-    setLoading(false);
-  };
-
-  useEffect(() => { loadInvoices(); }, []);
-
-  // RMAs ready for invoicing: all devices shipped, no invoice yet
-  const invoicedRequestIds = new Set(invoices.map(inv => inv.request_id).filter(Boolean));
-  const invoicedRentalIds = new Set(invoices.map(inv => inv.rental_request_id).filter(Boolean));
-  
-  const rmasToInvoice = (requests || []).filter(r => {
-    if (!r.request_number || r.request_type === 'parts') return false;
-    if (invoicedRequestIds.has(r.id)) return false;
-    const devices = r.request_devices || [];
-    if (devices.length === 0) return false;
-    const allShipped = devices.every(d => ['shipped', 'completed', 'delivered'].includes(d.status));
-    return allShipped || ['shipped', 'completed'].includes(r.status);
-  });
-
-  // Rentals ready for invoicing: completed, no invoice yet
-  const rentalsToInvoice = (rentals || []).filter(r => {
-    if (invoicedRentalIds.has(r.id)) return false;
-    return r.status === 'completed';
-  });
-
-  // Filter by search
-  const filterItems = (items) => {
-    if (!searchTerm) return items;
-    const s = searchTerm.toLowerCase();
-    return items.filter(i => 
-      (i.invoice_number || '').toLowerCase().includes(s) ||
-      (i.companies?.name || '').toLowerCase().includes(s) ||
-      (i.service_requests?.request_number || '').toLowerCase().includes(s)
-    );
-  };
-
-  const filterRMAs = (items) => {
-    if (!searchTerm) return items;
-    const s = searchTerm.toLowerCase();
-    return items.filter(r =>
-      (r.request_number || '').toLowerCase().includes(s) ||
-      (r.companies?.name || '').toLowerCase().includes(s)
-    );
-  };
-
-  const frenchDate = (dateStr) => {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
-    const months = lang === 'en' ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] : ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-  };
-
-  // Filter invoices by date range for display and export
-  const getFilteredInvoices = () => {
-    let filtered = filterItems(invoices);
-    if (exportFrom) {
-      const fromDate = new Date(exportFrom);
-      fromDate.setHours(0, 0, 0, 0);
-      filtered = filtered.filter(inv => new Date(inv.created_at) >= fromDate);
-    }
-    if (exportTo) {
-      const toDate = new Date(exportTo);
-      toDate.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(inv => new Date(inv.created_at) <= toDate);
-    }
-    return filtered;
-  };
-
-  // Export invoices as ZIP (PDFs + Excel summary)
-  const exportInvoices = async () => {
-    const toExport = getFilteredInvoices();
-    if (toExport.length === 0) {
-      notify(lang === 'en' ? 'No invoices to export for this period' : 'Aucune facture à exporter pour cette période', 'error');
-      return;
-    }
-    
-    setExporting(true);
-    try {
-      // Load JSZip
-      if (!window.JSZip) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
-      }
-      
-      // Load SheetJS for Excel
-      if (!window.XLSX) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
-      }
-      
-      const zip = new window.JSZip();
-      const pdfFolder = zip.folder('factures');
-      
-      // Build Excel summary data
-      const summaryData = [];
-      let pdfCount = 0;
-      
-      for (const inv of toExport) {
-        // Add to summary
-        summaryData.push({
-          [lang === 'en' ? 'Invoice #' : 'N° Facture']: inv.invoice_number || '',
-          [lang === 'en' ? 'Created Date' : 'Date Création']: inv.created_at ? new Date(inv.created_at).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
-          [lang === 'en' ? 'Invoice Date' : 'Date Facture']: inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR') : '',
-          [lang === 'en' ? 'Client' : 'Client']: inv.companies?.name || '',
-          [lang === 'en' ? 'RMA #' : 'N° RMA']: inv.service_requests?.request_number || '',
-          [lang === 'en' ? 'Total excl. tax' : 'Total HT']: parseFloat(inv.total_ht || 0).toFixed(2),
-          [lang === 'en' ? 'VAT' : 'TVA']: parseFloat(inv.total_tva || 0).toFixed(2),
-          [lang === 'en' ? 'Total incl. tax' : 'Total TTC']: parseFloat(inv.total_ttc || 0).toFixed(2),
-          [lang === 'en' ? 'Status' : 'Statut']: inv.status || ''
-        });
-        
-        // Try to fetch PDF
-        if (inv.pdf_url) {
-          try {
-            const response = await fetch(inv.pdf_url);
-            if (response.ok) {
-              const blob = await response.blob();
-              const fileName = `${inv.invoice_number || 'facture'}.pdf`;
-              pdfFolder.file(fileName, blob);
-              pdfCount++;
-            }
-          } catch (e) {
-            console.error('PDF fetch error:', inv.invoice_number, e);
-          }
-        }
-      }
-      
-      // Create Excel summary
-      const ws = window.XLSX.utils.json_to_sheet(summaryData);
-      const wb = window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(wb, ws, (lang === 'en' ? 'Invoices' : 'Factures'));
-      
-      // Set column widths
-      ws['!cols'] = [
-        { wch: 15 }, // N° Facture
-        { wch: 12 }, // Date Création
-        { wch: 12 }, // Date Facture
-        { wch: 25 }, // Client
-        { wch: 12 }, // N° RMA
-        { wch: 12 }, // Total HT
-        { wch: 10 }, // TVA
-        { wch: 12 }, // Total TTC
-        { wch: 10 }  // Statut
-      ];
-      
-      const excelBuffer = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      zip.file('resume_factures.xlsx', excelBuffer);
-      
-      // Generate ZIP and download
-      const dateRange = exportFrom && exportTo 
-        ? `${exportFrom}_au_${exportTo}` 
-        : exportFrom 
-        ? `depuis_${exportFrom}` 
-        : exportTo 
-        ? `jusqua_${exportTo}` 
-        : new Date().toISOString().split('T')[0];
-      
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `factures_${dateRange}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      notify(lang === 'en' ? `✅ Export complete: ${toExport.length} invoice(s), ${pdfCount} PDF(s)` : `✅ Export terminé: ${toExport.length} facture(s), ${pdfCount} PDF(s)`);
-    } catch (err) {
-      console.error('Export error:', err);
-      notify((lang === 'en' ? 'Export error: ' : "Erreur lors de l'export: ") + (err.message || 'Error'), 'error');
-    }
-    setExporting(false);
-  };
-
-  const tabs = [
-    { id: 'to_create', label: lang === 'en' ? 'To Invoice' : 'À Facturer', icon: '🔔', count: rmasToInvoice.length + rentalsToInvoice.length, color: 'amber' },
-    { id: 'invoices', label: lang === 'en' ? 'Invoices' : 'Factures', icon: '📄', count: invoices.length, color: 'blue' }
-  ];
-
-  // Stats
-  const totalInvoiced = invoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
-  const filteredInvoices = getFilteredInvoices();
-  const filteredTotal = filteredInvoices.reduce((s, i) => s + (parseFloat(i.total_ttc) || 0), 0);
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-            <span className="w-10 h-10 bg-[#00A651] rounded-xl flex items-center justify-center text-white">💶</span>
-            Facturation
-          </h1>
-          <p className="text-gray-500 mt-1">{lang === 'en' ? 'Create and manage invoices' : 'Créer et gérer les factures'}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            placeholder={lang === 'en' ? '🔍 Search...' : '🔍 Rechercher...'}
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg w-64"
-          />
-        </div>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-amber-400">
-          <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'To invoice' : 'À facturer'}</p>
-          <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length + rentalsToInvoice.length}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-400">
-          <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Invoices created' : 'Factures créées'}</p>
-          <p className="text-2xl font-bold text-blue-600">{invoices.length}</p>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-green-400">
-          <p className="text-xs text-gray-500 uppercase">{lang === 'en' ? 'Total invoiced' : 'Total facturé'}</p>
-          <p className="text-2xl font-bold text-green-600">{totalInvoiced.toFixed(0)} €</p>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="border-b flex">
-          {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`px-6 py-3 font-medium flex items-center gap-2 border-b-2 -mb-px transition-colors ${
-                activeTab === tab.id ? 'border-[#00A651] text-[#00A651]' : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}>
-              <span>{tab.icon}</span> {tab.label}
-              {tab.count > 0 && (
-                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
-                  tab.color === 'amber' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                }`}>{tab.count}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-4">
-          {loading ? (
-            <div className="text-center py-12 text-gray-400">
-              <div className="animate-spin text-3xl mb-2">⏳</div>{lang === 'en' ? 'Loading...' : 'Chargement...'}
-            </div>
-          ) : (
-            <>
-              {/* ========== TAB 1: À Facturer ========== */}
-              {activeTab === 'to_create' && (
-                <div className="space-y-3">
-                  {filterRMAs(rmasToInvoice).length === 0 && rentalsToInvoice.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <div className="text-4xl mb-2">✅</div>
-                      <p>{lang === 'en' ? 'Nothing awaiting invoicing' : 'Rien en attente de facturation'}</p>
-                    </div>
-                  ) : (
-                    <>
-                    {/* RMA Section */}
-                    {filterRMAs(rmasToInvoice).length > 0 && (
-                      <>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-lg">🔧</span>
-                        <h3 className="font-bold text-gray-700">{lang === 'en' ? 'Service RMAs' : 'RMAs Service'}</h3>
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">{filterRMAs(rmasToInvoice).length}</span>
-                      </div>
-                      {filterRMAs(rmasToInvoice).map(rma => {
-                      const devices = rma.request_devices || [];
-                      const total = rma.quote_total || devices.reduce((s, d) => s + (parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0), 0);
-                      const supplementTotal = devices.reduce((s, d) => {
-                        if (!d.additional_work_needed || !d.additional_work_items) return s;
-                        return s + d.additional_work_items.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-                      }, 0);
-                      return (
-                        <div key={rma.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-amber-50 hover:border-amber-200 transition-all group">
-                          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-sm shrink-0">€</div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-[#00A651]">{rma.request_number}</span>
-                              <span className="text-gray-400">—</span>
-                              <span className="font-medium text-gray-700">{rma.companies?.name}</span>
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {devices.length} {lang === 'en' ? 'device(s) • Shipped:' : 'appareil(s) • Expédié:'} {frenchDate(rma.shipped_at || rma.updated_at)}
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-bold text-gray-800">{total.toFixed(2)} € HT</p>
-                            {supplementTotal > 0 && (
-                              <p className="text-xs text-orange-600">+ {supplementTotal.toFixed(2)} € supplément</p>
-                            )}
-                          </div>
-                          <button onClick={() => setCreatingFor(rma)}
-                            className="px-4 py-2 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                            💶 Créer Facture
-                          </button>
-                        </div>
-                      );
-                    })}
-                    </>
-                    )}
-
-                    {/* Rental Section */}
-                    {rentalsToInvoice.length > 0 && (
-                      <>
-                      <div className="flex items-center gap-2 mt-4 mb-1">
-                        <span className="text-lg">📅</span>
-                        <h3 className="font-bold text-gray-700">{lang === 'en' ? 'Completed Rentals' : 'Locations terminées'}</h3>
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">{rentalsToInvoice.length}</span>
-                      </div>
-                      {rentalsToInvoice.map(rental => {
-                        const qd = rental.quote_data || {};
-                        const rentalTotal = rental.quote_total_ht || qd.totalHT || 0;
-                        const inspectionTotal = qd.inspection_total || 0;
-                        const grandTotal = rentalTotal + inspectionTotal;
-                        return (
-                          <div key={rental.id} className="flex items-center gap-4 p-4 border rounded-xl hover:bg-purple-50 hover:border-purple-200 transition-all group">
-                            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm shrink-0">📅</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-[#8B5CF6]">{rental.rental_number}</span>
-                                <span className="text-gray-400">—</span>
-                                <span className="font-medium text-gray-700">{rental.companies?.name}</span>
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {rental.rental_request_items?.length || 0} {lang === 'en' ? 'device(s)' : 'appareil(s)'}
-                                {qd.completed_at && ` • ${lang === 'en' ? 'Completed:' : 'Terminé:'} ${frenchDate(qd.completed_at)}`}
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="font-bold text-gray-800">{rentalTotal.toFixed(2)} € HT</p>
-                              {inspectionTotal > 0 && <p className="text-xs text-red-600">+ {inspectionTotal.toFixed(2)} € inspection</p>}
-                              {inspectionTotal > 0 && <p className="text-xs font-bold text-gray-600">= {grandTotal.toFixed(2)} € total</p>}
-                            </div>
-                            <div className="px-3 py-2 bg-gray-100 text-gray-500 rounded-lg text-sm font-medium">
-                              🔜 Bientôt
-                            </div>
-                          </div>
-                        );
-                      })}
-                      </>
-                    )}
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* ========== TAB 2: Toutes les Factures ========== */}
-              {activeTab === 'invoices' && (
-                <div className="space-y-4">
-                  {/* Date range filter + Export */}
-                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm text-gray-600 font-medium">{lang === 'en' ? 'From:' : 'Du:'}</label>
-                      <input
-                        type="date"
-                        value={exportFrom}
-                        onChange={e => setExportFrom(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm text-gray-600 font-medium">{lang === 'en' ? 'To:' : 'Au:'}</label>
-                      <input
-                        type="date"
-                        value={exportTo}
-                        onChange={e => setExportTo(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    {(exportFrom || exportTo) && (
-                      <button
-                        onClick={() => { setExportFrom(''); setExportTo(''); }}
-                        className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm"
-                      >
-                        ✕ Effacer
-                      </button>
-                    )}
-                    <div className="flex-1" />
-                    <div className="text-sm text-gray-600">
-                      <span className="font-medium">{filteredInvoices.length}</span> {lang === 'en' ? 'invoice(s) • ' : 'facture(s) • '}
-                      <span className="font-medium text-green-600 ml-1">{filteredTotal.toFixed(2)} €</span>
-                    </div>
-                    <button
-                      onClick={exportInvoices}
-                      disabled={exporting || filteredInvoices.length === 0}
-                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {exporting ? (
-                        <><span className="animate-spin">⏳</span> Export en cours...</>
-                      ) : (
-                        <>{lang === 'en' ? '📥 Export ZIP' : '📥 Exporter ZIP'}</>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Invoice list */}
-                  {filteredInvoices.length === 0 ? (
-                    <div className="text-center py-12 text-gray-400">
-                      <div className="text-4xl mb-2">📂</div>
-                      <p>{lang === 'en' ? `No invoices ${(exportFrom || exportTo) ? 'for this period' : ''}` : `Aucune facture ${(exportFrom || exportTo) ? 'pour cette période' : ''}`}</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {filteredInvoices.map(inv => (
-                        <div key={inv.id} onClick={() => setViewingInvoice(inv)}
-                          className="flex items-center gap-3 p-4 border rounded-xl cursor-pointer hover:bg-gray-50 transition-all">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">📄</div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-gray-800">{inv.invoice_number}</span>
-                              <span className="text-gray-400">—</span>
-                              <span className="font-medium text-gray-700">{inv.companies?.name || 'Client'}</span>
-                              {inv.service_requests?.request_number && (
-                                <span className="text-xs text-gray-400">RMA {inv.service_requests.request_number}</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                              <span>{lang === 'en' ? 'Created:' : 'Créée:'} {frenchDate(inv.created_at)}</span>
-                              <span>{lang === 'en' ? 'Invoice date:' : 'Date facture:'} {frenchDate(inv.invoice_date)}</span>
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0 w-28">
-                            <p className="font-bold text-gray-800">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
-                            <p className="text-xs text-gray-400">{lang === 'en' ? 'incl. VAT' : 'TTC'}</p>
-                          </div>
-                          {inv.pdf_url && (
-                            <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
-                              onClick={e => e.stopPropagation()}
-                              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">
-                              📄 PDF
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Invoice Creation Modal */}
-      {creatingFor && (
-        <InvoiceCreationModal lang={lang} rma={creatingFor} onClose={() => setCreatingFor(null)} notify={notify}
-          reload={() => { loadInvoices(); if (reload) reload(); }} profile={profile} businessSettings={businessSettings} t={t} lang={lang} />
-      )}
-
-      {/* Invoice Detail Modal */}
-      {viewingInvoice && (
-        <InvoiceDetailModal lang={lang} invoice={viewingInvoice} onClose={() => { setViewingInvoice(null); loadInvoices(); }}
-          notify={notify} reload={() => { loadInvoices(); if (reload) reload(); }} businessSettings={businessSettings} t={t} lang={lang} />
-      )}
-    </div>
-  );
-}
-
-
-// ============================================
-// INVOICE DETAIL MODAL - View/manage invoice
-// ============================================
-function InvoiceDetailModal({ invoice, onClose, notify, reload, businessSettings, lang = 'fr' }) {
-  const t = k => k;
-  const [inv, setInv] = useState(invoice);
-  const [showPayment, setShowPayment] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentRef, setPaymentRef] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [sendingEInvoice, setSendingEInvoice] = useState(false);
-
-  const invoiceLines = inv.invoice_lines || [];
-  const company = inv.companies || {};
-  const rma = inv.service_requests || {};
-  const billingAddr = (rma.quote_data || {}).billingAddress || null;
-  
-  const isOverdue = inv.due_date && !['paid', 'cancelled'].includes(inv.status) && new Date(inv.due_date) < new Date();
-  const daysPastDue = inv.due_date ? Math.max(0, Math.floor((new Date() - new Date(inv.due_date)) / (1000 * 60 * 60 * 24))) : 0;
-  const remaining = (parseFloat(inv.total_ttc) || 0) - (parseFloat(inv.paid_amount) || 0);
-
-  const frenchDate = (dateStr) => {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
-    const months = lang === 'en' ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] : ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-  };
-
-  const getStatusBadge = () => {
-    if (inv.status === 'paid') return <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-bold">{lang === 'en' ? '✅ Paid' : '✅ Payée'}</span>;
-    if (inv.status === 'cancelled') return <span className="px-3 py-1.5 bg-gray-100 text-gray-500 rounded-full text-sm font-bold">{lang === 'en' ? 'Cancelled' : 'Annulée'}</span>;
-    if (inv.status === 'partially_paid') return <span className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full text-sm font-bold">{lang === 'en' ? '⚠️ Partial payment' : '⚠️ Paiement partiel'}</span>;
-    if (isOverdue) return <span className="px-3 py-1.5 bg-red-100 text-red-700 rounded-full text-sm font-bold animate-pulse">{lang === 'en' ? '🔴 Overdue' : '🔴 En retard'} ({daysPastDue}{lang === 'en' ? 'd' : 'j'})</span>;
-    if (inv.status === 'sent') return <span className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-bold">{lang === 'en' ? '📤 Sent' : '📤 Envoyée'}</span>;
-    if (inv.status === 'created' || inv.status === 'draft') return <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm font-bold">{lang === 'en' ? '📄 Created' : '📄 Créée'}</span>;
-    return <span className="px-3 py-1.5 bg-blue-100 text-blue-600 rounded-full text-sm font-bold">{lang === 'en' ? '📋 In progress' : '📋 En cours'}</span>;
-  };
-
-  const markAsSent = async () => {
-    const { error } = await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
-    if (!error) {
-      setInv({ ...inv, status: 'sent', sent_at: new Date().toISOString() });
-      notify(lang === 'en' ? '✅ Invoice marked as sent' : '✅ Facture marquée comme envoyée');
-      // Send email notification (Admin + Facturation only)
-      if (inv.company_id) {
-        sendNotification('invoice_sent', inv.company_id, {
-          rmaNumber: rma.request_number || '',
-          invoiceNumber: inv.invoice_number || ''
-        });
-      }
-      if (reload) reload();
-    }
-  };
-
-  const recordPayment = async () => {
-    const amount = parseFloat(paymentAmount);
-    if (!amount || amount <= 0) { notify('Montant invalide', 'error'); return; }
-    const prevPaid = parseFloat(inv.paid_amount) || 0;
-    const newPaid = prevPaid + amount;
-    const totalDue = parseFloat(inv.total_ttc) || 0;
-    const isFullyPaid = newPaid >= totalDue - 0.02;
-    const updates = {
-      paid_amount: Math.min(newPaid, totalDue),
-      payment_reference: [inv.payment_reference, paymentRef].filter(Boolean).join(', '),
-      paid_at: paymentDate || new Date().toISOString().split('T')[0],
-      status: isFullyPaid ? 'paid' : 'partially_paid'
-    };
-    const { error } = await supabase.from('invoices').update(updates).eq('id', inv.id);
-    if (!error) {
-      setInv({ ...inv, ...updates });
-      setShowPayment(false); setPaymentAmount(''); setPaymentRef('');
-      notify(isFullyPaid ? (lang === 'en' ? '✅ Invoice fully paid!' : '✅ Facture payée en totalité!') : (lang === 'en' ? `✅ Payment of ${amount.toFixed(2)} € recorded` : `✅ Paiement de ${amount.toFixed(2)} € enregistré`));
-      if (reload) reload();
-    }
-  };
-
-  const cancelInvoice = async () => {
-    if (!confirm(lang === 'en' ? `Cancel invoice ${inv.invoice_number}? This action is irreversible.` : `Annuler la facture ${inv.invoice_number} ? Cette action est irréversible.`)) return;
-    const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
-    if (!error) { notify(lang === 'en' ? 'Invoice cancelled' : 'Facture annulée'); if (reload) reload(); onClose(); }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-[#2D5A7B] to-[#2a5490] text-white flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold">{inv.invoice_number}</h2>
-            <p className="text-sm text-white/70">{company.name || 'Client'} {rma.request_number ? `• RMA ${rma.request_number}` : ''}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {getStatusBadge()}
-            <button onClick={onClose} className="text-white/80 hover:text-white text-2xl">×</button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Overdue Alert */}
-          {isOverdue && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-3">
-              <span className="text-red-500 text-xl animate-pulse">🔴</span>
-              <div>
-                <p className="text-red-800 font-bold">{lang === 'en' ? `Invoice overdue — ${daysPastDue} day${daysPastDue > 1 ? 's' : ''}` : `Facture en retard — ${daysPastDue} jour${daysPastDue > 1 ? 's' : ''}`}</p>
-                <p className="text-red-600 text-sm">{lang === 'en' ? 'Due:' : 'Échéance:'} {frenchDate(inv.due_date)} • {lang === 'en' ? 'Remaining:' : 'Reste dû:'} {remaining.toFixed(2)} €</p>
-              </div>
-            </div>
-          )}
-
-          {/* Info Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500">{lang === 'en' ? 'Issue date' : 'Date émission'}</p>
-              <p className="font-medium">{frenchDate(inv.invoice_date)}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500">{lang === 'en' ? 'Due date' : 'Échéance'}</p>
-              <p className={`font-medium ${isOverdue ? 'text-red-600' : ''}`}>{frenchDate(inv.due_date)}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-gray-500">{t('totalTTC')}</p>
-              <p className="font-bold text-lg">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</p>
-            </div>
-            <div className={`rounded-lg p-3 ${remaining <= 0.01 ? 'bg-green-50' : 'bg-amber-50'}`}>
-              <p className="text-xs text-gray-500">{lang === 'en' ? 'Remaining due' : 'Reste dû'}</p>
-              <p className={`font-bold text-lg ${remaining <= 0.01 ? 'text-green-700' : 'text-amber-700'}`}>
-                {remaining > 0.01 ? remaining.toFixed(2) + ' €' : '0.00 € ✅'}
-              </p>
-            </div>
-          </div>
-
-          {/* References */}
-          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-            {inv.client_ref && <div><span className="text-gray-500">{lang === 'en' ? 'Your ref:' : 'Vos réf:'}</span> <span className="font-medium">{inv.client_ref}</span></div>}
-            {rma.request_number && <div><span className="text-gray-500">{lang === 'en' ? 'RMA:' : 'RMA:'}</span> <span className="font-medium">{rma.request_number}</span></div>}
-            {rma.quote_number && <div><span className="text-gray-500">{lang === 'en' ? 'Quote:' : 'Devis:'}</span> <span className="font-medium">{rma.quote_number}</span></div>}
-            {rma.bc_number && <div><span className="text-gray-500">{lang === 'en' ? 'PO:' : 'BC:'}</span> <span className="font-medium">{rma.bc_number}</span></div>}
-            {inv.sent_at && <div><span className="text-gray-500">{lang === 'en' ? 'Sent:' : 'Envoyée:'}</span> <span className="font-medium">{frenchDate(inv.sent_at)}</span></div>}
-            {inv.paid_at && <div><span className="text-gray-500">{lang === 'en' ? 'Paid on:' : 'Payée le:'}</span> <span className="font-medium text-green-700">{frenchDate(inv.paid_at)}</span></div>}
-            {inv.payment_reference && <div className="col-span-2"><span className="text-gray-500">{lang === 'en' ? 'Payment ref:' : 'Réf. paiement:'}</span> <span className="font-medium">{inv.payment_reference}</span></div>}
-          </div>
-
-          {/* Line Items */}
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2 text-sm">{lang === 'en' ? 'Invoice lines' : 'Lignes de facturation'}</h4>
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-[#2D5A7B] text-white">
-                  <tr>
-                    <th className="text-left p-2 text-xs">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                    <th className="text-left p-2 text-xs">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                    <th className="text-right p-2 text-xs">{lang === 'en' ? 'U.P. excl.' : 'P.U. HT'}</th>
-                    <th className="text-right p-2 text-xs">{t('totalHT')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoiceLines.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((line, idx) => (
-                    <tr key={idx} className={line.line_type === 'device_header' ? 'bg-blue-50 font-bold' : idx % 2 === 0 ? 'bg-gray-50' : ''}>
-                      <td className="p-2 text-xs">{line.line_type === 'device_header' ? '' : (line.quantity || 1)}</td>
-                      <td className="p-2 text-xs">{line.description}</td>
-                      <td className="p-2 text-xs text-right">{line.line_type === 'device_header' ? '' : (parseFloat(line.unit_price_ht || 0).toFixed(2) + ' €')}</td>
-                      <td className="p-2 text-xs text-right font-medium">{line.line_type === 'device_header' ? '' : (parseFloat(line.total_ht || 0).toFixed(2) + ' €')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="border-t bg-gray-50 p-3 space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{t('totalHT')}</span>
-                  <span className="font-medium">{parseFloat(inv.subtotal_ht || 0).toFixed(2)} €</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{inv.is_tva_exonerated ? (lang === 'en' ? 'VAT (exempt)' : 'TVA (exonérée)') : `TVA ${inv.tva_rate || 20}%`}</span>
-                  <span className="font-medium">{inv.is_tva_exonerated ? (lang === 'en' ? 'EXEMPT' : 'EXONÉRÉ') : (parseFloat(inv.tva_amount || 0).toFixed(2) + ' €')}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t">
-                  <span className="font-bold text-[#2D5A7B]">{t('totalTTC')}</span>
-                  <span className="font-bold text-lg text-[#2D5A7B]">{parseFloat(inv.total_ttc || 0).toFixed(2)} €</span>
-                </div>
-                {parseFloat(inv.paid_amount) > 0 && (
-                  <div className="flex justify-between text-green-700"><span>{t('paid')}</span><span className="font-bold">-{parseFloat(inv.paid_amount).toFixed(2)} €</span></div>
-                )}
-                {remaining > 0.01 && inv.status !== 'cancelled' && (
-                  <div className="flex justify-between text-amber-700 font-bold"><span>{lang === 'en' ? 'Remaining due' : 'Reste dû'}</span><span>{remaining.toFixed(2)} €</span></div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Payment Recording */}
-          {showPayment && (
-            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-              <h4 className="font-bold text-green-800 mb-3">{lang === 'en' ? '💰 Record a payment' : '💰 Enregistrer un paiement'}</h4>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? 'Amount (€)' : 'Montant (€)'}</label>
-                  <input type="number" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)}
-                    placeholder={remaining.toFixed(2)} className="w-full px-3 py-2 border rounded-lg text-lg font-bold" autoFocus />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? 'Payment date' : 'Date du paiement'}</label>
-                  <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">{lang === 'en' ? 'Payment ref' : 'Réf. paiement'}</label>
-                  <input type="text" value={paymentRef} onChange={e => setPaymentRef(e.target.value)} placeholder={lang === 'en' ? 'Wire transfer, check #...' : 'Virement, chèque n°...'} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-              </div>
-              <div className="flex gap-2 mt-3">
-                <button onClick={recordPayment} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">{lang === 'en' ? '✅ Save' : '✅ Enregistrer'}</button>
-                <button onClick={() => setPaymentAmount(remaining.toFixed(2))} className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-800 rounded-lg text-sm font-medium">Solder ({remaining.toFixed(2)} €)</button>
-                <button onClick={() => setShowPayment(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">{t('cancel')}</button>
-              </div>
-            </div>
-          )}
-
-          {inv.notes && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-              <p className="text-sm text-yellow-800"><strong>{lang === 'en' ? 'Notes:' : 'Notes:'}</strong> {inv.notes}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Footer Actions */}
-        <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between rounded-b-2xl">
-          <div className="flex items-center gap-2">
-            {inv.pdf_url && (
-              <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#2D5A7B] hover:bg-[#2a5490] text-white rounded-lg font-medium text-sm flex items-center gap-1">{lang === 'en' ? '📄 PDF' : '📄 PDF'}</a>
-            )}
-            {inv.status !== 'paid' && inv.status !== 'cancelled' && (
-              <button onClick={cancelInvoice} className="px-4 py-2 bg-gray-200 hover:bg-red-100 text-gray-600 hover:text-red-600 rounded-lg text-sm font-medium">{lang === 'en' ? '🗑️ Cancel' : '🗑️ Annuler'}</button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {(inv.status === 'created' || inv.status === 'draft') && (
-              <button onClick={markAsSent} className="px-5 py-2 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm">{lang === 'en' ? '📤 Send to client' : '📤 Envoyer au client'}</button>
-            )}
-            {inv.status !== 'paid' && inv.status !== 'cancelled' && !inv.b2brouter_invoice_id && (
-              <button disabled={sendingEInvoice} onClick={async () => {
-                setSendingEInvoice(true);
-                try {
-                  const clientTVANum = inv.client_tva_number || billingAddr?.tva_number || company.tva_number || '';
-                  const clientName = billingAddr?.company_name || company.name || '';
-                  if (!clientTVANum) {
-                    notify(lang === 'en' ? '⚠️ Client TVA number is required for e-invoicing. Add it in the billing address.' : '⚠️ Le numéro de TVA du client est requis pour la e-facturation. Ajoutez-le dans l\'adresse de facturation.', 'error');
-                    setSendingEInvoice(false); return;
-                  }
-                  if (!clientName) {
-                    notify(lang === 'en' ? '⚠️ Client name is missing.' : '⚠️ Le nom du client est manquant.', 'error');
-                    setSendingEInvoice(false); return;
-                  }
-                  const invLines = (inv.invoice_lines || []).filter(l => l.line_type !== 'device_header');
-                  const res = await fetch('/api/b2brouter', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      action: 'create_einvoice',
-                      contact_data: {
-                        name: clientName,
-                        tin_value: clientTVANum,
-                        tin_scheme: '9957',
-                        country: billingAddr?.country?.toLowerCase() === 'france' ? 'fr' : (billingAddr?.country || 'fr'),
-                        email: company.email || '',
-                        address: billingAddr?.address_line1 || company.billing_address || company.address || '',
-                        postalcode: billingAddr?.postal_code || company.billing_postal_code || company.postal_code || '',
-                        city: billingAddr?.city || company.billing_city || company.city || '',
-                        transport_type_code: (billingAddr?.chorus_invoicing || company.chorus_invoicing) ? 'fr.chorus' : 'b2brouter',
-                        document_type_code: 'xml.ubl.invoice',
-                        public_sector: billingAddr?.chorus_invoicing || company.chorus_invoicing || false
-                      },
-                      invoice_data: {
-                        number: inv.invoice_number,
-                        date: inv.invoice_date?.split('T')[0] || new Date().toISOString().split('T')[0],
-                        due_date: inv.due_date?.split('T')[0] || '',
-                        po_number: rma.bc_number || '',
-                        file_reference: rma.request_number || '',
-                        lines: invLines.map(l => ({
-                          description: l.description, quantity: l.quantity || 1,
-                          unit_price: parseFloat(l.unit_price_ht) || 0,
-                          tva_rate: inv.is_tva_exonerated ? 0 : (inv.tva_rate || 20),
-                          tva_exempt: inv.is_tva_exonerated || false
-                        }))
-                      },
-                      pdf_url: inv.pdf_url
-                    })
-                  });
-                  const result = await res.json();
-                  if (result.success) {
-                    await supabase.from('invoices').update({
-                      b2brouter_invoice_id: result.b2brouter_invoice_id,
-                      b2brouter_contact_id: result.b2brouter_contact_id,
-                      einvoice_status: result.state || 'new'
-                    }).eq('id', inv.id);
-                    setInv({ ...inv, b2brouter_invoice_id: result.b2brouter_invoice_id });
-                    notify(lang === 'en' ? '🏦 e-Invoice created in B2BRouter!' : '🏦 e-Facture créée dans B2BRouter!');
-                  } else {
-                    notify('e-Facture: ' + (typeof result.error === 'string' ? result.error : JSON.stringify(result.error)), 'error');
-                  }
-                } catch (err) { notify('e-Facture: ' + err.message, 'error'); }
-                setSendingEInvoice(false);
-              }} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium text-sm disabled:opacity-50 flex items-center gap-1">
-                {sendingEInvoice ? '⏳...' : '🏦 e-Facture'}
-              </button>
-            )}
-            {inv.b2brouter_invoice_id && (
-              <span className="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium border border-emerald-200">🏦 B2B #{inv.b2brouter_invoice_id}</span>
-            )}
-            {inv.status !== 'paid' && inv.status !== 'cancelled' && (
-              <button onClick={() => { setShowPayment(true); setPaymentAmount(remaining.toFixed(2)); }} className="px-5 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium text-sm">{lang === 'en' ? '💰 Record payment' : '💰 Enregistrer paiement'}</button>
-            )}
-            <button onClick={onClose} className="px-5 py-2 bg-gray-300 hover:bg-gray-400 rounded-lg font-medium text-sm">{t('close')}</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ============================================
 // INVOICE CREATION MODAL
@@ -27846,7 +26999,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 // ACCOUNTING SHEET — Full Accounting Module v2.5
 // B2BRouter e-Invoicing + KPIs + Invoice Management
 // ============================================
-function AccountingSheet({ notify, profile, clients = [], requests = [], businessSettings, t = k=>k, lang = 'fr' }) {
+function AccountingSheet({ notify, profile, clients = [], requests = [], rentals = [], businessSettings, t = k=>k, lang = 'fr' }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   
   // Global data
@@ -27897,6 +27050,14 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [cnSaving, setCnSaving] = useState(false);
   const [cnSaved, setCnSaved] = useState(null);
 
+  // Invoice detail modal
+  const [viewingOutInvoice, setViewingOutInvoice] = useState(null);
+  const [sendingB2bForInv, setSendingB2bForInv] = useState(false);
+
+  // Incoming supplier invoices
+  const [incomingFilter, setIncomingFilter] = useState('pending');
+  const [receivedInvoices, setReceivedInvoices] = useState([]);
+
   // Purchase order state
   const [poSupplier, setPoSupplier] = useState('');
   const [poSupplierRef, setPoSupplierRef] = useState('');
@@ -27926,6 +27087,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
 
   // À facturer — RMA invoice creation from accounting
   const [creatingForRma, setCreatingForRma] = useState(null);
+  const [outFilter, setOutFilter] = useState('active');
   const [poShowPaymentForm, setPoShowPaymentForm] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [bankTransactions, setBankTransactions] = useState([]);
@@ -27943,7 +27105,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   // ===== DATA LOADING =====
   const loadInvoices = async () => {
     const { data } = await supabase.from('invoices')
-      .select('*, companies(name, email, tva_number, siret, chorus_invoicing), service_requests(request_number, status, quote_data, request_type, billing_address_id), invoice_lines(*)')
+      .select('*, companies(name, email, tva_number, siret, chorus_invoicing, country, billing_country), service_requests(request_number, status, quote_data, request_type, billing_address_id), invoice_lines(*)')
       .order('created_at', { ascending: false });
     if (data) setInvoices(data);
   };
@@ -28075,8 +27237,9 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const syncedCount = activeInvoices.filter(i => i.b2brouter_invoice_id).length;
 
   // ===== FILTER HELPERS =====
-  // ===== À FACTURER — RMAs ready for invoicing =====
+  // ===== À FACTURER — RMAs & Rentals ready for invoicing =====
   const invoicedRequestIds = new Set(invoices.map(inv => inv.request_id).filter(Boolean));
+  const invoicedRentalIds = new Set(invoices.map(inv => inv.rental_request_id).filter(Boolean));
   const rmasToInvoice = (requests || []).filter(r => {
     if (!r.request_number || r.request_type === 'parts') return false;
     if (invoicedRequestIds.has(r.id)) return false;
@@ -28085,6 +27248,23 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
     const allShipped = devices.every(d => ['shipped', 'completed', 'delivered'].includes(d.status));
     return allShipped || ['shipped', 'completed'].includes(r.status);
   });
+  const rentalsToInvoice = (rentals || []).filter(r => {
+    if (invoicedRentalIds.has(r.id)) return false;
+    return r.status === 'completed';
+  });
+
+  // Fiscal zone helper
+  const getFiscalZone = (company) => {
+    const country = (company?.country || company?.billing_country || 'France').trim();
+    if (!country || country.toLowerCase() === 'france') return 'france';
+    const euCountries = ['allemagne','germany','belgique','belgium','pays-bas','netherlands','nederland','luxembourg','italie','italy','espagne','spain','portugal','autriche','austria','irlande','ireland','grèce','greece','finlande','finland','suède','sweden','danemark','denmark','pologne','poland','république tchèque','czech republic','roumanie','romania','bulgarie','bulgaria','hongrie','hungary','croatie','croatia','slovaquie','slovakia','slovénie','slovenia','estonie','estonia','lettonie','latvia','lituanie','lithuania','malte','malta','chypre','cyprus'];
+    return euCountries.some(c => country.toLowerCase().includes(c)) ? 'eu' : 'international';
+  };
+
+  // Incoming: POs with supplier invoices linked
+  const supplierInvoicedPOs = (purchaseOrders || []).filter(p => p.supplier_invoice_ref);
+  const pendingSupplierInvs = supplierInvoicedPOs.filter(p => p.status === 'invoiced');
+  const paidSupplierInvs = supplierInvoicedPOs.filter(p => p.status === 'paid');
 
   const filterBySearch = (items, fields) => {
     if (!searchTerm) return items;
@@ -28173,9 +27353,9 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   // ===== TABS =====
   const tabs = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
-    { id: 'to_invoice', icon: '🔔', label: 'À facturer', badge: rmasToInvoice.length || null },
+    { id: 'to_invoice', icon: '🔔', label: 'À facturer', badge: (rmasToInvoice.length + rentalsToInvoice.length) || null },
     { id: 'outgoing', icon: '📤', label: lang === 'en' ? 'Outgoing' : 'Émises', badge: unpaidInvoices.length || null },
-    { id: 'incoming', icon: '📥', label: lang === 'en' ? 'Incoming' : 'Reçues' },
+    { id: 'incoming', icon: '📥', label: lang === 'en' ? 'Incoming' : 'Reçues', badge: pendingSupplierInvs.length || null },
     { id: 'credit_notes', icon: '↩️', label: lang === 'en' ? 'Credit Notes' : 'Avoirs' },
     { id: 'purchase_orders', icon: '🛒', label: lang === 'en' ? 'POs' : 'Bons Cde' },
     { id: 'clients', icon: '👥', label: 'Clients' },
@@ -28226,7 +27406,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
          ================================================================ */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6">
-          {/* KPI Row */}
+          {/* KPI Row 1: Revenue */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KPICard icon="💰" label={lang === 'en' ? 'Revenue YTD' : 'CA Année'} value={fmt(totalRevenueYear)} sub={`${thisYearInvoices.length} factures`} color="blue" />
             <KPICard icon="📅" label={lang === 'en' ? 'This Month' : 'Ce Mois'} value={fmt(totalRevenueMonth)} sub={`${thisMonthInvoices.length} factures`} color="emerald" />
@@ -28234,12 +27414,28 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             <KPICard icon="🔴" label={lang === 'en' ? 'Overdue' : 'En Retard'} value={fmt(totalOverdue)} sub={`${overdueInvoices.length} factures`} color="red" />
           </div>
 
-          {/* Second row */}
+          {/* KPI Row 2: Workflow actions */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KPICard icon="🔧" label={lang === 'en' ? 'Service Revenue' : 'CA Service'} value={fmt(serviceRevenue)} sub={`Calibration & réparation`} color="blue" />
-            <KPICard icon="🔩" label={lang === 'en' ? 'Parts Revenue' : 'CA Pièces'} value={fmt(partsRevenue)} sub="Ventes de pièces" color="purple" />
+            <div onClick={() => setActiveTab('to_invoice')} className="cursor-pointer hover:shadow-md transition-shadow bg-white rounded-xl border shadow-sm p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center text-lg">🔔</div>
+                <div>
+                  <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length + rentalsToInvoice.length}</p>
+                  <p className="text-xs text-gray-500">À facturer</p>
+                </div>
+              </div>
+            </div>
+            <div onClick={() => setActiveTab('incoming')} className="cursor-pointer hover:shadow-md transition-shadow bg-white rounded-xl border shadow-sm p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-lg">📥</div>
+                <div>
+                  <p className="text-2xl font-bold text-purple-600">{pendingSupplierInvs.length}</p>
+                  <p className="text-xs text-gray-500">Fact. fournisseur</p>
+                </div>
+              </div>
+            </div>
             <KPICard icon="✅" label={lang === 'en' ? 'Collected' : 'Encaissé'} value={fmt(totalCollected)} sub={`${paidInvoices.length} payées`} color="green" />
-            <KPICard icon="🔗" label="e-Factures" value={syncedCount} sub={`/${activeInvoices.length} sync B2BRouter`} color="teal" />
+            <KPICard icon="🔗" label="PDP / e-Factures" value={syncedCount} sub={`/${activeInvoices.length} sync B2BRouter`} color="teal" />
           </div>
 
           {/* Revenue Chart */}
@@ -28256,34 +27452,40 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             </div>
           </div>
 
-          {/* TVA Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Revenue breakdown + TVA */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border shadow-sm p-5">
-              <p className="text-sm text-gray-500 mb-1">Total HT {thisYear}</p>
-              <p className="text-xl font-bold text-gray-800">{fmt(totalHTYear)}</p>
+              <p className="text-sm text-gray-500 mb-1">🔧 Service</p>
+              <p className="text-xl font-bold text-gray-800">{fmt(serviceRevenue)}</p>
             </div>
             <div className="bg-white rounded-xl border shadow-sm p-5">
-              <p className="text-sm text-gray-500 mb-1">TVA Collectée {thisYear}</p>
+              <p className="text-sm text-gray-500 mb-1">🔩 Pièces</p>
+              <p className="text-xl font-bold text-gray-800">{fmt(partsRevenue)}</p>
+            </div>
+            <div className="bg-white rounded-xl border shadow-sm p-5">
+              <p className="text-sm text-gray-500 mb-1">TVA Collectée</p>
               <p className="text-xl font-bold text-amber-600">{fmt(totalTVAYear)}</p>
             </div>
             <div className="bg-white rounded-xl border shadow-sm p-5">
-              <p className="text-sm text-gray-500 mb-1">Total TTC {thisYear}</p>
-              <p className="text-xl font-bold text-[#2D5A7B]">{fmt(totalRevenueYear)}</p>
+              <p className="text-sm text-gray-500 mb-1">Total HT</p>
+              <p className="text-xl font-bold text-[#2D5A7B]">{fmt(totalHTYear)}</p>
             </div>
           </div>
 
-          {/* Recent Activity */}
+          {/* Recent Activity - clickable */}
           <div className="bg-white rounded-xl border shadow-sm p-6">
-            <h3 className="font-bold text-gray-800 mb-4">🕐 {lang === 'en' ? 'Recent Invoices' : 'Factures Récentes'}</h3>
+            <h3 className="font-bold text-gray-800 mb-4">🕐 Factures Récentes</h3>
             {activeInvoices.slice(0, 8).map((inv, i) => {
               const isOd = inv.due_date && !['paid','cancelled'].includes(inv.status) && new Date(inv.due_date) < now;
               return (
-                <div key={inv.id} className={`flex items-center justify-between py-2.5 ${i < 7 ? 'border-b border-gray-100' : ''}`}>
+                <div key={inv.id} onClick={() => setViewingOutInvoice(inv)}
+                  className={`flex items-center justify-between py-2.5 cursor-pointer hover:bg-gray-50 rounded px-2 -mx-2 ${i < 7 ? 'border-b border-gray-100' : ''}`}>
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-sm font-medium text-gray-800">{inv.invoice_number}</span>
+                    <span className="font-mono text-sm font-medium text-[#2D5A7B]">{inv.invoice_number}</span>
                     <span className="text-sm text-gray-500">{inv.companies?.name || '—'}</span>
                     <StatusBadge status={isOd ? 'overdue' : inv.status} />
-                    {inv.b2brouter_invoice_id && <span className="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-medium">B2B</span>}
+                    {inv.b2brouter_invoice_id && <span className="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-medium">PDP</span>}
+                    {inv.is_tva_exonerated && <span className="text-[9px] bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded">Export</span>}
                   </div>
                   <span className="font-medium text-gray-800">{fmt(inv.total_ttc)}</span>
                 </div>
@@ -28301,18 +27503,21 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
         <div className="space-y-4">
           <SectionHeader title="À Facturer" icon="🔔" actions={
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">{rmasToInvoice.length} RMA{rmasToInvoice.length !== 1 ? 's' : ''} en attente</span>
+              <span className="text-sm text-gray-500">{rmasToInvoice.length + rentalsToInvoice.length} en attente</span>
             </div>
           } />
 
-          {rmasToInvoice.length === 0 ? (
+          {rmasToInvoice.length === 0 && rentalsToInvoice.length === 0 ? (
             <div className="bg-white rounded-xl border shadow-sm p-8">
-              <EmptyState icon="✅" title="Tout est facturé" subtitle="Aucune RMA en attente de facturation" />
+              <EmptyState icon="✅" title="Tout est facturé" subtitle="Aucune RMA ou location en attente de facturation" />
             </div>
           ) : (
             <div className="space-y-3">
+              {/* RMAs */}
+              {rmasToInvoice.length > 0 && (
+                <>
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">🔧 RMA / Services ({rmasToInvoice.length})</h3>
               {rmasToInvoice.map(rma => {
-                const company = rma.companies || {};
                 const devices = rma.request_devices || [];
                 const quoteData = rma.quote_data || {};
                 const quoteTotal = parseFloat(rma.quote_total) || quoteData.devices?.reduce((s, d) => {
@@ -28370,6 +27575,42 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   </div>
                 );
               })}
+                </>
+              )}
+
+              {/* Rentals */}
+              {rentalsToInvoice.length > 0 && (
+                <>
+                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1 mt-4">📅 Locations ({rentalsToInvoice.length})</h3>
+                  {rentalsToInvoice.map(rental => {
+                    const rCompany = rental.companies || {};
+                    const rentalTotal = parseFloat(rental.total_price) || parseFloat(rental.quoted_price) || 0;
+                    return (
+                      <div key={rental.id} className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-shadow">
+                        <div className="p-5">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <span className="font-mono font-bold text-[#2D5A7B]">{rental.rental_number || rental.id?.slice(0,8)}</span>
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-green-100 text-green-700">Terminée</span>
+                              </div>
+                              <p className="font-medium text-gray-800">{rCompany.name || 'Client inconnu'}</p>
+                              <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                                <span>📅 {rental.start_date ? new Date(rental.start_date).toLocaleDateString('fr-FR') : '?'} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString('fr-FR') : '?'}</span>
+                                {rental.device_model && <span>📦 {rental.device_model}</span>}
+                              </div>
+                            </div>
+                            <div className="text-right ml-4 shrink-0">
+                              <p className="text-xs text-gray-400 uppercase font-medium">Montant</p>
+                              <p className="text-xl font-bold text-gray-800">{rentalTotal > 0 ? fmt(rentalTotal) : '—'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -28378,35 +27619,59 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
       {/* ================================================================
            OUTGOING INVOICES TAB
          ================================================================ */}
-      {activeTab === 'outgoing' && (
+      {activeTab === 'outgoing' && (() => {
+        const allOutgoing = activeInvoices.filter(i => !(i.invoice_number || '').startsWith('AVO'));
+        const draftInvs = allOutgoing.filter(i => i.status === 'created' || i.status === 'draft');
+        const sentInvs = allOutgoing.filter(i => i.status === 'sent');
+        const pendingInvs = allOutgoing.filter(i => !['paid','cancelled','created','draft'].includes(i.status) && !(i.due_date && new Date(i.due_date) < now));
+        const overdueInvs = allOutgoing.filter(i => !['paid','cancelled'].includes(i.status) && i.due_date && new Date(i.due_date) < now);
+        const paidInvs = allOutgoing.filter(i => i.status === 'paid');
+        const activeFiltered = allOutgoing.filter(i => i.status !== 'paid');
+
+        const filterMap = { active: activeFiltered, draft: draftInvs, sent: sentInvs, pending: pendingInvs, overdue: overdueInvs, paid: paidInvs, all: allOutgoing };
+        const displayInvs = filterByDate(filterBySearch(filterMap[outFilter] || allOutgoing, ['invoice_number', 'companies.name']), 'invoice_date');
+
+        const markSent = async (inv) => {
+          const { error } = await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
+          if (!error) { notify('📤 Facture marquée envoyée'); loadInvoices(); } else notify(error.message, 'error');
+        };
+        const markPaid = async (inv) => {
+          const { error } = await supabase.from('invoices').update({ status: 'paid', paid_at: new Date().toISOString(), paid_amount: inv.total_ttc }).eq('id', inv.id);
+          if (!error) { notify('✅ Facture marquée payée'); loadInvoices(); } else notify(error.message, 'error');
+        };
+        const cancelInv = async (inv) => {
+          if (!confirm('Annuler cette facture ?')) return;
+          const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
+          if (!error) { notify('Facture annulée'); loadInvoices(); } else notify(error.message, 'error');
+        };
+
+        return (
         <div className="space-y-4">
-          <SectionHeader title={lang === 'en' ? 'Outgoing Invoices' : 'Factures Émises'} icon="📤" actions={
+          <SectionHeader title="Factures Émises" icon="📤" actions={
             <div className="flex items-center gap-2">
               <button onClick={loadInvoices} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">🔄</button>
-              <button onClick={() => { setSiStep(1); setSiSaved(null); setSiSelectedClient(null); setSiSelectedBillingAddr(null); setSiLines([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setSiClientRef(''); setSiBcNumber(''); setSiNotes(''); setSiIsExonerated(false); setActiveTab('outgoing_new'); }} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Nouvelle Facture</button>
+              <button onClick={() => { setSiStep(1); setSiSaved(null); setSiSelectedClient(null); setSiSelectedBillingAddr(null); setSiLines([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setSiClientRef(''); setSiBcNumber(''); setSiNotes(''); setSiIsExonerated(false); setActiveTab('outgoing_new'); }} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Facture Libre</button>
             </div>
           } />
-          <SearchBar placeholder="Rechercher par n° facture, client..." />
 
-          {/* Summary cards */}
-          <div className="grid grid-cols-4 gap-3 mb-2">
-            <div className="bg-white rounded-lg border p-3 text-center">
-              <p className="text-xl font-bold text-gray-800">{activeInvoices.length}</p>
-              <p className="text-xs text-gray-500">Total</p>
-            </div>
-            <div className="bg-white rounded-lg border p-3 text-center">
-              <p className="text-xl font-bold text-blue-600">{activeInvoices.filter(i => i.status === 'sent').length}</p>
-              <p className="text-xs text-gray-500">Envoyées</p>
-            </div>
-            <div className="bg-white rounded-lg border p-3 text-center">
-              <p className="text-xl font-bold text-green-600">{paidInvoices.length}</p>
-              <p className="text-xs text-gray-500">Payées</p>
-            </div>
-            <div className="bg-white rounded-lg border p-3 text-center">
-              <p className="text-xl font-bold text-red-600">{overdueInvoices.length}</p>
-              <p className="text-xs text-gray-500">En retard</p>
-            </div>
+          {/* Status sub-filters */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {[
+              { k: 'active', l: '🔵 En cours', c: activeFiltered.length },
+              { k: 'draft', l: '📝 Brouillon', c: draftInvs.length },
+              { k: 'sent', l: '📤 Envoyées', c: sentInvs.length },
+              { k: 'overdue', l: '🔴 En retard', c: overdueInvs.length },
+              { k: 'paid', l: '✅ Payées', c: paidInvs.length },
+              { k: 'all', l: '📋 Toutes', c: allOutgoing.length },
+            ].map(f => (
+              <button key={f.k} onClick={() => setOutFilter(f.k)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${outFilter === f.k ? 'bg-[#2D5A7B] text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+                {f.l} {f.c > 0 ? `(${f.c})` : ''}
+              </button>
+            ))}
           </div>
+
+          <SearchBar placeholder="Rechercher par n° facture, client..." />
 
           {/* Invoice table */}
           <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -28418,41 +27683,57 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Échéance</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">HT</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">TTC</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">e-Facture</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">PDP</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filterByDate(filterBySearch(activeInvoices.filter(i => !(i.invoice_number || '').startsWith('AVO')), ['invoice_number', 'companies.name']), 'invoice_date').map((inv, i) => {
+                  {displayInvs.map((inv, i) => {
                     const isOd = inv.due_date && !['paid','cancelled'].includes(inv.status) && new Date(inv.due_date) < now;
+                    const daysOverdue = isOd ? Math.floor((now - new Date(inv.due_date)) / 86400000) : 0;
+                    const isFrench = !inv.is_tva_exonerated;
                     return (
-                      <tr key={inv.id} className={`border-b last:border-0 hover:bg-gray-50 ${isOd ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                      <tr key={inv.id} onClick={() => setViewingOutInvoice(inv)} className={`border-b last:border-0 hover:bg-blue-50 cursor-pointer ${isOd ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
                         <td className="px-4 py-3">
-                          <span className="font-mono font-medium text-gray-800">{inv.invoice_number}</span>
+                          <span className="font-mono font-medium text-[#2D5A7B] hover:underline">{inv.invoice_number}</span>
                           {inv.service_requests?.request_number && <p className="text-[10px] text-gray-400">{inv.service_requests.request_number}</p>}
                         </td>
-                        <td className="px-4 py-3 text-gray-700">{inv.companies?.name || '—'}</td>
-                        <td className="px-4 py-3 text-gray-600">{inv.invoice_date?.split('T')[0] || '—'}</td>
                         <td className="px-4 py-3">
-                          <span className={isOd ? 'text-red-600 font-medium' : 'text-gray-600'}>{inv.due_date?.split('T')[0] || '—'}</span>
+                          <p className="text-gray-700">{inv.companies?.name || '—'}</p>
+                          {inv.is_tva_exonerated && <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">Export</span>}
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-700">{fmt(inv.subtotal_ht)}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs">{inv.invoice_date?.split('T')[0] || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={isOd ? 'text-red-600 font-medium text-xs' : 'text-gray-600 text-xs'}>{inv.due_date?.split('T')[0] || '—'}</span>
+                          {isOd && <p className="text-[9px] text-red-500 font-medium">⚠️ {daysOverdue}j de retard</p>}
+                        </td>
                         <td className="px-4 py-3 text-right font-bold text-gray-800">{fmt(inv.total_ttc)}</td>
-                        <td className="px-4 py-3 text-center"><StatusBadge status={isOd ? 'overdue' : inv.status} /></td>
+                        <td className="px-4 py-3 text-center">
+                          <StatusBadge status={isOd ? 'overdue' : inv.status} />
+                        </td>
                         <td className="px-4 py-3 text-center">
                           {inv.b2brouter_invoice_id ? (
-                            <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-1 rounded-full font-medium">✓ #{inv.b2brouter_invoice_id}</span>
+                            <span className="text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full font-medium" title={`B2BRouter #${inv.b2brouter_invoice_id}`}>✓ PDP</span>
+                          ) : isFrench ? (
+                            <span className="text-[9px] text-amber-500">⏳</span>
                           ) : (
-                            <span className="text-[10px] text-gray-300">—</span>
+                            <span className="text-[9px] text-gray-300" title="Export — e-reporting">📡</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-center gap-1">
                             {inv.pdf_url && <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded text-sm" title="PDF">📄</a>}
-                            <button onClick={() => { /* TODO: open detail modal */ }} className="p-1 hover:bg-gray-100 rounded text-sm" title="Détails">👁️</button>
+                            {(inv.status === 'created' || inv.status === 'draft') && (
+                              <button onClick={() => markSent(inv)} className="p-1 hover:bg-blue-100 rounded text-xs text-blue-600" title="Marquer envoyée">📤</button>
+                            )}
+                            {inv.status === 'sent' && (
+                              <button onClick={() => markPaid(inv)} className="p-1 hover:bg-green-100 rounded text-xs text-green-600" title="Marquer payée">💰</button>
+                            )}
+                            {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+                              <button onClick={() => cancelInv(inv)} className="p-1 hover:bg-red-100 rounded text-xs text-red-400" title="Annuler">✕</button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -28461,76 +27742,146 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                 </tbody>
               </table>
             </div>
-            {activeInvoices.length === 0 && <EmptyState icon="📤" title="Aucune facture émise" subtitle="Les factures créées depuis les RMA apparaîtront ici" />}
+            {displayInvs.length === 0 && <EmptyState icon="📤" title="Aucune facture" subtitle={outFilter === 'active' ? 'Aucune facture en cours' : 'Aucune facture dans ce filtre'} />}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ================================================================
            INCOMING INVOICES TAB
          ================================================================ */}
-      {activeTab === 'incoming' && (
+      {activeTab === 'incoming' && (() => {
+        const inFilterMap = {
+          pending: pendingSupplierInvs,
+          paid: paidSupplierInvs,
+          all: supplierInvoicedPOs,
+        };
+        const displayPOs = inFilterMap[incomingFilter] || pendingSupplierInvs;
+
+        return (
         <div className="space-y-4">
-          <SectionHeader title={lang === 'en' ? 'Incoming Invoices' : 'Factures Reçues'} icon="📥" actions={
-            <button onClick={loadB2bReceived} disabled={loading.b2bReceived} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c] disabled:opacity-50">
-              {loading.b2bReceived ? '...' : '🔄 Charger B2BRouter'}
-            </button>
+          <SectionHeader title="Factures Reçues" icon="📥" actions={
+            <div className="flex items-center gap-2">
+              <button onClick={loadB2bReceived} disabled={loading.b2bReceived} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium disabled:opacity-50">
+                {loading.b2bReceived ? '⏳...' : '📡 B2BRouter'}
+              </button>
+            </div>
           } />
 
-          {b2bReceivedInvoices ? (
+          {/* Sub-filters */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {[
+              { k: 'pending', l: '⏳ À payer', c: pendingSupplierInvs.length },
+              { k: 'paid', l: '✅ Payées', c: paidSupplierInvs.length },
+              { k: 'all', l: '📋 Toutes', c: supplierInvoicedPOs.length },
+              { k: 'b2b', l: '📡 B2BRouter', c: (b2bReceivedInvoices?.invoices || []).length },
+            ].map(f => (
+              <button key={f.k} onClick={() => setIncomingFilter(f.k)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${incomingFilter === f.k ? 'bg-[#2D5A7B] text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+                {f.l} {f.c > 0 ? `(${f.c})` : ''}
+              </button>
+            ))}
+          </div>
+
+          {/* PO-linked supplier invoices */}
+          {incomingFilter !== 'b2b' && (
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-              {b2bReceivedInvoices.meta && <div className="px-4 py-2 bg-gray-50 border-b"><p className="text-xs text-gray-500">Total: {b2bReceivedInvoices.meta.total_count} factures reçues</p></div>}
-              {(b2bReceivedInvoices.invoices || []).length > 0 ? (
+              {displayPOs.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead><tr className="bg-gray-50 border-b">
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° BC</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fournisseur</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Facture</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Montant BC</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Montant Fact.</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr></thead>
                   <tbody>
-                    {(b2bReceivedInvoices.invoices || []).map((inv, i) => (
-                      <tr key={inv.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-500">{inv.id}</td>
-                        <td className="px-4 py-3 font-medium text-gray-800">{inv.contact?.name || inv.from_name || '—'}</td>
-                        <td className="px-4 py-3">{inv.number || '—'}</td>
-                        <td className="px-4 py-3 text-gray-600">{inv.date || '—'}</td>
-                        <td className="px-4 py-3 text-right font-bold">{inv.total ? `${inv.total} ${inv.currency || '€'}` : '—'}</td>
-                        <td className="px-4 py-3 text-center"><StatusBadge status={inv.state} /></td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button onClick={async () => {
-                              try {
-                                await b2bPost({ action: 'mark_invoice', invoice_id: inv.id, state: 'accepted' });
-                                notify?.('Facture acceptée', 'success');
-                                loadB2bReceived();
-                              } catch (e) { notify?.(e.message, 'error'); }
-                            }} className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100" title="Accepter">✓</button>
-                            <button onClick={async () => {
-                              const reason = prompt('Raison du refus:');
-                              if (!reason) return;
-                              try {
-                                await b2bPost({ action: 'mark_invoice', invoice_id: inv.id, state: 'refused', reason });
-                                notify?.('Facture refusée', 'success');
-                                loadB2bReceived();
-                              } catch (e) { notify?.(e.message, 'error'); }
-                            }} className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs hover:bg-red-100" title="Refuser">✗</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {displayPOs.map((po, i) => {
+                      const diff = po.supplier_invoice_amount && po.subtotal_ht ? Math.abs(parseFloat(po.supplier_invoice_amount) - parseFloat(po.subtotal_ht)) : 0;
+                      const hasDiff = diff > 0.5;
+                      return (
+                        <tr key={po.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                          <td className="px-4 py-3 font-mono font-medium text-gray-800">{po.po_number}</td>
+                          <td className="px-4 py-3 text-gray-700">{po.supplier_name || '—'}</td>
+                          <td className="px-4 py-3">
+                            <span className="font-medium text-purple-700">{po.supplier_invoice_ref}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-600">{fmt(po.subtotal_ht)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`font-bold ${hasDiff ? 'text-amber-600' : 'text-gray-800'}`}>{po.supplier_invoice_amount ? fmt(po.supplier_invoice_amount) : '—'}</span>
+                            {hasDiff && <p className="text-[9px] text-amber-500">⚠️ Écart {fmt(diff)}</p>}
+                          </td>
+                          <td className="px-4 py-3 text-center"><StatusBadge status={po.status} /></td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => { setPoViewId(po.id); setActiveTab('purchase_orders'); }} className="p-1 hover:bg-gray-100 rounded text-sm" title="Voir BC">👁️</button>
+                              {po.status === 'invoiced' && (
+                                <button onClick={async () => {
+                                  await supabase.from('supplier_purchase_orders').update({ status: 'paid', payment_date: new Date().toISOString().split('T')[0], payment_amount: po.supplier_invoice_amount || po.subtotal_ht }).eq('id', po.id);
+                                  notify('✅ Marquée payée'); loadPurchaseOrders();
+                                }} className="p-1 hover:bg-green-100 rounded text-xs text-green-600" title="Marquer payée">💰</button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              ) : <EmptyState icon="📥" title="Aucune facture reçue" subtitle="Les factures envoyées par vos fournisseurs apparaîtront ici" />}
+              ) : <EmptyState icon={incomingFilter === 'paid' ? '✅' : '📥'} title={incomingFilter === 'paid' ? 'Aucune facture payée' : 'Aucune facture en attente'} subtitle="Liez des factures fournisseur depuis les Bons de Commande" />}
             </div>
-          ) : (
-            <EmptyState icon="📥" title={lang === 'en' ? 'Click Load to fetch received invoices from B2BRouter' : 'Cliquez sur Charger pour récupérer les factures reçues'} />
+          )}
+
+          {/* B2BRouter received invoices */}
+          {incomingFilter === 'b2b' && (
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              {b2bReceivedInvoices ? (
+                <>
+                  {b2bReceivedInvoices.meta && <div className="px-4 py-2 bg-gray-50 border-b"><p className="text-xs text-gray-500">Total: {b2bReceivedInvoices.meta.total_count} factures PDP</p></div>}
+                  {(b2bReceivedInvoices.invoices || []).length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-gray-50 border-b">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fournisseur</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Facture</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr></thead>
+                      <tbody>
+                        {(b2bReceivedInvoices.invoices || []).map((binv, i) => (
+                          <tr key={binv.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                            <td className="px-4 py-3 font-medium text-gray-800">{binv.contact?.name || binv.from_name || '—'}</td>
+                            <td className="px-4 py-3">{binv.number || '—'}</td>
+                            <td className="px-4 py-3 text-gray-600 text-xs">{binv.date || '—'}</td>
+                            <td className="px-4 py-3 text-right font-bold">{binv.total ? `${binv.total} ${binv.currency || '€'}` : '—'}</td>
+                            <td className="px-4 py-3 text-center"><StatusBadge status={binv.state} /></td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button onClick={async () => {
+                                  try { await b2bPost({ action: 'mark_invoice', invoice_id: binv.id, state: 'accepted' }); notify('✓ Acceptée'); loadB2bReceived(); } catch (e) { notify(e.message, 'error'); }
+                                }} className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100">✓</button>
+                                <button onClick={async () => {
+                                  const reason = prompt('Raison du refus:'); if (!reason) return;
+                                  try { await b2bPost({ action: 'mark_invoice', invoice_id: binv.id, state: 'refused', reason }); notify('✗ Refusée'); loadB2bReceived(); } catch (e) { notify(e.message, 'error'); }
+                                }} className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs hover:bg-red-100">✗</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : <EmptyState icon="📡" title="Aucune facture PDP" subtitle="Les factures reçues via B2BRouter apparaîtront ici" />}
+                </>
+              ) : <EmptyState icon="📡" title="Cliquez sur 📡 B2BRouter pour charger" />}
+            </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ================================================================
            CREDIT NOTES TAB
@@ -29719,6 +29070,8 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
           if (!txs || txs.length === 0) return;
           
           let matched = 0;
+          const invoicesPaid = [];
+          const posPaid = [];
           for (const tx of txs) {
             // Try matching incoming payments (credits) to outgoing invoices
             if (tx.amount > 0) {
@@ -29733,6 +29086,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   match_type: 'auto_invoice', matched_invoice_id: invMatch.id,
                   match_label: `Facture ${invMatch.invoice_number}`, matched_at: new Date().toISOString()
                 }).eq('id', tx.id);
+                invoicesPaid.push(invMatch.id);
                 matched++;
                 continue;
               }
@@ -29745,6 +29099,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   match_type: 'auto_invoice', matched_invoice_id: amtMatches[0].id,
                   match_label: `Facture ${amtMatches[0].invoice_number} (montant)`, matched_at: new Date().toISOString()
                 }).eq('id', tx.id);
+                invoicesPaid.push(amtMatches[0].id);
                 matched++;
                 continue;
               }
@@ -29764,11 +29119,24 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                   match_type: 'auto_po', matched_po_id: poMatch.id,
                   match_label: `BC ${poMatch.po_number} — ${poMatch.supplier_name}`, matched_at: new Date().toISOString()
                 }).eq('id', tx.id);
+                posPaid.push(poMatch.id);
                 matched++;
               }
             }
           }
-          if (matched > 0) { notify(`🔗 ${matched} rapprochement(s) automatique(s)`); loadBankTransactions(); }
+          // Auto-mark matched invoices as paid
+          if (invoicesPaid.length > 0) {
+            for (const invId of invoicesPaid) {
+              await supabase.from('invoices').update({ status: 'paid', paid_at: new Date().toISOString() }).eq('id', invId).neq('status', 'paid');
+            }
+          }
+          // Auto-mark matched POs as paid
+          if (posPaid.length > 0) {
+            for (const poId of posPaid) {
+              await supabase.from('supplier_purchase_orders').update({ status: 'paid', payment_date: new Date().toISOString().split('T')[0] }).eq('id', poId).neq('status', 'paid');
+            }
+          }
+          if (matched > 0) { notify(`🔗 ${matched} rapprochement(s) automatique(s)${invoicesPaid.length ? ` — ${invoicesPaid.length} facture(s) payée(s)` : ''}${posPaid.length ? ` — ${posPaid.length} BC payé(s)` : ''}`); loadBankTransactions(); loadInvoices(); loadPurchaseOrders(); }
         };
 
         // Manual match
@@ -29778,13 +29146,32 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
           else if (type === 'po') updates.matched_po_id = targetId;
           const { error } = await supabase.from('bank_transactions').update(updates).eq('id', tx.id);
           if (error) { notify('Erreur: ' + error.message, 'error'); return; }
+          // Auto-mark invoice or PO as paid
+          if (type === 'invoice' && targetId) {
+            await supabase.from('invoices').update({ status: 'paid', paid_at: new Date().toISOString() }).eq('id', targetId).neq('status', 'paid');
+            loadInvoices();
+          }
+          if (type === 'po' && targetId) {
+            await supabase.from('supplier_purchase_orders').update({ status: 'paid', payment_date: new Date().toISOString().split('T')[0] }).eq('id', targetId).neq('status', 'paid');
+            loadPurchaseOrders();
+          }
           notify('✅ Rapprochement enregistré');
           setBankMatchingTx(null); setBankMatchLabel('');
           loadBankTransactions();
         };
 
-        // Unmatch
+        // Unmatch — revert invoice/PO paid status
         const handleUnmatch = async (tx) => {
+          // If was matched to invoice, revert to sent
+          if (tx.matched_invoice_id && (tx.match_type === 'auto_invoice' || tx.match_type === 'manual_invoice')) {
+            await supabase.from('invoices').update({ status: 'sent', paid_at: null }).eq('id', tx.matched_invoice_id).eq('status', 'paid');
+            loadInvoices();
+          }
+          // If was matched to PO, revert to invoiced or delivered
+          if (tx.matched_po_id && (tx.match_type === 'auto_po' || tx.match_type === 'manual_po')) {
+            await supabase.from('supplier_purchase_orders').update({ status: 'invoiced', payment_date: null }).eq('id', tx.matched_po_id).eq('status', 'paid');
+            loadPurchaseOrders();
+          }
           await supabase.from('bank_transactions').update({
             match_type: null, matched_invoice_id: null, matched_po_id: null,
             match_label: null, matched_at: null, matched_by: null
@@ -31129,6 +30516,103 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                 </div>
               </div>
             )}
+          </div>
+        );
+      })()}
+
+      {/* Invoice Detail Modal */}
+      {viewingOutInvoice && (() => {
+        const inv = viewingOutInvoice;
+        const isOd = inv.due_date && !['paid','cancelled'].includes(inv.status) && new Date(inv.due_date) < now;
+        const zone = getFiscalZone(inv.companies);
+        const lines = inv.invoice_lines || [];
+        const markSentDtl = async () => {
+          await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
+          notify('📤 Facture envoyée'); loadInvoices(); setViewingOutInvoice(null);
+        };
+        const markPaidDtl = async () => {
+          await supabase.from('invoices').update({ status: 'paid', paid_at: new Date().toISOString(), paid_amount: inv.total_ttc }).eq('id', inv.id);
+          notify('✅ Facture payée'); loadInvoices(); setViewingOutInvoice(null);
+        };
+        const sendToB2b = async () => {
+          if (!b2bConnected) { notify('B2BRouter non connecté', 'error'); return; }
+          setSendingB2bForInv(true);
+          try {
+            const result = await b2bPost({ action: 'create_einvoice', invoice_number: inv.invoice_number, invoice_date: inv.invoice_date, due_date: inv.due_date,
+              client_name: inv.companies?.name, client_siret: inv.companies?.siret, client_tva: inv.companies?.tva_number,
+              subtotal_ht: inv.subtotal_ht, tva_amount: inv.tva_amount, total_ttc: inv.total_ttc,
+              lines: lines.map(l => ({ description: l.description, quantity: l.quantity, unit_price: l.unit_price_ht, total: l.total_ht }))
+            });
+            if (result?.invoice_id) {
+              await supabase.from('invoices').update({ b2brouter_invoice_id: result.invoice_id, status: inv.status === 'created' ? 'sent' : inv.status }).eq('id', inv.id);
+              notify(zone === 'france' ? '🏦 e-Facture envoyée PDP!' : '📡 e-Reporting déclaré!');
+              loadInvoices();
+            }
+          } catch (e) { notify(e.message, 'error'); }
+          setSendingB2bForInv(false);
+        };
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={e => e.target === e.currentTarget && setViewingOutInvoice(null)}>
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="bg-[#2D5A7B] text-white p-6 rounded-t-2xl flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold">{inv.invoice_number}</h2>
+                  <p className="text-blue-200 text-sm">{inv.companies?.name || '—'}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${zone === 'france' ? 'bg-blue-600' : zone === 'eu' ? 'bg-indigo-600' : 'bg-purple-600'}`}>
+                    {zone === 'france' ? '🇫🇷 France' : zone === 'eu' ? '🇪🇺 UE' : '🌍 International'}
+                  </span>
+                  <button onClick={() => setViewingOutInvoice(null)} className="ml-2 p-1 hover:bg-white/20 rounded-lg">✕</button>
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Status + dates */}
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-[10px] text-gray-400 uppercase">Statut</p><StatusBadge status={isOd ? 'overdue' : inv.status} /></div>
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-[10px] text-gray-400 uppercase">Date</p><p className="font-medium text-sm">{inv.invoice_date?.split('T')[0]}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-[10px] text-gray-400 uppercase">Échéance</p><p className={`font-medium text-sm ${isOd ? 'text-red-600' : ''}`}>{inv.due_date?.split('T')[0] || '—'}</p></div>
+                  <div className="bg-gray-50 rounded-lg p-3"><p className="text-[10px] text-gray-400 uppercase">PDP</p><p className="font-medium text-sm">{inv.b2brouter_invoice_id ? `✓ #${inv.b2brouter_invoice_id}` : '—'}</p></div>
+                </div>
+                {/* RMA ref */}
+                {inv.service_requests?.request_number && (
+                  <div className="bg-blue-50 rounded-lg p-3"><p className="text-xs text-blue-600">RMA: {inv.service_requests.request_number}</p></div>
+                )}
+                {/* Lines */}
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead><tr className="bg-gray-50 border-b"><th className="px-3 py-2 text-left text-xs text-gray-500">Description</th><th className="px-3 py-2 text-center text-xs text-gray-500">Qté</th><th className="px-3 py-2 text-right text-xs text-gray-500">P.U. HT</th><th className="px-3 py-2 text-right text-xs text-gray-500">Total HT</th></tr></thead>
+                    <tbody>
+                      {lines.filter(l => l.line_type !== 'device_header').map((l, i) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="px-3 py-2 text-gray-700">{l.description}</td>
+                          <td className="px-3 py-2 text-center text-gray-600">{l.quantity || ''}</td>
+                          <td className="px-3 py-2 text-right text-gray-600">{l.unit_price_ht ? fmt(l.unit_price_ht) : ''}</td>
+                          <td className="px-3 py-2 text-right font-medium">{l.total_ht ? fmt(l.total_ht) : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Totals */}
+                <div className="bg-gray-50 rounded-lg p-4 space-y-1">
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Sous-total HT</span><span className="font-medium">{fmt(inv.subtotal_ht)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">{inv.is_tva_exonerated ? 'TVA (exonérée)' : 'TVA 20%'}</span><span className="font-medium">{inv.is_tva_exonerated ? '0,00 €' : fmt(inv.tva_amount)}</span></div>
+                  <div className="flex justify-between text-base font-bold border-t pt-2 mt-2"><span>Total TTC</span><span>{fmt(inv.total_ttc)}</span></div>
+                </div>
+                {/* Actions */}
+                <div className="flex items-center gap-2 flex-wrap pt-2 border-t">
+                  {inv.pdf_url && <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium">📄 PDF</a>}
+                  {(inv.status === 'created' || inv.status === 'draft') && <button onClick={markSentDtl} className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm font-medium">📤 Marquer envoyée</button>}
+                  {inv.status === 'sent' && <button onClick={markPaidDtl} className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg text-sm font-medium">💰 Marquer payée</button>}
+                  {!inv.b2brouter_invoice_id && b2bConnected && (
+                    <button onClick={sendToB2b} disabled={sendingB2bForInv} className="px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded-lg text-sm font-medium disabled:opacity-50">
+                      {sendingB2bForInv ? '⏳...' : zone === 'france' ? '🏦 Envoyer PDP' : '📡 Déclarer e-Reporting'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         );
       })()}
