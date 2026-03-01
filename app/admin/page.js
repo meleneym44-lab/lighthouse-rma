@@ -27398,9 +27398,9 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
 
   const loadContracts = async () => {
     const { data, error } = await supabase.from('contracts')
-      .select('*, companies(id, name, email, country, billing_country, tva_number, siret, address, city, postal_code), contract_devices(*)')
+      .select('*, companies(*), contract_devices(*)')
       .order('created_at', { ascending: false });
-    console.log('📋 Accounting loadContracts:', { count: data?.length, error, statuses: data?.map(c => c.status), activeCount: data?.filter(c => c.status === 'active').length });
+    if (error) console.error('❌ loadContracts error:', error);
     if (data) setAcctContracts(data);
   };
 
