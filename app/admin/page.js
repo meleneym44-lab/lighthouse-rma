@@ -27426,6 +27426,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   const [bankMatchLabel, setBankMatchLabel] = useState('');
   const [bankParsedPreview, setBankParsedPreview] = useState(null);
   const [bankAutoMatching, setBankAutoMatching] = useState(false);
+  const [bankView, setBankView] = useState('reconciliation'); // reconciliation, history
   const [poSelectedSupplierId, setPoSelectedSupplierId] = useState(null);
   const [poShowNewSupplier, setPoShowNewSupplier] = useState(false);
   const [poNewSupplier, setPoNewSupplier] = useState({ name:'', address:'', postal_code:'', city:'', country:'France', phone:'', email:'', contact_name:'', siret:'', tva_number:'', notes:'' });
@@ -27781,12 +27782,11 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   const tabs = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
     { id: 'to_invoice', icon: '🔔', label: 'À facturer', badge: itemsToInvoice.length || null },
-    { id: 'outgoing', icon: '📤', label: lang === 'en' ? 'Outgoing' : 'Émises', badge: unpaidInvoices.length || null },
+    { id: 'bank', icon: '🏦', label: lang === 'en' ? 'Invoices & Bank' : 'Factures & Banque', badge: unpaidInvoices.length || null },
     { id: 'incoming', icon: '📥', label: lang === 'en' ? 'Incoming' : 'Reçues', badge: pendingSupplierInvs.length || null },
     { id: 'credit_notes', icon: '↩️', label: lang === 'en' ? 'Credit Notes' : 'Avoirs' },
     { id: 'purchase_orders', icon: '🛒', label: lang === 'en' ? 'POs' : 'Bons Cde' },
     { id: 'clients', icon: '👥', label: 'Clients' },
-    { id: 'bank', icon: '🏦', label: lang === 'en' ? 'Bank' : 'Banque' },
     { id: 'reporting', icon: '📈', label: 'Reporting' },
     { id: 'settings', icon: '⚙️', label: lang === 'en' ? 'Settings' : 'Paramètres' },
   ];
@@ -28011,135 +28011,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
       {/* ================================================================
            OUTGOING INVOICES TAB
          ================================================================ */}
-      {activeTab === 'outgoing' && (() => {
-        const allOutgoing = activeInvoices.filter(i => !(i.invoice_number || '').startsWith('AVO'));
-        const draftInvs = allOutgoing.filter(i => i.status === 'created' || i.status === 'draft');
-        const sentInvs = allOutgoing.filter(i => i.status === 'sent');
-        const pendingInvs = allOutgoing.filter(i => !['paid','cancelled','created','draft'].includes(i.status) && !(i.due_date && new Date(i.due_date) < now));
-        const overdueInvs = allOutgoing.filter(i => !['paid','cancelled'].includes(i.status) && i.due_date && new Date(i.due_date) < now);
-        const paidInvs = allOutgoing.filter(i => i.status === 'paid');
-        const activeFiltered = allOutgoing.filter(i => i.status !== 'paid');
-
-        const filterMap = { active: activeFiltered, draft: draftInvs, sent: sentInvs, pending: pendingInvs, overdue: overdueInvs, paid: paidInvs, all: allOutgoing };
-        const displayInvs = filterByDate(filterBySearch(filterMap[outFilter] || allOutgoing, ['invoice_number', 'companies.name']), 'invoice_date');
-
-        const markSent = async (inv) => {
-          const { error } = await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
-          if (!error) { notify('📤 Facture marquée envoyée'); loadInvoices(); } else notify(error.message, 'error');
-        };
-        const markPaid = async (inv) => {
-          const { error } = await supabase.from('invoices').update({ status: 'paid', paid_at: new Date().toISOString(), paid_amount: inv.total_ttc }).eq('id', inv.id);
-          if (!error) { notify('✅ Facture marquée payée'); loadInvoices(); } else notify(error.message, 'error');
-        };
-        const cancelInv = async (inv) => {
-          if (!confirm('Annuler cette facture ?')) return;
-          const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
-          if (!error) { notify('Facture annulée'); loadInvoices(); } else notify(error.message, 'error');
-        };
-
-        return (
-        <div className="space-y-4">
-          <SectionHeader title="Factures Émises" icon="📤" actions={
-            <div className="flex items-center gap-2">
-              <button onClick={loadInvoices} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">🔄</button>
-              <button onClick={() => { setSiStep(1); setSiSaved(null); setSiSelectedClient(null); setSiSelectedBillingAddr(null); setSiLines([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setSiClientRef(''); setSiBcNumber(''); setSiNotes(''); setSiIsExonerated(false); setActiveTab('outgoing_new'); }} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Facture Libre</button>
-            </div>
-          } />
-
-          {/* Status sub-filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {[
-              { k: 'active', l: '🔵 En cours', c: activeFiltered.length },
-              { k: 'draft', l: '📝 Brouillon', c: draftInvs.length },
-              { k: 'sent', l: '📤 Envoyées', c: sentInvs.length },
-              { k: 'overdue', l: '🔴 En retard', c: overdueInvs.length },
-              { k: 'paid', l: '✅ Payées', c: paidInvs.length },
-              { k: 'all', l: '📋 Toutes', c: allOutgoing.length },
-            ].map(f => (
-              <button key={f.k} onClick={() => setOutFilter(f.k)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${outFilter === f.k ? 'bg-[#2D5A7B] text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
-                {f.l} {f.c > 0 ? `(${f.c})` : ''}
-              </button>
-            ))}
-          </div>
-
-          <SearchBar placeholder="Rechercher par n° facture, client..." />
-
-          {/* Invoice table */}
-          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b">
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Facture</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Échéance</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">TTC</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">PDP</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayInvs.map((inv, i) => {
-                    const isOd = inv.due_date && !['paid','cancelled'].includes(inv.status) && new Date(inv.due_date) < now;
-                    const daysOverdue = isOd ? Math.floor((now - new Date(inv.due_date)) / 86400000) : 0;
-                    const isFrench = !inv.is_tva_exonerated;
-                    return (
-                      <tr key={inv.id} onClick={() => setViewingOutInvoice(inv)} className={`border-b last:border-0 hover:bg-blue-50 cursor-pointer ${isOd ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                        <td className="px-4 py-3">
-                          <span className="font-mono font-medium text-[#2D5A7B] hover:underline">{inv.invoice_number}</span>
-                          {inv.service_requests?.request_number && <p className="text-[10px] text-gray-400">{inv.service_requests.request_number}</p>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-gray-700">{inv.companies?.name || '—'}</p>
-                          {inv.is_tva_exonerated && <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">Export</span>}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">{inv.invoice_date?.split('T')[0] || '—'}</td>
-                        <td className="px-4 py-3">
-                          <span className={isOd ? 'text-red-600 font-medium text-xs' : 'text-gray-600 text-xs'}>{inv.due_date?.split('T')[0] || '—'}</span>
-                          {isOd && <p className="text-[9px] text-red-500 font-medium">⚠️ {daysOverdue}j de retard</p>}
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-gray-800">{fmt(inv.total_ttc)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <StatusBadge status={isOd ? 'overdue' : inv.status} />
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {inv.b2brouter_invoice_id ? (
-                            <span className="text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full font-medium" title={`B2BRouter #${inv.b2brouter_invoice_id}`}>✓ PDP</span>
-                          ) : isFrench ? (
-                            <span className="text-[9px] text-amber-500">⏳</span>
-                          ) : (
-                            <span className="text-[9px] text-gray-300" title="Export — e-reporting">📡</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center justify-center gap-1">
-                            {inv.pdf_url && <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded text-sm" title="PDF">📄</a>}
-                            {(inv.status === 'created' || inv.status === 'draft') && (
-                              <button onClick={() => markSent(inv)} className="p-1 hover:bg-blue-100 rounded text-xs text-blue-600" title="Marquer envoyée">📤</button>
-                            )}
-                            {inv.status === 'sent' && (
-                              <button onClick={() => markPaid(inv)} className="p-1 hover:bg-green-100 rounded text-xs text-green-600" title="Marquer payée">💰</button>
-                            )}
-                            {inv.status !== 'paid' && inv.status !== 'cancelled' && (
-                              <button onClick={() => cancelInv(inv)} className="p-1 hover:bg-red-100 rounded text-xs text-red-400" title="Annuler">✕</button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {displayInvs.length === 0 && <EmptyState icon="📤" title="Aucune facture" subtitle={outFilter === 'active' ? 'Aucune facture en cours' : 'Aucune facture dans ce filtre'} />}
-          </div>
-        </div>
-        );
-      })()}
-
       {/* ================================================================
            INCOMING INVOICES TAB
          ================================================================ */}
@@ -29809,9 +29680,60 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
         // Open invoices for left panel
         const leftInvoices = outgoingInvoices.filter(i => !['paid', 'cancelled', 'credited'].includes(i.status));
 
+        // Invoice actions for history view
+        const markSent = async (inv) => {
+          const { error } = await supabase.from('invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', inv.id);
+          if (!error) { notify('📤 Facture marquée envoyée'); loadInvoices(); } else notify(error.message, 'error');
+        };
+        const markPaid = async (inv) => {
+          const { error } = await supabase.from('invoices').update({ status: 'paid', paid_at: new Date().toISOString(), paid_amount: inv.total_ttc }).eq('id', inv.id);
+          if (!error) { notify('✅ Facture marquée payée'); loadInvoices(); } else notify(error.message, 'error');
+        };
+        const cancelInv = async (inv) => {
+          if (!confirm('Annuler cette facture ?')) return;
+          const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', inv.id);
+          if (!error) { notify('Facture annulée'); loadInvoices(); } else notify(error.message, 'error');
+        };
+
+        // History view data
+        const allOutgoing = activeInvoices.filter(i => !(i.invoice_number || '').startsWith('AVO'));
+        const draftInvs = allOutgoing.filter(i => i.status === 'created' || i.status === 'draft');
+        const sentInvs = allOutgoing.filter(i => i.status === 'sent');
+        const overdueInvs = allOutgoing.filter(i => !['paid','cancelled','credited'].includes(i.status) && i.due_date && new Date(i.due_date) < now);
+        const paidInvs = allOutgoing.filter(i => i.status === 'paid');
+        const activeFiltered = allOutgoing.filter(i => !['paid','cancelled'].includes(i.status));
+        const histFilterMap = { active: activeFiltered, draft: draftInvs, sent: sentInvs, overdue: overdueInvs, paid: paidInvs, all: allOutgoing };
+        const histDisplayInvs = filterByDate(filterBySearch(histFilterMap[outFilter] || allOutgoing, ['invoice_number', 'companies.name']), 'invoice_date');
+
         return (
           <div className="space-y-4">
-            <SectionHeader title="Rapprochement Bancaire" icon="🏦" />
+            {/* Header with sub-navigation */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-bold text-gray-800">🏦 Factures & Banque</h2>
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                  {[
+                    { k: 'reconciliation', l: '🔗 Rapprochement', badge: unmatchedTx.length + reviewTx.length + matchedTx.length },
+                    { k: 'history', l: '📋 Historique', badge: allOutgoing.length },
+                  ].map(v => (
+                    <button key={v.k} onClick={() => setBankView(v.k)}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                        bankView === v.k ? 'bg-white shadow-sm text-[#2D5A7B]' : 'text-gray-500 hover:text-gray-700'
+                      }`}>
+                      {v.l}
+                      {v.badge > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${bankView === v.k ? 'bg-[#2D5A7B] text-white' : 'bg-gray-200 text-gray-600'}`}>{v.badge}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={loadInvoices} className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">🔄</button>
+                <button onClick={() => { setSiStep(1); setSiSaved(null); setSiSelectedClient(null); setSiSelectedBillingAddr(null); setSiLines([{ id: 'l1', description: '', quantity: 1, unitPrice: 0, total: 0 }]); setSiClientRef(''); setSiBcNumber(''); setSiNotes(''); setSiIsExonerated(false); setActiveTab('outgoing_new'); }} className="px-4 py-2 bg-[#2D5A7B] text-white rounded-lg text-sm font-medium hover:bg-[#1a3d5c]">+ Facture Libre</button>
+              </div>
+            </div>
+
+            {/* ===== RECONCILIATION VIEW ===== */}
+            {bankView === 'reconciliation' && (<>
 
             {/* Top action bar */}
             <div className="flex items-center gap-3">
@@ -30112,7 +30034,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {/* Match type selector */}
                     <div className="flex items-center gap-2">
                       {[
                         { k: 'invoice', l: '📄 Facture client', show: bankMatchingTx.amount > 0 },
@@ -30125,8 +30046,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                         </button>
                       ))}
                     </div>
-
-                    {/* Invoice matching */}
                     {bankMatchType === 'invoice' && (
                       <div className="space-y-2">
                         <p className="text-sm text-gray-500">Sélectionner la facture correspondante:</p>
@@ -30150,8 +30069,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                         </div>
                       </div>
                     )}
-
-                    {/* PO matching */}
                     {bankMatchType === 'po' && (
                       <div className="space-y-2">
                         <p className="text-sm text-gray-500">Sélectionner le BC correspondant:</p>
@@ -30169,8 +30086,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                         </div>
                       </div>
                     )}
-
-                    {/* Other / custom label */}
                     {bankMatchType === 'other' && (
                       <div className="space-y-3">
                         <div>
@@ -30186,6 +30101,104 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+            )}
+
+            </>)}
+
+            {/* ===== HISTORY VIEW ===== */}
+            {bankView === 'history' && (
+              <div className="space-y-4">
+                {/* Status sub-filters */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { k: 'active', l: '🔵 En cours', c: activeFiltered.length },
+                    { k: 'draft', l: '📝 Brouillon', c: draftInvs.length },
+                    { k: 'sent', l: '📤 Envoyées', c: sentInvs.length },
+                    { k: 'overdue', l: '🔴 En retard', c: overdueInvs.length },
+                    { k: 'paid', l: '✅ Payées', c: paidInvs.length },
+                    { k: 'all', l: '📋 Toutes', c: allOutgoing.length },
+                  ].map(f => (
+                    <button key={f.k} onClick={() => setOutFilter(f.k)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${outFilter === f.k ? 'bg-[#2D5A7B] text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+                      {f.l} {f.c > 0 ? `(${f.c})` : ''}
+                    </button>
+                  ))}
+                </div>
+
+                <SearchBar placeholder="Rechercher par n° facture, client..." />
+
+                {/* Invoice table */}
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b">
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Facture</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Échéance</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">TTC</th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">PDP</th>
+                          <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {histDisplayInvs.map((inv, i) => {
+                          const isOd = inv.due_date && !['paid','cancelled','credited'].includes(inv.status) && new Date(inv.due_date) < now;
+                          const daysOverdue = isOd ? Math.floor((now - new Date(inv.due_date)) / 86400000) : 0;
+                          const isFrench = !inv.is_tva_exonerated;
+                          return (
+                            <tr key={inv.id} onClick={() => setViewingOutInvoice(inv)} className={`border-b last:border-0 hover:bg-blue-50 cursor-pointer ${isOd ? 'bg-red-50/30' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                              <td className="px-4 py-3">
+                                <span className="font-mono font-medium text-[#2D5A7B] hover:underline">{inv.invoice_number}</span>
+                                {inv.service_requests?.request_number && <p className="text-[10px] text-gray-400">{inv.service_requests.request_number}</p>}
+                              </td>
+                              <td className="px-4 py-3">
+                                <p className="text-gray-700">{inv.companies?.name || '—'}</p>
+                                {inv.is_tva_exonerated && <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">Export</span>}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 text-xs">{inv.invoice_date?.split('T')[0] || '—'}</td>
+                              <td className="px-4 py-3">
+                                <span className={isOd ? 'text-red-600 font-medium text-xs' : 'text-gray-600 text-xs'}>{inv.due_date?.split('T')[0] || '—'}</span>
+                                {isOd && <p className="text-[9px] text-red-500 font-medium">⚠️ {daysOverdue}j de retard</p>}
+                              </td>
+                              <td className="px-4 py-3 text-right font-bold text-gray-800">{fmt(inv.total_ttc)}</td>
+                              <td className="px-4 py-3 text-center">
+                                <StatusBadge status={isOd ? 'overdue' : inv.status} />
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {inv.b2brouter_invoice_id ? (
+                                  <span className="text-[9px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full font-medium" title={`B2BRouter #${inv.b2brouter_invoice_id}`}>✓ PDP</span>
+                                ) : isFrench ? (
+                                  <span className="text-[9px] text-amber-500">⏳</span>
+                                ) : (
+                                  <span className="text-[9px] text-gray-300" title="Export — e-reporting">📡</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center justify-center gap-1">
+                                  {inv.pdf_url && <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer" className="p-1 hover:bg-gray-100 rounded text-sm" title="PDF">📄</a>}
+                                  {(inv.status === 'created' || inv.status === 'draft') && (
+                                    <button onClick={() => markSent(inv)} className="p-1 hover:bg-blue-100 rounded text-xs text-blue-600" title="Marquer envoyée">📤</button>
+                                  )}
+                                  {inv.status === 'sent' && (
+                                    <button onClick={() => markPaid(inv)} className="p-1 hover:bg-green-100 rounded text-xs text-green-600" title="Marquer payée">💰</button>
+                                  )}
+                                  {inv.status !== 'paid' && inv.status !== 'cancelled' && (
+                                    <button onClick={() => cancelInv(inv)} className="p-1 hover:bg-red-100 rounded text-xs text-red-400" title="Annuler">✕</button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {histDisplayInvs.length === 0 && <EmptyState icon="📋" title="Aucune facture" subtitle={outFilter === 'active' ? 'Aucune facture en cours' : 'Aucune facture dans ce filtre'} />}
                 </div>
               </div>
             )}
