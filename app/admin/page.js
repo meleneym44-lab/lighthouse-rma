@@ -26418,6 +26418,15 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
   const quoteData = rma.quote_data || {};
   const billingAddr = quoteData.billingAddress || null;
 
+  // Editable customer fields
+  const [custName, setCustName] = useState(company.name || '');
+  const [custAddress, setCustAddress] = useState(billingAddr?.street || billingAddr?.line1 || billingAddr?.address_line1 || company.address || '');
+  const [custCity, setCustCity] = useState(billingAddr?.city || company.city || '');
+  const [custPostal, setCustPostal] = useState(billingAddr?.postal_code || company.postal_code || '');
+  const [custCountry, setCustCountry] = useState(billingAddr?.country || company.country || company.billing_country || 'France');
+  const [custSiret, setCustSiret] = useState(company.siret || '');
+  const [custEmail, setCustEmail] = useState(company.email || '');
+
   const getFiscalZone = (c) => {
     const country = (c?.country || c?.billing_country || 'France').trim();
     if (!country || country.toLowerCase() === 'france') return 'france';
@@ -26477,16 +26486,20 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           quantity: qty, unitPrice: up, total: qty * up, sortOrder: i
         });
       });
-      if (quoteData.shipping?.total > 0) {
+      // Shipping: quote_data.shipping gets overwritten with tracking data after shipment
+      // Use saved partsTotal and grandTotal to compute shipping amount
+      const computedPartsTotal = parts.reduce((s, p) => s + ((parseInt(p.quantity) || 1) * (parseFloat(p.unitPrice) || 0)), 0);
+      const savedPartsTotal = parseFloat(quoteData.partsTotal) || computedPartsTotal;
+      const savedGrand = parseFloat(quoteData.grandTotal) || 0;
+      const shippingAmt = savedGrand > savedPartsTotal ? Math.round((savedGrand - savedPartsTotal) * 100) / 100 : 0;
+      if (shippingAmt > 0) {
         newLines.push({
           id: 'shipping', lineType: 'shipping',
-          description: 'Frais de port / Shipping', quantity: 1,
-          unitPrice: parseFloat(quoteData.shipping.total) || 0,
-          total: parseFloat(quoteData.shipping.total) || 0, sortOrder: 999
+          description: `Frais de port / Shipping (${quoteData.shipping?.parcels || 1} colis)`,
+          quantity: 1, unitPrice: shippingAmt, total: shippingAmt, sortOrder: 999
         });
       }
       if (newLines.length === 0) {
-        // Fallback: use request_devices
         (rma.request_devices || []).forEach((d, i) => {
           newLines.push({
             id: `dev-${i}`, lineType: 'parts',
@@ -26759,6 +26772,11 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           is_tva_exonerated: isExonerated,
           client_ref: clientRef,
           client_tva_number: clientTVA || billingAddr?.tva_number || company.tva_number || '',
+          billing_data: {
+            name: custName, address: custAddress, city: custCity,
+            postal_code: custPostal, country: custCountry,
+            siret: custSiret, email: custEmail, tva_number: clientTVA
+          },
           pdf_url: pdfUrl,
           notes,
           created_by: profile?.id
@@ -26821,7 +26839,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
         <div className="flex-1 overflow-y-auto p-6">
           {/* STEP 1: Edit Lines */}
           {step === 1 && (() => {
-            const zone = getFiscalZone ? getFiscalZone(company) : 'france';
+            const zone = getFiscalZone({ country: custCountry });
             const addr = billingAddr || {};
             const itemType = rma.rental_number ? 'rental' : rma.contract_number ? 'contract' : rma.request_type === 'parts' ? 'parts' : 'rma';
             const typeBadge = { rma: '🔧 RMA', parts: '🔩 Pièces', rental: '📅 Location', contract: '📋 Contrat' }[itemType] || itemType;
@@ -26829,20 +26847,30 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
             <div className="space-y-5">
               {/* Customer + Reference Info */}
               <div className="grid grid-cols-2 gap-4">
-                {/* Customer card */}
+                {/* Customer card - EDITABLE */}
                 <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                   <h4 className="text-xs font-bold text-gray-400 uppercase">👤 Client</h4>
-                  <p className="font-bold text-gray-800 text-lg">{company.name || '—'}</p>
-                  {(addr.street || company.address) && <p className="text-sm text-gray-600">{addr.street || addr.line1 || company.address}</p>}
-                  {(addr.city || addr.postal_code) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}</p>}
-                  {(addr.country || company.country) && <p className="text-sm text-gray-500">{addr.country || company.country}</p>}
-                  <div className="flex items-center gap-3 pt-1 flex-wrap">
-                    {(clientTVA || company.tva_number) && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-mono">{clientTVA || company.tva_number}</span>}
-                    {company.siret && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-mono">SIRET {company.siret}</span>}
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
-                      zone === 'france' ? 'bg-blue-100 text-blue-700' : zone === 'eu' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
-                    }`}>{zone === 'france' ? '🇫🇷 France' : zone === 'eu' ? '🇪🇺 UE' : '🌍 International'}</span>
+                  <input type="text" value={custName} onChange={e => setCustName(e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm font-bold text-gray-800 bg-white" placeholder="Nom société" />
+                  <input type="text" value={custAddress} onChange={e => setCustAddress(e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm bg-white" placeholder="Adresse" />
+                  <div className="grid grid-cols-3 gap-2">
+                    <input type="text" value={custPostal} onChange={e => setCustPostal(e.target.value)} className="px-2 py-1.5 border rounded-lg text-sm bg-white" placeholder="CP" />
+                    <input type="text" value={custCity} onChange={e => setCustCity(e.target.value)} className="col-span-2 px-2 py-1.5 border rounded-lg text-sm bg-white" placeholder="Ville" />
                   </div>
+                  <input type="text" value={custCountry} onChange={e => setCustCountry(e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-sm bg-white" placeholder="Pays" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-gray-400 uppercase">TVA</label>
+                      <input type="text" value={clientTVA} onChange={e => setClientTVA(e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-xs font-mono bg-white" placeholder="FR..." />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-400 uppercase">SIRET</label>
+                      <input type="text" value={custSiret} onChange={e => setCustSiret(e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-xs font-mono bg-white" placeholder="SIRET" />
+                    </div>
+                  </div>
+                  <input type="text" value={custEmail} onChange={e => setCustEmail(e.target.value)} className="w-full px-2 py-1.5 border rounded-lg text-xs bg-white" placeholder="Email facturation" />
+                  <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                    zone === 'france' ? 'bg-blue-100 text-blue-700' : zone === 'eu' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
+                  }`}>{zone === 'france' ? '🇫🇷 France' : zone === 'eu' ? '🇪🇺 UE' : '🌍 International'}</span>
                 </div>
 
                 {/* Reference card */}
@@ -26869,26 +26897,22 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
               </div>
 
               {/* Invoice settings */}
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Réf. client</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Réf. client / N° BC</label>
                   <input type="text" value={clientRef} onChange={e => setClientRef(e.target.value)} placeholder="BC client, PO#..." className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">N° TVA client</label>
-                  <input type="text" value={clientTVA} onChange={e => setClientTVA(e.target.value)} placeholder="FR..." className="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Délai paiement</label>
                   <div className="flex items-center gap-1">
-                    <input type="number" value={paymentTermsDays} onChange={e => setPaymentTermsDays(parseInt(e.target.value) || 30)} className="w-16 px-2 py-2 border rounded-lg text-sm" />
+                    <input type="number" value={paymentTermsDays} onChange={e => setPaymentTermsDays(parseInt(e.target.value) || 30)} className="w-20 px-2 py-2 border rounded-lg text-sm" />
                     <span className="text-xs text-gray-400">jours</span>
                   </div>
                 </div>
                 <div className="flex items-end">
-                  <label className="flex items-center gap-2 cursor-pointer px-3 py-2 bg-gray-50 rounded-lg w-full">
+                  <label className="flex items-center gap-2 cursor-pointer px-3 py-2 bg-gray-50 rounded-lg w-full border">
                     <input type="checkbox" checked={isExonerated} onChange={e => setIsExonerated(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                    <span className="text-xs font-medium text-gray-600">Exo. TVA</span>
+                    <span className="text-xs font-medium text-gray-600">Exonération TVA (Art. 262-I CGI)</span>
                   </label>
                 </div>
               </div>
