@@ -1785,7 +1785,7 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
     logoImg.crossOrigin = 'anonymous';
     logoImg.src = '/images/logos/Lighthouse-color-logo.jpg';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
-    pdf.addImage(logoImg, 'JPEG', 10, 8, 95, 21);
+    pdf.addImage(logoImg, 'JPEG', 10, 8, 85, 22);
   } catch(e) {
     pdf.setFontSize(18);
     pdf.setFont('helvetica', 'bold');
@@ -2178,7 +2178,7 @@ const generateBCPDF = async (poData, businessSettings) => {
     const logoImg = new Image(); logoImg.crossOrigin = 'anonymous';
     logoImg.src = '/images/logos/Lighthouse-color-logo.jpg';
     await new Promise((res, rej) => { logoImg.onload = res; logoImg.onerror = rej; setTimeout(rej, 2000); });
-    pdf.addImage(logoImg, 'JPEG', 10, 8, 95, 21);
+    pdf.addImage(logoImg, 'JPEG', 10, 8, 85, 22);
   } catch(e) {
     pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
     pdf.text('LIGHTHOUSE', 10, 18);
