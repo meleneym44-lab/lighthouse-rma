@@ -26439,36 +26439,143 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
     const newLines = [];
     let sortOrder = 0;
 
-    // Handle rental items
+    // Handle rental items — full pricing breakdown from quote_data
     if (rma.rental_number || rma.isRental) {
-      const amount = parseFloat(rma.total_price) || parseFloat(rma.quoted_price) || 0;
-      const startD = rma.start_date ? new Date(rma.start_date).toLocaleDateString('fr-FR') : '';
-      const endD = rma.end_date ? new Date(rma.end_date).toLocaleDateString('fr-FR') : '';
+      const rentalItems = quoteData.quoteItems || quoteData.items || [];
+      const period = quoteData.rentalPeriod || { start: rma.start_date, end: rma.end_date, days: rma.start_date && rma.end_date ? Math.ceil((new Date(rma.end_date) - new Date(rma.start_date)) / (1000*60*60*24)) + 1 : 0 };
+      const startD = period.start ? new Date(period.start).toLocaleDateString('fr-FR') : '';
+      const endD = period.end ? new Date(period.end).toLocaleDateString('fr-FR') : '';
+
+      // Period header
       newLines.push({
-        id: 'rental-1', lineType: 'service',
-        description: `Location ${rma.rental_number || ''} — ${rma.device_model || 'Équipement'}${startD ? ` (${startD} → ${endD})` : ''}`,
-        quantity: 1, unitPrice: amount, total: amount, sortOrder: 0
+        id: 'rental-period', lineType: 'device_header', isDevice: true,
+        description: `📅 Location ${rma.rental_number || ''} — ${startD} → ${endD} (${period.days || '?'} jours)`,
+        quantity: null, unitPrice: null, total: null, sortOrder: 0
       });
+
+      if (rentalItems.length > 0) {
+        // Individual device lines from quote
+        rentalItems.forEach((item, i) => {
+          const rateLabel = item.rate_type === 'semaine' ? '/sem' : item.rate_type === 'mois' ? '/mois' : item.rate_type === 'forfait' ? ' forfait' : '/jour';
+          const appliedRate = parseFloat(item.applied_rate) || 0;
+          const lineTotal = parseFloat(item.line_total) || 0;
+          const deviceName = item.item_name || 'Équipement';
+          const serial = item.serial_number ? ` (SN: ${item.serial_number})` : '';
+          const daysInfo = item.rental_days || period.days || '';
+
+          newLines.push({
+            id: `rental-dev-${i}`, lineType: 'service',
+            description: `${deviceName}${serial} — ${daysInfo}j × ${appliedRate.toFixed(2)} €${rateLabel}`,
+            quantity: 1, unitPrice: lineTotal, total: lineTotal, sortOrder: i + 1
+          });
+        });
+      } else {
+        // Fallback: single line with total
+        const amount = parseFloat(quoteData.totalHT) || parseFloat(rma.quote_total) || 0;
+        newLines.push({
+          id: 'rental-1', lineType: 'service',
+          description: `Location équipement${startD ? ` (${startD} → ${endD})` : ''}`,
+          quantity: 1, unitPrice: amount, total: amount, sortOrder: 1
+        });
+      }
+
+      // Shipping
+      const shippingVal = parseFloat(quoteData.shipping) || 0;
+      if (shippingVal > 0) {
+        newLines.push({
+          id: 'rental-shipping', lineType: 'shipping',
+          description: 'Frais de port / Shipping',
+          quantity: 1, unitPrice: shippingVal, total: shippingVal, sortOrder: 900
+        });
+      }
+
+      // Discount
+      const discountAmt = parseFloat(quoteData.discountAmount) || 0;
+      if (discountAmt > 0) {
+        const discLabel = quoteData.discountType === 'percent' ? `Remise (${quoteData.discount}%)` : 'Remise';
+        newLines.push({
+          id: 'rental-discount', lineType: 'service',
+          description: discLabel,
+          quantity: 1, unitPrice: -discountAmt, total: -discountAmt, sortOrder: 950
+        });
+      }
+
       setLines(newLines);
       return;
     }
 
-    // Handle contract items
+    // Handle contract items — per-device pricing breakdown
     if (rma.contract_number) {
-      const amount = parseFloat(rma.annual_price) || parseFloat(rma.total_price) || 0;
-      const cDevices = rma.contract_devices || [];
+      const cDevices = quoteData.devices || rma.contract_devices || [];
+      const ctrDates = quoteData.contractDates || {};
+      let sortIdx = 0;
+
+      // Contract header
       newLines.push({
-        id: 'ctr-hdr', lineType: 'service',
-        description: `Contrat de maintenance ${rma.contract_number} — ${cDevices.length} appareil${cDevices.length !== 1 ? 's' : ''}`,
-        quantity: 1, unitPrice: amount, total: amount, sortOrder: 0
+        id: 'ctr-hdr', lineType: 'device_header', isDevice: true,
+        description: `📋 Contrat ${rma.contract_number}${ctrDates.start ? ` — ${new Date(ctrDates.start).toLocaleDateString('fr-FR')} → ${new Date(ctrDates.end).toLocaleDateString('fr-FR')}` : ''}`,
+        quantity: null, unitPrice: null, total: null, sortOrder: sortIdx++
       });
-      cDevices.forEach((d, i) => {
-        newLines.push({
-          id: `ctr-dev-${i}`, lineType: 'device_header',
-          description: `  ${d.model || d.device_model || 'Appareil'} — SN: ${d.serial_number || '?'}`,
-          quantity: null, unitPrice: null, total: null, isDevice: true, sortOrder: i + 1
+
+      if (cDevices.length > 0 && cDevices[0].calibrationPrice !== undefined) {
+        // Full pricing from quote_data.devices
+        cDevices.forEach((d, i) => {
+          const model = d.model || d.device_model || 'Appareil';
+          const serial = d.serial || d.serial_number || '?';
+          const calPrice = parseFloat(d.calibrationPrice) || 0;
+          const calQty = parseInt(d.calibrationQty) || 1;
+
+          if (d.needsCalibration && calPrice > 0) {
+            newLines.push({
+              id: `ctr-cal-${i}`, lineType: 'service',
+              description: `Étalonnage ${model} (SN: ${serial})${calQty > 1 ? ` × ${calQty}` : ''}`,
+              quantity: calQty, unitPrice: calPrice, total: calPrice * calQty, sortOrder: sortIdx++
+            });
+          }
+
+          const netPrice = parseFloat(d.nettoyagePrice) || 0;
+          const netQty = parseInt(d.nettoyageQty) || 1;
+          if (d.needsNettoyage && netPrice > 0) {
+            newLines.push({
+              id: `ctr-net-${i}`, lineType: 'service',
+              description: `Nettoyage ${model} (SN: ${serial})${netQty > 1 ? ` × ${netQty}` : ''}`,
+              quantity: netQty, unitPrice: netPrice, total: netPrice * netQty, sortOrder: sortIdx++
+            });
+          }
+
+          // Additional parts
+          (d.additionalParts || []).forEach((part, pi) => {
+            const partTotal = (parseFloat(part.price) || 0) * (parseInt(part.quantity) || 1);
+            if (partTotal > 0) {
+              newLines.push({
+                id: `ctr-part-${i}-${pi}`, lineType: 'parts',
+                description: `${part.name || part.partNumber || 'Pièce'} — ${model}`,
+                quantity: parseInt(part.quantity) || 1, unitPrice: parseFloat(part.price) || 0,
+                total: partTotal, sortOrder: sortIdx++
+              });
+            }
+          });
         });
-      });
+      } else {
+        // Fallback: single line with total
+        const amount = parseFloat(quoteData.grandTotal) || parseFloat(rma.quote_total) || 0;
+        newLines.push({
+          id: 'ctr-total', lineType: 'service',
+          description: `Contrat de maintenance — ${cDevices.length} appareil${cDevices.length !== 1 ? 's' : ''}`,
+          quantity: 1, unitPrice: amount, total: amount, sortOrder: sortIdx++
+        });
+      }
+
+      // Shipping
+      const ctrShipping = parseFloat(quoteData.shippingTotal) || parseFloat(quoteData.shipping?.total) || 0;
+      if (ctrShipping > 0) {
+        newLines.push({
+          id: 'ctr-shipping', lineType: 'shipping',
+          description: `Frais de port (${quoteData.shipping?.parcels || 1} colis)`,
+          quantity: 1, unitPrice: ctrShipping, total: ctrShipping, sortOrder: 990
+        });
+      }
+
       setLines(newLines);
       setClientRef(rma.contract_number);
       return;
@@ -27290,7 +27397,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
 
   const loadContracts = async () => {
     const { data } = await supabase.from('contracts')
-      .select('*, companies(id, name, country, billing_country), contract_devices(*)')
+      .select('*, companies(id, name, email, country, billing_country, tva_number, siret, address, city, postal_code), contract_devices(*)')
       .order('created_at', { ascending: false });
     if (data) setAcctContracts(data);
   };
