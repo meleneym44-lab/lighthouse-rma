@@ -26398,7 +26398,7 @@ Lighthouse France`
 // ============================================
 // INVOICE CREATION MODAL
 // ============================================
-function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings, lang = 'fr' }) {
+function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessSettings, lang = 'fr', invoices: allInvoices = [] }) {
   const t = k => k;
   const [step, setStep] = useState(1); // 1=Edit lines, 2=Preview, 3=Saved
   const [lines, setLines] = useState([]);
@@ -26426,6 +26426,16 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
   const [custCountry, setCustCountry] = useState(billingAddr?.country || company.country || company.billing_country || 'France');
   const [custSiret, setCustSiret] = useState(company.siret || '');
   const [custEmail, setCustEmail] = useState(company.email || '');
+
+  // Open credits for this client (avoirs with credit_status = 'open')
+  const openCredits = (allInvoices || []).filter(inv =>
+    inv.company_id === company.id &&
+    (inv.invoice_number || '').startsWith('AVO') &&
+    inv.credit_status === 'open' &&
+    parseFloat(inv.total_ttc) < 0
+  );
+  const [appliedCredits, setAppliedCredits] = useState([]);
+  const totalCreditApplied = appliedCredits.reduce((s, c) => s + Math.abs(parseFloat(c.total_ttc) || 0), 0);
 
   const getFiscalZone = (c) => {
     const country = (c?.country || c?.billing_country || 'France').trim();
@@ -26781,6 +26791,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
   const tvaRate = isExonerated ? 0 : 20;
   const tvaAmount = isExonerated ? 0 : subtotalHT * 0.20;
   const totalTTC = subtotalHT + tvaAmount;
+  const totalAfterCredits = totalTTC - totalCreditApplied;
 
   // Generate and save
   const handleSave = async () => {
@@ -26861,6 +26872,11 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
       }
 
       // Save to database
+      const creditNotes = appliedCredits.length > 0
+        ? `Avoir(s) appliqué(s): ${appliedCredits.map(c => c.invoice_number).join(', ')} (-${totalCreditApplied.toFixed(2)} €)`
+        : '';
+      const fullNotes = [notes, creditNotes].filter(Boolean).join(' | ');
+
       const { data: newInvoice, error } = await supabase
         .from('invoices')
         .insert({
@@ -26877,6 +26893,8 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           tva_rate: tvaRate,
           tva_amount: tvaAmount,
           total_ttc: totalTTC,
+          credit_applied: totalCreditApplied > 0 ? totalCreditApplied : null,
+          net_to_pay: totalCreditApplied > 0 ? totalAfterCredits : null,
           is_tva_exonerated: isExonerated,
           client_ref: clientRef,
           client_tva_number: clientTVA || billingAddr?.tva_number || company.tva_number || '',
@@ -26886,7 +26904,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
             siret: custSiret, email: custEmail, tva_number: clientTVA
           },
           pdf_url: pdfUrl,
-          notes,
+          notes: fullNotes,
           created_by: profile?.id
         })
         .select()
@@ -26907,6 +26925,14 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           sort_order: idx
         }));
         await supabase.from('invoice_lines').insert(lineInserts);
+
+        // Mark applied credits as used
+        for (const credit of appliedCredits) {
+          await supabase.from('invoices').update({
+            credit_status: 'applied',
+            notes: [credit.notes, `Appliqué sur facture ${invoiceNumber}`].filter(Boolean).join(' | ')
+          }).eq('id', credit.id);
+        }
       }
 
       setSavedInvoice({ ...newInvoice, pdf_url: pdfUrl, invoice_number: invoiceNumber });
@@ -27085,13 +27111,42 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                 </div>
               </div>
 
+              {/* Open credits for this client */}
+              {openCredits.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-amber-600 font-bold text-sm">💰 Crédit disponible pour {custName || company.name}</span>
+                  </div>
+                  {openCredits.map(cr => {
+                    const crAmt = Math.abs(parseFloat(cr.total_ttc) || 0);
+                    const isApplied = appliedCredits.some(a => a.id === cr.id);
+                    return (
+                      <div key={cr.id} className="flex items-center justify-between py-1.5">
+                        <div className="flex items-center gap-2">
+                          <input type="checkbox" checked={isApplied} onChange={e => {
+                            if (e.target.checked) setAppliedCredits(prev => [...prev, cr]);
+                            else setAppliedCredits(prev => prev.filter(a => a.id !== cr.id));
+                          }} className="rounded text-amber-500" />
+                          <span className="text-sm font-mono text-amber-800">{cr.invoice_number}</span>
+                          <span className="text-xs text-amber-600">{cr.notes?.split('.')[0] || ''}</span>
+                        </div>
+                        <span className="font-bold text-amber-700">-{crAmt.toFixed(2)} €</span>
+                      </div>
+                    );
+                  })}
+                  {appliedCredits.length > 0 && (
+                    <p className="text-xs text-amber-600 mt-2 border-t border-amber-200 pt-2">✅ {totalCreditApplied.toFixed(2)} € de crédit sera déduit de cette facture</p>
+                  )}
+                </div>
+              )}
+
               {/* Totals */}
               <div className="flex justify-between items-end">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Notes internes</label>
                   <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes internes (non visibles)..." rows={2} className="w-80 px-3 py-2 border rounded-lg text-sm" />
                 </div>
-                <div className="w-64 space-y-1.5 bg-gray-50 rounded-xl p-4">
+                <div className="w-72 space-y-1.5 bg-gray-50 rounded-xl p-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Sous-total HT</span>
                     <span className="font-medium">{subtotalHT.toFixed(2)} €</span>
@@ -27100,10 +27155,22 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                     <span className="text-gray-500">TVA {isExonerated ? '(exonéré)' : '20%'}</span>
                     <span className="font-medium">{isExonerated ? 'EXONÉRÉ' : tvaAmount.toFixed(2) + ' €'}</span>
                   </div>
-                  <div className="flex justify-between text-lg font-bold border-t pt-2 mt-1">
+                  <div className="flex justify-between text-sm font-bold border-t pt-1.5 mt-1">
                     <span>Total TTC</span>
                     <span className="text-[#2D5A7B]">{totalTTC.toFixed(2)} €</span>
                   </div>
+                  {totalCreditApplied > 0 && (
+                    <>
+                      <div className="flex justify-between text-sm text-amber-700">
+                        <span>Avoir appliqué</span>
+                        <span className="font-medium">-{totalCreditApplied.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between text-lg font-bold border-t border-amber-300 pt-1.5 mt-1">
+                        <span>Net à payer</span>
+                        <span className="text-[#00A651]">{totalAfterCredits.toFixed(2)} €</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -27647,7 +27714,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
       created: 'bg-gray-100 text-gray-600', draft: 'bg-gray-100 text-gray-600',
       sent: 'bg-blue-100 text-blue-700', new: 'bg-blue-100 text-blue-700',
       paid: 'bg-green-100 text-green-700', partially_paid: 'bg-yellow-100 text-yellow-700',
-      overdue: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-400 line-through',
+      overdue: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-400 line-through', credited: 'bg-orange-100 text-orange-700',
       accepted: 'bg-emerald-100 text-emerald-700', refused: 'bg-red-100 text-red-700',
       sending: 'bg-yellow-100 text-yellow-700', error: 'bg-red-100 text-red-700',
       received: 'bg-indigo-100 text-indigo-700',
@@ -27656,7 +27723,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
     };
     const labels = {
       created: 'Créée', draft: 'Brouillon', sent: 'Envoyée', new: 'Nouveau',
-      paid: 'Payée', partially_paid: 'Partiel', cancelled: 'Annulée',
+      paid: 'Payée', partially_paid: 'Partiel', cancelled: 'Annulée', credited: 'Créditée',
       accepted: 'Acceptée', refused: 'Refusée', sending: 'Envoi...', error: 'Erreur',
       received: 'Reçue', approved: 'Approuvé', pending: 'En attente',
       ordered: 'Commandé', delivered: 'Livré', overdue: 'En retard',
@@ -28210,13 +28277,61 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
            CREDIT NOTES TAB
          ================================================================ */}
       {activeTab === 'credit_notes' && (() => {
-        const avoirs = activeInvoices.filter(i => (i.invoice_number || '').startsWith('AVO'));
         const allAvoirs = invoices.filter(i => (i.invoice_number || '').startsWith('AVO'));
+        const openAvoirs = allAvoirs.filter(a => a.credit_status === 'open');
+        const appliedAvoirs = allAvoirs.filter(a => a.credit_status === 'applied');
+        const refundedAvoirs = allAvoirs.filter(a => a.credit_status === 'refunded');
+        const totalOpen = openAvoirs.reduce((s, a) => s + Math.abs(parseFloat(a.total_ttc) || 0), 0);
+
+        const markRefunded = async (avo) => {
+          const ok = window.confirm(`Marquer ${avo.invoice_number} comme remboursé ?\n\nCela signifie que vous avez viré ${Math.abs(avo.total_ttc).toFixed(2)} € au client.`);
+          if (!ok) return;
+          await supabase.from('invoices').update({
+            credit_status: 'refunded',
+            notes: [avo.notes, `Remboursé le ${new Date().toLocaleDateString('fr-FR')}`].filter(Boolean).join(' | ')
+          }).eq('id', avo.id);
+          notify(`✅ ${avo.invoice_number} marqué comme remboursé`);
+          loadInvoices();
+        };
+
+        const creditStatusBadge = (status) => {
+          const styles = {
+            open: { bg: 'bg-amber-100', text: 'text-amber-700', label: '💰 Crédit ouvert' },
+            applied: { bg: 'bg-green-100', text: 'text-green-700', label: '✅ Appliqué' },
+            refunded: { bg: 'bg-blue-100', text: 'text-blue-700', label: '💸 Remboursé' }
+          };
+          const s = styles[status] || { bg: 'bg-gray-100', text: 'text-gray-600', label: status || 'Ancien' };
+          return <span className={`px-2 py-1 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>{s.label}</span>;
+        };
+
         return (
           <div className="space-y-4">
-            <SectionHeader title={lang === 'en' ? 'Credit Notes' : 'Avoirs'} icon="↩️" actions={
+            <SectionHeader title="Avoirs" icon="↩️" actions={
               <button onClick={() => { setCnInvoiceId(null); setCnSearch(''); setCnReason(''); setCnLines([]); setCnSaving(false); setCnSaved(null); setActiveTab('credit_note_new'); }} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium">+ Créer Avoir</button>
             } />
+
+            {/* Summary cards */}
+            {allAvoirs.length > 0 && (
+              <div className="grid grid-cols-4 gap-3">
+                <div className="bg-white rounded-xl border shadow-sm p-4">
+                  <p className="text-xs text-gray-400 uppercase font-bold">Total avoirs</p>
+                  <p className="text-2xl font-bold text-gray-800">{allAvoirs.length}</p>
+                </div>
+                <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
+                  <p className="text-xs text-amber-500 uppercase font-bold">💰 Crédits ouverts</p>
+                  <p className="text-2xl font-bold text-amber-700">{totalOpen.toFixed(2)} €</p>
+                  <p className="text-xs text-amber-500">{openAvoirs.length} avoir{openAvoirs.length !== 1 ? 's' : ''}</p>
+                </div>
+                <div className="bg-green-50 rounded-xl border border-green-200 p-4">
+                  <p className="text-xs text-green-500 uppercase font-bold">✅ Appliqués</p>
+                  <p className="text-2xl font-bold text-green-700">{appliedAvoirs.length}</p>
+                </div>
+                <div className="bg-blue-50 rounded-xl border border-blue-200 p-4">
+                  <p className="text-xs text-blue-500 uppercase font-bold">💸 Remboursés</p>
+                  <p className="text-2xl font-bold text-blue-700">{refundedAvoirs.length}</p>
+                </div>
+              </div>
+            )}
 
             {allAvoirs.length > 0 ? (
               <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -28228,18 +28343,38 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Réf. Facture</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Montant</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Statut</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr></thead>
                   <tbody>
-                    {allAvoirs.map((avo, i) => (
-                      <tr key={avo.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                        <td className="px-4 py-3 font-mono font-medium text-red-700">{avo.invoice_number}</td>
-                        <td className="px-4 py-3 text-gray-700">{avo.companies?.name || '—'}</td>
-                        <td className="px-4 py-3 text-gray-600">{avo.invoice_date?.split('T')[0] || '—'}</td>
-                        <td className="px-4 py-3 text-gray-500 text-xs">{avo.notes?.match(/facture (FAC-[^\s.]+)/i)?.[1] || '—'}</td>
-                        <td className="px-4 py-3 text-right font-bold text-red-600">{fmt(Math.abs(avo.total_ttc || 0))}</td>
-                        <td className="px-4 py-3 text-center"><StatusBadge status={avo.status} /></td>
-                      </tr>
-                    ))}
+                    {allAvoirs.map((avo, i) => {
+                      const origRef = avo.notes?.match(/facture (FAC-[^\s.]+|[A-Z]+-[^\s.]+)/i)?.[1] || '—';
+                      return (
+                        <tr key={avo.id} className={`border-b last:border-0 hover:bg-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                          <td className="px-4 py-3 font-mono font-medium text-red-700">{avo.invoice_number}</td>
+                          <td className="px-4 py-3 text-gray-700">{avo.companies?.name || '—'}</td>
+                          <td className="px-4 py-3 text-gray-600 text-xs">{avo.invoice_date?.split('T')[0] || '—'}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs font-mono">{origRef}</td>
+                          <td className="px-4 py-3 text-right font-bold text-red-600">-{fmt(Math.abs(avo.total_ttc || 0))}</td>
+                          <td className="px-4 py-3 text-center">{creditStatusBadge(avo.credit_status)}</td>
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              {avo.credit_status === 'open' && (
+                                <button onClick={() => markRefunded(avo)} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100" title="Marquer comme remboursé">💸 Rembourser</button>
+                              )}
+                              {!avo.credit_status && (
+                                <>
+                                  <button onClick={async () => {
+                                    await supabase.from('invoices').update({ credit_status: 'open' }).eq('id', avo.id);
+                                    notify('✅ Marqué comme crédit ouvert'); loadInvoices();
+                                  }} className="px-2 py-1 bg-amber-50 text-amber-700 rounded text-xs hover:bg-amber-100">💰 Crédit</button>
+                                  <button onClick={() => markRefunded(avo)} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100">💸 Remboursé</button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -28252,10 +28387,10 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h4 className="font-medium text-blue-800 mb-2">ℹ️ Comment ça marche</h4>
               <ul className="text-sm text-blue-700 space-y-1">
-                <li>• Sélectionnez une facture à corriger → le système crée un avoir (AVO-MMYY-XXX)</li>
-                <li>• Choisissez les lignes à créditer (tout ou partie)</li>
-                <li>• L'avoir est lié à la facture originale</li>
-                <li>• Émettez une nouvelle facture corrigée si nécessaire</li>
+                <li>• <strong>Crédit ouvert</strong> — automatiquement proposé lors de la prochaine facture pour ce client</li>
+                <li>• <strong>Appliqué</strong> — le crédit a été déduit d'une facture ultérieure</li>
+                <li>• <strong>Remboursé</strong> — le montant a été viré au client</li>
+                <li>• Les avoirs anciens (sans statut) peuvent être classés manuellement</li>
               </ul>
             </div>
           </div>
@@ -30708,17 +30843,22 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
               avoNumber = `AVO-${String(now.getMonth()+1).padStart(2,'0')}${String(now.getFullYear()).slice(-2)}-001`;
             }
 
+            // Check if full or partial credit
+            const origTotal = Math.abs(parseFloat(cnInvoice.total_ttc) || 0);
+            const isFullCredit = Math.abs(cnTotal - origTotal) < 0.02;
+
             const { data: cn, error } = await supabase.from('invoices').insert({
               invoice_number: avoNumber, company_id: cnInvoice.company_id, request_id: cnInvoice.request_id,
               status: 'created', invoice_date: new Date().toISOString(),
               subtotal_ht: -cnSubtotal, tva_rate: cnTvaRate, tva_amount: -cnTvaAmount, total_ttc: -cnTotal,
               is_tva_exonerated: cnInvoice.is_tva_exonerated, client_tva_number: cnInvoice.client_tva_number,
+              parent_invoice_id: cnInvoice.id,
+              credit_status: 'open',
               notes: `Avoir pour facture ${cnInvoice.invoice_number}. ${cnReason}`.trim(),
               created_by: profile?.id
             }).select().single();
             if (error) throw error;
 
-            // Save credit note lines
             if (cn) {
               const lineInserts = cnLines.filter(l => l.included).map((l, idx) => ({
                 invoice_id: cn.id, line_type: 'credit', description: l.description,
@@ -30726,14 +30866,16 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
               }));
               await supabase.from('invoice_lines').insert(lineInserts);
 
-              // Link original invoice
-              await supabase.from('invoices').update({
-                notes: [cnInvoice.notes, `Avoir ${avoNumber} émis`].filter(Boolean).join(' | ')
-              }).eq('id', cnInvoice.id);
+              // Update original invoice
+              const origUpdate = {
+                notes: [cnInvoice.notes, `Avoir ${avoNumber} émis (${isFullCredit ? 'total' : 'partiel'})`].filter(Boolean).join(' | ')
+              };
+              if (isFullCredit) origUpdate.status = 'credited';
+              await supabase.from('invoices').update(origUpdate).eq('id', cnInvoice.id);
             }
 
             setCnSaved(cn);
-            notify(`✅ Avoir ${avoNumber} créé!`);
+            notify(`✅ Avoir ${avoNumber} créé!${isFullCredit ? ' Facture originale marquée comme créditée.' : ' Crédit en attente d\'application.'}`);
             loadInvoices();
           } catch (err) {
             notify('Erreur: ' + (err.message || 'Erreur'), 'error');
@@ -30943,7 +31085,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
       {/* Invoice Creation Modal (from À facturer) */}
       {creatingForRma && (
         <InvoiceCreationModal lang={lang} rma={creatingForRma} onClose={() => setCreatingForRma(null)} notify={notify}
-          reload={() => { loadInvoices(); }} profile={profile} businessSettings={businessSettings} />
+          reload={() => { loadInvoices(); }} profile={profile} businessSettings={businessSettings} invoices={invoices} />
       )}
     </div>
   );
