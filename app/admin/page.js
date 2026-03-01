@@ -27915,6 +27915,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [poDocUploading, setPoDocUploading] = useState(false);
   const [poAttachments, setPoAttachments] = useState([]);
   const [poPaymentReceipt, setPoPaymentReceipt] = useState(null);
+  const [poGenEnLoading, setPoGenEnLoading] = useState(false);
   const [poShowPaymentForm, setPoShowPaymentForm] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [bankTransactions, setBankTransactions] = useState([]);
@@ -28699,7 +28700,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
         const viewPO = poViewId ? purchaseOrders.find(p => p.id === poViewId) : null;
 
         // Generate English copy of existing BC
-        const [poGenEnLoading, setPoGenEnLoading] = useState(false);
         const generateEnglishBC = async (po) => {
           setPoGenEnLoading(true);
           try {
