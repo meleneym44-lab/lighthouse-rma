@@ -1927,14 +1927,18 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
       y += 7;
       rowAlt = false;
     } else {
-      if (rowAlt) {
+      if (line.isCredit) {
+        // Credit line — amber background
+        pdf.setFillColor(255, 248, 230);
+        pdf.rect(margin, y - 4, contentWidth, 7, 'F');
+      } else if (rowAlt) {
         pdf.setFillColor(252, 253, 255);
         pdf.rect(margin, y - 4, contentWidth, 7, 'F');
       }
       rowAlt = !rowAlt;
       pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(...darkGray);
+      pdf.setFont('helvetica', line.isCredit ? 'italic' : 'normal');
+      pdf.setTextColor(line.isCredit ? 180 : darkGray[0], line.isCredit ? 100 : darkGray[1], line.isCredit ? 0 : darkGray[2]);
       if (line.quantity != null) pdf.text(String(line.quantity), colQty + 5, y, { align: 'center' });
       pdf.text(line.description || '', colDesc, y);
       if (line.unitPrice != null) pdf.text(parseFloat(line.unitPrice).toFixed(2) + ' \u20AC', colPU, y, { align: 'right' });
@@ -26820,6 +26824,29 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
         isDevice: l.lineType === 'device_header'
       }));
 
+      // Add credit lines to PDF if credits applied
+      if (appliedCredits.length > 0) {
+        for (const credit of appliedCredits) {
+          const creditHT = Math.abs(parseFloat(credit.subtotal_ht) || 0);
+          pdfLines.push({
+            description: `Avoir ${credit.invoice_number} appliqué`,
+            quantity: 1,
+            unitPrice: -creditHT,
+            total: -creditHT,
+            isCredit: true
+          });
+        }
+      }
+
+      // Compute final totals for PDF (with credits deducted)
+      const pdfSubtotalHT = appliedCredits.length > 0
+        ? subtotalHT - appliedCredits.reduce((s, c) => s + Math.abs(parseFloat(c.subtotal_ht) || 0), 0)
+        : subtotalHT;
+      const pdfTvaAmount = appliedCredits.length > 0
+        ? tvaAmount - appliedCredits.reduce((s, c) => s + Math.abs(parseFloat(c.tva_amount) || 0), 0)
+        : tvaAmount;
+      const pdfTotalTTC = pdfSubtotalHT + pdfTvaAmount;
+
       // Resolve billing address — same source as quotes
       const billingAddr = quoteData.billingAddress || null;
       const bName = billingAddr?.company_name || company.name || 'Client';
@@ -26856,10 +26883,10 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           supplementNumber: rma.supplement_number || null,
           supplementBCNumber: rma.supplement_bc_number || null,
           lines: pdfLines,
-          subtotalHT,
+          subtotalHT: pdfSubtotalHT,
           tvaRate,
-          tvaAmount,
-          totalTTC,
+          tvaAmount: pdfTvaAmount,
+          totalTTC: pdfTotalTTC,
           isExonerated,
           paymentTermsDays,
           notes
@@ -26872,8 +26899,32 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
       }
 
       // Save to database
+      // If credits applied, add negative lines and recalculate totals
+      let finalSubtotalHT = subtotalHT;
+      let finalTvaAmount = tvaAmount;
+      let finalTotalTTC = totalTTC;
+      const creditLines = [];
+
+      if (appliedCredits.length > 0) {
+        for (const credit of appliedCredits) {
+          const creditHT = Math.abs(parseFloat(credit.subtotal_ht) || 0);
+          const creditTva = Math.abs(parseFloat(credit.tva_amount) || 0);
+          const creditTTC = Math.abs(parseFloat(credit.total_ttc) || 0);
+          creditLines.push({
+            line_type: 'credit',
+            description: `Avoir ${credit.invoice_number} appliqué`,
+            quantity: 1,
+            unit_price_ht: -creditHT,
+            total_ht: -creditHT,
+          });
+          finalSubtotalHT -= creditHT;
+          finalTvaAmount -= creditTva;
+          finalTotalTTC -= creditTTC;
+        }
+      }
+
       const creditNotes = appliedCredits.length > 0
-        ? `Avoir(s) appliqué(s): ${appliedCredits.map(c => c.invoice_number).join(', ')} (-${totalCreditApplied.toFixed(2)} €)`
+        ? `Avoir(s) appliqué(s): ${appliedCredits.map(c => c.invoice_number).join(', ')}`
         : '';
       const fullNotes = [notes, creditNotes].filter(Boolean).join(' | ');
 
@@ -26889,12 +26940,10 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           invoice_date: invoiceDate,
           due_date: dueDate,
           payment_terms_days: paymentTermsDays,
-          subtotal_ht: subtotalHT,
+          subtotal_ht: finalSubtotalHT,
           tva_rate: tvaRate,
-          tva_amount: tvaAmount,
-          total_ttc: totalTTC,
-          credit_applied: totalCreditApplied > 0 ? totalCreditApplied : null,
-          net_to_pay: totalCreditApplied > 0 ? totalAfterCredits : null,
+          tva_amount: finalTvaAmount,
+          total_ttc: finalTotalTTC,
           is_tva_exonerated: isExonerated,
           client_ref: clientRef,
           client_tva_number: clientTVA || billingAddr?.tva_number || company.tva_number || '',
@@ -26912,7 +26961,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 
       if (error) throw error;
 
-      // Save line items
+      // Save line items (service lines + credit lines)
       if (newInvoice) {
         const lineInserts = serviceLines.map((l, idx) => ({
           invoice_id: newInvoice.id,
@@ -26924,6 +26973,18 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           total_ht: parseFloat(l.total) || 0,
           sort_order: idx
         }));
+        // Append credit lines
+        creditLines.forEach((cl, idx) => {
+          lineInserts.push({
+            invoice_id: newInvoice.id,
+            line_type: cl.line_type,
+            description: cl.description,
+            quantity: cl.quantity,
+            unit_price_ht: cl.unit_price_ht,
+            total_ht: cl.total_ht,
+            sort_order: serviceLines.length + idx
+          });
+        });
         await supabase.from('invoice_lines').insert(lineInserts);
 
         // Mark applied credits as used
@@ -27147,30 +27208,38 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                   <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes internes (non visibles)..." rows={2} className="w-80 px-3 py-2 border rounded-lg text-sm" />
                 </div>
                 <div className="w-72 space-y-1.5 bg-gray-50 rounded-xl p-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Sous-total HT</span>
-                    <span className="font-medium">{subtotalHT.toFixed(2)} €</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">TVA {isExonerated ? '(exonéré)' : '20%'}</span>
-                    <span className="font-medium">{isExonerated ? 'EXONÉRÉ' : tvaAmount.toFixed(2) + ' €'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-bold border-t pt-1.5 mt-1">
-                    <span>Total TTC</span>
-                    <span className="text-[#2D5A7B]">{totalTTC.toFixed(2)} €</span>
-                  </div>
                   {totalCreditApplied > 0 && (
                     <>
-                      <div className="flex justify-between text-sm text-amber-700">
-                        <span>Avoir appliqué</span>
-                        <span className="font-medium">-{totalCreditApplied.toFixed(2)} €</span>
+                      <div className="flex justify-between text-sm text-gray-400">
+                        <span>Services HT</span>
+                        <span>{subtotalHT.toFixed(2)} €</span>
                       </div>
-                      <div className="flex justify-between text-lg font-bold border-t border-amber-300 pt-1.5 mt-1">
-                        <span>Net à payer</span>
-                        <span className="text-[#00A651]">{totalAfterCredits.toFixed(2)} €</span>
+                      {appliedCredits.map(cr => (
+                        <div key={cr.id} className="flex justify-between text-sm text-amber-700">
+                          <span className="truncate mr-2">Avoir {cr.invoice_number}</span>
+                          <span className="font-medium shrink-0">-{Math.abs(parseFloat(cr.subtotal_ht) || parseFloat(cr.total_ttc) / 1.2 || 0).toFixed(2)} €</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between text-sm border-t pt-1.5 mt-1">
+                        <span className="text-gray-500">Sous-total HT</span>
+                        <span className="font-medium">{totalAfterCredits > 0 ? (subtotalHT - appliedCredits.reduce((s, c) => s + Math.abs(parseFloat(c.subtotal_ht) || 0), 0)).toFixed(2) : '0.00'} €</span>
                       </div>
                     </>
                   )}
+                  {!totalCreditApplied && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Sous-total HT</span>
+                      <span className="font-medium">{subtotalHT.toFixed(2)} €</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">TVA {isExonerated ? '(exonéré)' : '20%'}</span>
+                    <span className="font-medium">{isExonerated ? 'EXONÉRÉ' : (totalCreditApplied > 0 ? (tvaAmount - appliedCredits.reduce((s, c) => s + Math.abs(parseFloat(c.tva_amount) || 0), 0)).toFixed(2) : tvaAmount.toFixed(2)) + ' €'}</span>
+                  </div>
+                  <div className="flex justify-between text-lg font-bold border-t pt-1.5 mt-1">
+                    <span>Total TTC</span>
+                    <span className={totalCreditApplied > 0 ? 'text-[#00A651]' : 'text-[#2D5A7B]'}>{totalAfterCredits.toFixed(2)} €</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -27183,7 +27252,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
               <div className="text-6xl mb-4">✅</div>
               <h3 className="text-2xl font-bold text-green-700 mb-2">{lang === 'en' ? 'Invoice Created!' : 'Facture Créée!'}</h3>
               <p className="text-lg font-mono text-gray-700 mb-1">{savedInvoice.invoice_number}</p>
-              <p className="text-gray-500 mb-6">{company.name} — {totalTTC.toFixed(2)} € TTC</p>
+              <p className="text-gray-500 mb-6">{company.name} — {totalAfterCredits.toFixed(2)} € TTC</p>
               
               {/* e-Invoice status */}
               {savedInvoice.b2brouter_invoice_id && (
