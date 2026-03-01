@@ -26867,6 +26867,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           invoice_number: invoiceNumber,
           request_id: (rma.rental_number || rma.contract_number) ? null : rma.id,
           rental_request_id: rma.rental_number ? rma.id : null,
+          contract_id: rma.contract_number ? rma.id : null,
           company_id: company.id,
           status: 'created',
           invoice_date: invoiceDate,
@@ -27507,7 +27508,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   // ===== À FACTURER — Unified list of all items ready for invoicing =====
   const invoicedRequestIds = new Set(invoices.map(inv => inv.request_id).filter(Boolean));
   const invoicedRentalIds = new Set(invoices.map(inv => inv.rental_request_id).filter(Boolean));
-  const invoicedContractRefs = new Set(invoices.map(inv => inv.client_ref || inv.notes || '').filter(Boolean));
 
   const itemsToInvoice = [];
 
@@ -27573,21 +27573,27 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   });
 
   // Contracts — active, not already invoiced
+  const invoicedContractIds = new Set(invoices.map(inv => inv.contract_id).filter(Boolean));
   (acctContracts || []).filter(c => {
     if (c.status !== 'active') return false;
-    // Check if already invoiced by matching contract number in invoice refs
+    // Check by contract_id first (most reliable)
+    if (invoicedContractIds.has(c.id)) return false;
+    // Fallback: check contract_number in any invoice's client_ref or notes
     const cNum = (c.contract_number || '').toUpperCase();
-    if (!cNum) return false;
-    return !invoices.some(inv => {
-      const ref = ((inv.client_ref || '') + ' ' + (inv.notes || '')).toUpperCase();
-      return ref.includes(cNum);
-    });
+    if (cNum) {
+      const alreadyInvoiced = invoices.some(inv => {
+        const ref = ((inv.client_ref || '') + ' ' + (inv.notes || '')).toUpperCase();
+        return ref.includes(cNum);
+      });
+      if (alreadyInvoiced) return false;
+    }
+    return true;
   }).forEach(contract => {
     const ctrQd = contract.quote_data || {};
     const amount = parseFloat(ctrQd.grandTotal) || parseFloat(contract.quote_total) || 0;
     const deviceCount = (contract.contract_devices || []).length;
     itemsToInvoice.push({
-      type: 'contract', id: contract.id, ref: contract.contract_number,
+      type: 'contract', id: contract.id, ref: contract.contract_number || `CTR-${contract.id?.slice(0,6)}`,
       company: contract.companies?.name || '—', companyObj: contract.companies, amount,
       date: contract.bc_approved_at || contract.updated_at || contract.created_at,
       status: 'active', detail: `${deviceCount} appareil${deviceCount !== 1 ? 's' : ''} sous contrat`,
