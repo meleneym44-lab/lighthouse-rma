@@ -26414,9 +26414,16 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
 
   const biz = businessSettings || {};
   const company = rma.companies || {};
-  const devices = rma.request_devices || [];
+  const devices = rma.request_devices || rma.rental_request_items || rma.contract_devices || [];
   const quoteData = rma.quote_data || {};
   const billingAddr = quoteData.billingAddress || null;
+
+  const getFiscalZone = (c) => {
+    const country = (c?.country || c?.billing_country || 'France').trim();
+    if (!country || country.toLowerCase() === 'france') return 'france';
+    const eu = ['allemagne','germany','belgique','belgium','pays-bas','netherlands','nederland','luxembourg','italie','italy','espagne','spain','portugal','autriche','austria','irlande','ireland','grèce','greece','finlande','finland','suède','sweden','danemark','denmark','pologne','poland','république tchèque','czech republic','roumanie','romania','bulgarie','bulgaria','hongrie','hungary','croatie','croatia','slovaquie','slovakia','slovénie','slovenia','estonie','estonia','lettonie','latvia','lituanie','lithuania','malte','malta','chypre','cyprus'];
+    return eu.some(e => country.toLowerCase().includes(e)) ? 'eu' : 'international';
+  };
 
   // Build initial line items from quote_data + supplement data
   useEffect(() => {
@@ -26455,6 +26462,43 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
       });
       setLines(newLines);
       setClientRef(rma.contract_number);
+      return;
+    }
+
+    // Handle parts orders
+    if (rma.request_type === 'parts') {
+      const parts = quoteData.parts || [];
+      parts.forEach((p, i) => {
+        const qty = parseInt(p.quantity) || 1;
+        const up = parseFloat(p.unitPrice) || 0;
+        newLines.push({
+          id: `part-${i}`, lineType: 'parts',
+          description: `${p.description || p.partNumber || 'Pièce'} ${p.partNumber ? `(${p.partNumber})` : ''}`.trim(),
+          quantity: qty, unitPrice: up, total: qty * up, sortOrder: i
+        });
+      });
+      if (quoteData.shipping?.total > 0) {
+        newLines.push({
+          id: 'shipping', lineType: 'shipping',
+          description: 'Frais de port / Shipping', quantity: 1,
+          unitPrice: parseFloat(quoteData.shipping.total) || 0,
+          total: parseFloat(quoteData.shipping.total) || 0, sortOrder: 999
+        });
+      }
+      if (newLines.length === 0) {
+        // Fallback: use request_devices
+        (rma.request_devices || []).forEach((d, i) => {
+          newLines.push({
+            id: `dev-${i}`, lineType: 'parts',
+            description: d.model_name || d.model || d.item_name || 'Article',
+            quantity: parseInt(d.quantity) || 1,
+            unitPrice: parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0,
+            total: (parseInt(d.quantity) || 1) * (parseFloat(d.quoted_price) || parseFloat(d.unit_price) || 0),
+            sortOrder: i
+          });
+        });
+      }
+      setLines(newLines);
       return;
     }
 
@@ -26758,7 +26802,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-white">{lang === 'en' ? 'Create Invoice' : 'Créer Facture'}</h2>
-              <p className="text-amber-100 text-sm">{rma.request_number} — {company.name}</p>
+              <p className="text-amber-100 text-sm">{rma.request_number || rma.rental_number || rma.contract_number || '—'} — {company.name}</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
@@ -26776,46 +26820,93 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {/* STEP 1: Edit Lines */}
-          {step === 1 && (
-            <div className="space-y-6">
-              {/* Invoice settings row */}
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Your client ref.' : 'Vos réf. client'}</label>
-                  <input type="text" value={clientRef} onChange={e => setClientRef(e.target.value)} placeholder={lang === 'en' ? 'Client reference...' : 'Référence client...'} className="w-full px-3 py-2 border rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Client VAT #' : 'N° TVA client'}</label>
-                  <input type="text" value={clientTVA} onChange={e => setClientTVA(e.target.value)} placeholder="FR..." className="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Payment terms' : 'Délai paiement'}</label>
-                  <div className="flex items-center gap-2">
-                    <input type="number" value={paymentTermsDays} onChange={e => setPaymentTermsDays(parseInt(e.target.value) || 30)} className="w-20 px-3 py-2 border rounded-lg text-sm" />
-                    <span className="text-sm text-gray-500">{lang === 'en' ? 'days' : 'jours'}</span>
+          {step === 1 && (() => {
+            const zone = getFiscalZone ? getFiscalZone(company) : 'france';
+            const addr = billingAddr || {};
+            const itemType = rma.rental_number ? 'rental' : rma.contract_number ? 'contract' : rma.request_type === 'parts' ? 'parts' : 'rma';
+            const typeBadge = { rma: '🔧 RMA', parts: '🔩 Pièces', rental: '📅 Location', contract: '📋 Contrat' }[itemType] || itemType;
+            return (
+            <div className="space-y-5">
+              {/* Customer + Reference Info */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Customer card */}
+                <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase">👤 Client</h4>
+                  <p className="font-bold text-gray-800 text-lg">{company.name || '—'}</p>
+                  {(addr.street || company.address) && <p className="text-sm text-gray-600">{addr.street || addr.line1 || company.address}</p>}
+                  {(addr.city || addr.postal_code) && <p className="text-sm text-gray-600">{[addr.postal_code, addr.city].filter(Boolean).join(' ')}</p>}
+                  {(addr.country || company.country) && <p className="text-sm text-gray-500">{addr.country || company.country}</p>}
+                  <div className="flex items-center gap-3 pt-1 flex-wrap">
+                    {(clientTVA || company.tva_number) && <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-mono">{clientTVA || company.tva_number}</span>}
+                    {company.siret && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-mono">SIRET {company.siret}</span>}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                      zone === 'france' ? 'bg-blue-100 text-blue-700' : zone === 'eu' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
+                    }`}>{zone === 'france' ? '🇫🇷 France' : zone === 'eu' ? '🇪🇺 UE' : '🌍 International'}</span>
                   </div>
+                </div>
+
+                {/* Reference card */}
+                <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase">📋 Référence</h4>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700">{typeBadge}</span>
+                    <span className="font-mono font-bold text-[#2D5A7B]">{rma.request_number || rma.rental_number || rma.contract_number || '—'}</span>
+                  </div>
+                  {rma.quote_number && <p className="text-sm text-gray-600">Devis: <span className="font-mono">{rma.quote_number}</span></p>}
+                  {rma.bc_number && <p className="text-sm text-gray-600">BC: <span className="font-mono">{rma.bc_number}</span></p>}
+                  {rma.start_date && <p className="text-sm text-gray-500">📅 {new Date(rma.start_date).toLocaleDateString('fr-FR')} → {rma.end_date ? new Date(rma.end_date).toLocaleDateString('fr-FR') : '?'}</p>}
+                  {devices.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {devices.slice(0, 4).map((d, i) => (
+                        <span key={i} className="text-[10px] bg-white border text-gray-600 px-2 py-0.5 rounded">
+                          {d.model_name || d.model || d.item_name || d.device_model || '?'}{d.serial_number ? ` — ${d.serial_number}` : ''}
+                        </span>
+                      ))}
+                      {devices.length > 4 && <span className="text-[10px] text-gray-400">+{devices.length - 4}</span>}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* TVA Exoneration toggle */}
-              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={isExonerated} onChange={e => setIsExonerated(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                  <span className="text-sm font-medium text-gray-700">{lang === 'en' ? "VAT exemption (Art. 262-I CGI — Export outside EU)" : "Exonération TVA (Art. 262-I du CGI — Export hors UE)"}</span>
-                </label>
+              {/* Invoice settings */}
+              <div className="grid grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Réf. client</label>
+                  <input type="text" value={clientRef} onChange={e => setClientRef(e.target.value)} placeholder="BC client, PO#..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">N° TVA client</label>
+                  <input type="text" value={clientTVA} onChange={e => setClientTVA(e.target.value)} placeholder="FR..." className="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Délai paiement</label>
+                  <div className="flex items-center gap-1">
+                    <input type="number" value={paymentTermsDays} onChange={e => setPaymentTermsDays(parseInt(e.target.value) || 30)} className="w-16 px-2 py-2 border rounded-lg text-sm" />
+                    <span className="text-xs text-gray-400">jours</span>
+                  </div>
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 cursor-pointer px-3 py-2 bg-gray-50 rounded-lg w-full">
+                    <input type="checkbox" checked={isExonerated} onChange={e => setIsExonerated(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
+                    <span className="text-xs font-medium text-gray-600">Exo. TVA</span>
+                  </label>
+                </div>
               </div>
 
               {/* Line items table */}
               <div>
-                <h3 className="font-bold text-gray-800 mb-3">{lang === 'en' ? 'Invoice lines' : 'Lignes de facture'}</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-gray-800 text-sm">Lignes de facture</h3>
+                  <button onClick={addLine} className="px-3 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg font-medium">+ Ajouter ligne</button>
+                </div>
                 <div className="border rounded-xl overflow-hidden">
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50 text-left">
-                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-12">{lang === 'en' ? 'Qty' : 'Qté'}</th>
-                        <th className="px-3 py-2 text-xs font-bold text-gray-500">{lang === 'en' ? 'Description' : 'Désignation'}</th>
-                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">{lang === 'en' ? 'U.P. excl.' : 'P.U. HT'}</th>
-                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">{t('totalHT')}</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-12">Qté</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500">Désignation</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">P.U. HT</th>
+                        <th className="px-3 py-2 text-xs font-bold text-gray-500 w-28 text-right">Total HT</th>
                         <th className="px-3 py-2 w-10"></th>
                       </tr>
                     </thead>
@@ -26827,7 +26918,7 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                           {line.lineType === 'device_header' ? (
                             <>
                               <td colSpan="4" className="px-3 py-2">
-                                <span className="font-bold text-blue-800 text-sm">🔹 {line.description}</span>
+                                <input type="text" value={line.description} onChange={e => updateLine(line.id, 'description', e.target.value)} className="w-full bg-transparent font-bold text-blue-800 text-sm border-0 outline-none" />
                               </td>
                               <td className="px-1">
                                 <button onClick={() => removeLine(line.id)} className="text-gray-300 hover:text-red-400 text-sm">×</button>
@@ -26854,39 +26945,38 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
                           )}
                         </tr>
                       ))}
+                      {lines.filter(l => l.lineType !== 'device_header').length === 0 && (
+                        <tr><td colSpan="5" className="px-4 py-6 text-center text-gray-400 text-sm">Aucune ligne — cliquez + Ajouter ligne</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
-                <button onClick={addLine} className="mt-2 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg font-medium">
-                  + Ajouter une ligne
-                </button>
               </div>
 
               {/* Totals */}
-              <div className="flex justify-end">
-                <div className="w-64 space-y-2">
+              <div className="flex justify-between items-end">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Notes internes</label>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes internes (non visibles)..." rows={2} className="w-80 px-3 py-2 border rounded-lg text-sm" />
+                </div>
+                <div className="w-64 space-y-1.5 bg-gray-50 rounded-xl p-4">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">{t('totalHT')}</span>
+                    <span className="text-gray-500">Sous-total HT</span>
                     <span className="font-medium">{subtotalHT.toFixed(2)} €</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">{lang === 'en' ? 'VAT' : 'TVA'} {isExonerated ? (lang === 'en' ? '(exempt)' : '(exonéré)') : '20%'}</span>
-                    <span className="font-medium">{isExonerated ? (lang === 'en' ? 'EXEMPT' : 'EXONÉRÉ') : tvaAmount.toFixed(2) + ' €'}</span>
+                    <span className="text-gray-500">TVA {isExonerated ? '(exonéré)' : '20%'}</span>
+                    <span className="font-medium">{isExonerated ? 'EXONÉRÉ' : tvaAmount.toFixed(2) + ' €'}</span>
                   </div>
-                  <div className="flex justify-between text-lg font-bold border-t pt-2">
-                    <span>{t('totalTTC')}</span>
+                  <div className="flex justify-between text-lg font-bold border-t pt-2 mt-1">
+                    <span>Total TTC</span>
                     <span className="text-[#2D5A7B]">{totalTTC.toFixed(2)} €</span>
                   </div>
                 </div>
               </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">{lang === 'en' ? 'Internal notes' : 'Notes internes'}</label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder={lang === 'en' ? 'Internal notes (not visible on invoice)...' : 'Notes internes (non visibles sur la facture)...'} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
-              </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* STEP 3: Saved */}
           {step === 3 && savedInvoice && (
@@ -27318,12 +27408,13 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
     if (invoicedRequestIds.has(r.id)) return false;
     return ['shipped', 'completed'].includes(r.status);
   }).forEach(po => {
-    const amount = parseFloat(po.quote_total) || 0;
+    const poQd = po.quote_data || {};
+    const amount = parseFloat(poQd.grandTotal) || parseFloat(po.quote_total) || 0;
     itemsToInvoice.push({
       type: 'parts', id: po.id, ref: po.request_number, company: po.companies?.name || '—',
       companyObj: po.companies, amount, date: po.updated_at || po.created_at,
       status: po.status, quoteNumber: po.quote_number, bcNumber: po.bc_number,
-      detail: 'Commande pièces', devices: po.request_devices || [], original: po
+      detail: `${(poQd.parts || po.request_devices || []).length} pièce(s)`, devices: po.request_devices || [], original: po
     });
   });
 
@@ -27332,13 +27423,15 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
     if (invoicedRentalIds.has(r.id)) return false;
     return r.status === 'completed';
   }).forEach(rental => {
-    const amount = parseFloat(rental.total_price) || parseFloat(rental.quoted_price) || 0;
+    const renQd = rental.quote_data || {};
+    const amount = parseFloat(renQd.totalHT) || parseFloat(rental.quote_total) || parseFloat(renQd.grandTotal) || 0;
+    const renItems = rental.rental_request_items || [];
     itemsToInvoice.push({
       type: 'rental', id: rental.id, ref: rental.rental_number || rental.id?.slice(0,8),
       company: rental.companies?.name || '—', companyObj: rental.companies, amount,
       date: rental.updated_at || rental.created_at, status: 'completed',
       detail: rental.start_date ? `${new Date(rental.start_date).toLocaleDateString('fr-FR')} → ${new Date(rental.end_date).toLocaleDateString('fr-FR')}` : 'Location',
-      devices: [], original: rental
+      devices: renItems, original: rental
     });
   });
 
@@ -27353,7 +27446,8 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
       return ref.includes(cNum);
     });
   }).forEach(contract => {
-    const amount = parseFloat(contract.annual_price) || parseFloat(contract.total_price) || 0;
+    const ctrQd = contract.quote_data || {};
+    const amount = parseFloat(ctrQd.grandTotal) || parseFloat(contract.quote_total) || 0;
     const deviceCount = (contract.contract_devices || []).length;
     itemsToInvoice.push({
       type: 'contract', id: contract.id, ref: contract.contract_number,
