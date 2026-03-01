@@ -26423,6 +26423,41 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
     const newLines = [];
     let sortOrder = 0;
 
+    // Handle rental items
+    if (rma.rental_number || rma.isRental) {
+      const amount = parseFloat(rma.total_price) || parseFloat(rma.quoted_price) || 0;
+      const startD = rma.start_date ? new Date(rma.start_date).toLocaleDateString('fr-FR') : '';
+      const endD = rma.end_date ? new Date(rma.end_date).toLocaleDateString('fr-FR') : '';
+      newLines.push({
+        id: 'rental-1', lineType: 'service',
+        description: `Location ${rma.rental_number || ''} — ${rma.device_model || 'Équipement'}${startD ? ` (${startD} → ${endD})` : ''}`,
+        quantity: 1, unitPrice: amount, total: amount, sortOrder: 0
+      });
+      setLines(newLines);
+      return;
+    }
+
+    // Handle contract items
+    if (rma.contract_number) {
+      const amount = parseFloat(rma.annual_price) || parseFloat(rma.total_price) || 0;
+      const cDevices = rma.contract_devices || [];
+      newLines.push({
+        id: 'ctr-hdr', lineType: 'service',
+        description: `Contrat de maintenance ${rma.contract_number} — ${cDevices.length} appareil${cDevices.length !== 1 ? 's' : ''}`,
+        quantity: 1, unitPrice: amount, total: amount, sortOrder: 0
+      });
+      cDevices.forEach((d, i) => {
+        newLines.push({
+          id: `ctr-dev-${i}`, lineType: 'device_header',
+          description: `  ${d.model || d.device_model || 'Appareil'} — SN: ${d.serial_number || '?'}`,
+          quantity: null, unitPrice: null, total: null, isDevice: true, sortOrder: i + 1
+        });
+      });
+      setLines(newLines);
+      setClientRef(rma.contract_number);
+      return;
+    }
+
     // Get quoted devices from quote_data
     const quotedDevices = quoteData.devices || [];
 
@@ -26666,7 +26701,8 @@ function InvoiceCreationModal({ rma, onClose, notify, reload, profile, businessS
         .from('invoices')
         .insert({
           invoice_number: invoiceNumber,
-          request_id: rma.id,
+          request_id: (rma.rental_number || rma.contract_number) ? null : rma.id,
+          rental_request_id: rma.rental_number ? rma.id : null,
           company_id: company.id,
           status: 'created',
           invoice_date: invoiceDate,
@@ -27058,6 +27094,9 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   const [incomingFilter, setIncomingFilter] = useState('pending');
   const [receivedInvoices, setReceivedInvoices] = useState([]);
 
+  // Contracts for À facturer
+  const [acctContracts, setAcctContracts] = useState([]);
+
   // Purchase order state
   const [poSupplier, setPoSupplier] = useState('');
   const [poSupplierRef, setPoSupplierRef] = useState('');
@@ -27135,9 +27174,16 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
     if (data) setBankTransactions(data);
   };
 
+  const loadContracts = async () => {
+    const { data } = await supabase.from('contracts')
+      .select('*, companies(id, name, country, billing_country), contract_devices(*)')
+      .order('created_at', { ascending: false });
+    if (data) setAcctContracts(data);
+  };
+
   const loadAll = async () => {
     setLoadingData(true);
-    await Promise.all([loadInvoices(), loadBillingAddresses(), loadPurchaseOrders(), loadSuppliers(), loadBankTransactions()]);
+    await Promise.all([loadInvoices(), loadBillingAddresses(), loadPurchaseOrders(), loadSuppliers(), loadBankTransactions(), loadContracts()]);
     setLoadingData(false);
   };
 
@@ -27237,21 +27283,89 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   const syncedCount = activeInvoices.filter(i => i.b2brouter_invoice_id).length;
 
   // ===== FILTER HELPERS =====
-  // ===== À FACTURER — RMAs & Rentals ready for invoicing =====
+  // ===== À FACTURER — Unified list of all items ready for invoicing =====
   const invoicedRequestIds = new Set(invoices.map(inv => inv.request_id).filter(Boolean));
   const invoicedRentalIds = new Set(invoices.map(inv => inv.rental_request_id).filter(Boolean));
-  const rmasToInvoice = (requests || []).filter(r => {
+  const invoicedContractRefs = new Set(invoices.map(inv => inv.client_ref || inv.notes || '').filter(Boolean));
+
+  const itemsToInvoice = [];
+
+  // RMAs — all devices shipped/completed
+  (requests || []).filter(r => {
     if (!r.request_number || r.request_type === 'parts') return false;
     if (invoicedRequestIds.has(r.id)) return false;
     const devices = r.request_devices || [];
     if (devices.length === 0) return false;
     const allShipped = devices.every(d => ['shipped', 'completed', 'delivered'].includes(d.status));
     return allShipped || ['shipped', 'completed'].includes(r.status);
+  }).forEach(rma => {
+    const devices = rma.request_devices || [];
+    const quoteData = rma.quote_data || {};
+    const amount = parseFloat(rma.quote_total) || quoteData.devices?.reduce((s, d) => { let dt = 0; (d.services || []).forEach(sv => { dt += parseFloat(sv.price) || 0; }); return s + dt; }, 0) || 0;
+    const shippedDate = devices.reduce((latest, d) => (d.shipped_at && (!latest || d.shipped_at > latest)) ? d.shipped_at : latest, null);
+    itemsToInvoice.push({
+      type: 'rma', id: rma.id, ref: rma.request_number, company: rma.companies?.name || '—',
+      companyObj: rma.companies, amount, date: shippedDate || rma.updated_at || rma.created_at,
+      status: rma.status, quoteNumber: rma.quote_number, bcNumber: rma.bc_number,
+      detail: `${devices.length} appareil${devices.length !== 1 ? 's' : ''}`,
+      devices, original: rma
+    });
   });
-  const rentalsToInvoice = (rentals || []).filter(r => {
+
+  // Parts orders — shipped
+  (requests || []).filter(r => {
+    if (r.request_type !== 'parts') return false;
+    if (invoicedRequestIds.has(r.id)) return false;
+    return ['shipped', 'completed'].includes(r.status);
+  }).forEach(po => {
+    const amount = parseFloat(po.quote_total) || 0;
+    itemsToInvoice.push({
+      type: 'parts', id: po.id, ref: po.request_number, company: po.companies?.name || '—',
+      companyObj: po.companies, amount, date: po.updated_at || po.created_at,
+      status: po.status, quoteNumber: po.quote_number, bcNumber: po.bc_number,
+      detail: 'Commande pièces', devices: po.request_devices || [], original: po
+    });
+  });
+
+  // Rentals — completed (report filled after device return)
+  (rentals || []).filter(r => {
     if (invoicedRentalIds.has(r.id)) return false;
     return r.status === 'completed';
+  }).forEach(rental => {
+    const amount = parseFloat(rental.total_price) || parseFloat(rental.quoted_price) || 0;
+    itemsToInvoice.push({
+      type: 'rental', id: rental.id, ref: rental.rental_number || rental.id?.slice(0,8),
+      company: rental.companies?.name || '—', companyObj: rental.companies, amount,
+      date: rental.updated_at || rental.created_at, status: 'completed',
+      detail: rental.start_date ? `${new Date(rental.start_date).toLocaleDateString('fr-FR')} → ${new Date(rental.end_date).toLocaleDateString('fr-FR')}` : 'Location',
+      devices: [], original: rental
+    });
   });
+
+  // Contracts — active, not already invoiced
+  (acctContracts || []).filter(c => {
+    if (c.status !== 'active') return false;
+    // Check if already invoiced by matching contract number in invoice refs
+    const cNum = (c.contract_number || '').toUpperCase();
+    if (!cNum) return false;
+    return !invoices.some(inv => {
+      const ref = ((inv.client_ref || '') + ' ' + (inv.notes || '')).toUpperCase();
+      return ref.includes(cNum);
+    });
+  }).forEach(contract => {
+    const amount = parseFloat(contract.annual_price) || parseFloat(contract.total_price) || 0;
+    const deviceCount = (contract.contract_devices || []).length;
+    itemsToInvoice.push({
+      type: 'contract', id: contract.id, ref: contract.contract_number,
+      company: contract.companies?.name || '—', companyObj: contract.companies, amount,
+      date: contract.bc_approved_at || contract.updated_at || contract.created_at,
+      status: 'active', detail: `${deviceCount} appareil${deviceCount !== 1 ? 's' : ''} sous contrat`,
+      devices: contract.contract_devices || [], original: contract
+    });
+  });
+
+  // Sort by date descending (newest first)
+  itemsToInvoice.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
   // Fiscal zone helper
   const getFiscalZone = (company) => {
@@ -27353,7 +27467,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   // ===== TABS =====
   const tabs = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
-    { id: 'to_invoice', icon: '🔔', label: 'À facturer', badge: (rmasToInvoice.length + rentalsToInvoice.length) || null },
+    { id: 'to_invoice', icon: '🔔', label: 'À facturer', badge: itemsToInvoice.length || null },
     { id: 'outgoing', icon: '📤', label: lang === 'en' ? 'Outgoing' : 'Émises', badge: unpaidInvoices.length || null },
     { id: 'incoming', icon: '📥', label: lang === 'en' ? 'Incoming' : 'Reçues', badge: pendingSupplierInvs.length || null },
     { id: 'credit_notes', icon: '↩️', label: lang === 'en' ? 'Credit Notes' : 'Avoirs' },
@@ -27420,7 +27534,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center text-lg">🔔</div>
                 <div>
-                  <p className="text-2xl font-bold text-amber-600">{rmasToInvoice.length + rentalsToInvoice.length}</p>
+                  <p className="text-2xl font-bold text-amber-600">{itemsToInvoice.length}</p>
                   <p className="text-xs text-gray-500">À facturer</p>
                 </div>
               </div>
@@ -27497,76 +27611,76 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
       )}
 
       {/* ================================================================
-           À FACTURER TAB
+           À FACTURER TAB — Unified list sorted by date
          ================================================================ */}
       {activeTab === 'to_invoice' && (
         <div className="space-y-4">
           <SectionHeader title="À Facturer" icon="🔔" actions={
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">{rmasToInvoice.length + rentalsToInvoice.length} en attente</span>
-            </div>
+            <span className="text-sm text-gray-500">{itemsToInvoice.length} en attente</span>
           } />
 
-          {rmasToInvoice.length === 0 && rentalsToInvoice.length === 0 ? (
+          {itemsToInvoice.length === 0 ? (
             <div className="bg-white rounded-xl border shadow-sm p-8">
-              <EmptyState icon="✅" title="Tout est facturé" subtitle="Aucune RMA ou location en attente de facturation" />
+              <EmptyState icon="✅" title="Tout est facturé" subtitle="Aucun RMA, commande, location ou contrat en attente" />
             </div>
           ) : (
             <div className="space-y-3">
-              {/* RMAs */}
-              {rmasToInvoice.length > 0 && (
-                <>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">🔧 RMA / Services ({rmasToInvoice.length})</h3>
-              {rmasToInvoice.map(rma => {
-                const company = rma.companies || {};
-                const devices = rma.request_devices || [];
-                const quoteData = rma.quote_data || {};
-                const quoteTotal = parseFloat(rma.quote_total) || quoteData.devices?.reduce((s, d) => {
-                  let dt = 0;
-                  (d.services || []).forEach(sv => { dt += parseFloat(sv.price) || 0; });
-                  return s + dt;
-                }, 0) || 0;
-                const shippedDate = devices.reduce((latest, d) => {
-                  if (d.shipped_at && (!latest || d.shipped_at > latest)) return d.shipped_at;
-                  return latest;
-                }, null);
-                const daysSinceShip = shippedDate ? Math.floor((now - new Date(shippedDate)) / 86400000) : null;
+              {itemsToInvoice.map(item => {
+                const typeBadge = { rma: { label: '🔧 RMA', bg: 'bg-blue-100 text-blue-700' }, parts: { label: '🔩 Pièces', bg: 'bg-purple-100 text-purple-700' }, rental: { label: '📅 Location', bg: 'bg-cyan-100 text-cyan-700' }, contract: { label: '📋 Contrat', bg: 'bg-green-100 text-green-700' } }[item.type] || { label: item.type, bg: 'bg-gray-100 text-gray-600' };
+                const daysSince = item.date ? Math.floor((now - new Date(item.date)) / 86400000) : null;
 
                 return (
-                  <div key={rma.id} className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-shadow">
+                  <div key={`${item.type}-${item.id}`} className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-shadow">
                     <div className="p-5">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-mono font-bold text-[#2D5A7B]">{rma.request_number}</span>
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                              rma.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                            }`}>{rma.status}</span>
-                            {rma.quote_number && <span className="text-xs text-gray-400">Devis {rma.quote_number}</span>}
-                            {rma.bc_number && <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded">BC: {rma.bc_number}</span>}
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${typeBadge.bg}`}>{typeBadge.label}</span>
+                            <span className="font-mono font-bold text-[#2D5A7B]">{item.ref}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              item.status === 'completed' ? 'bg-green-100 text-green-700' :
+                              item.status === 'shipped' ? 'bg-blue-100 text-blue-700' :
+                              item.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>{item.status}</span>
+                            {item.quoteNumber && <span className="text-xs text-gray-400">Devis {item.quoteNumber}</span>}
+                            {item.bcNumber && <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded">BC: {item.bcNumber}</span>}
                           </div>
-                          <p className="font-medium text-gray-800">{company.name || 'Client inconnu'}</p>
+                          <p className="font-medium text-gray-800">{item.company}</p>
                           <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                            <span>📦 {devices.length} appareil{devices.length !== 1 ? 's' : ''}</span>
-                            {shippedDate && <span>🚚 Expédié {new Date(shippedDate).toLocaleDateString('fr-FR')}</span>}
-                            {daysSinceShip !== null && daysSinceShip > 14 && (
-                              <span className="text-amber-600 font-medium">⚠️ {daysSinceShip}j depuis expédition</span>
+                            <span>{item.detail}</span>
+                            {item.date && <span className="text-gray-400">{new Date(item.date).toLocaleDateString('fr-FR')}</span>}
+                            {daysSince !== null && daysSince > 14 && (
+                              <span className="text-amber-600 font-medium">⚠️ {daysSince}j</span>
                             )}
                           </div>
-                          {/* Device list */}
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {devices.slice(0, 4).map(d => (
-                              <span key={d.id} className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                                {d.model_name || d.model || '?'} — {d.serial_number}
-                              </span>
-                            ))}
-                            {devices.length > 4 && <span className="text-[10px] text-gray-400">+{devices.length - 4} autres</span>}
-                          </div>
+                          {/* Device chips for RMA/parts */}
+                          {item.devices && item.devices.length > 0 && item.type !== 'contract' && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {item.devices.slice(0, 4).map(d => (
+                                <span key={d.id} className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                                  {d.model_name || d.model || d.item_name || '?'}{d.serial_number ? ` — ${d.serial_number}` : ''}
+                                </span>
+                              ))}
+                              {item.devices.length > 4 && <span className="text-[10px] text-gray-400">+{item.devices.length - 4}</span>}
+                            </div>
+                          )}
+                          {/* Contract device count */}
+                          {item.type === 'contract' && item.devices.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {item.devices.slice(0, 3).map(d => (
+                                <span key={d.id} className="text-[10px] bg-green-50 text-green-600 px-2 py-0.5 rounded">
+                                  {d.model || d.device_model || '?'}{d.serial_number ? ` — ${d.serial_number}` : ''}
+                                </span>
+                              ))}
+                              {item.devices.length > 3 && <span className="text-[10px] text-gray-400">+{item.devices.length - 3}</span>}
+                            </div>
+                          )}
                         </div>
                         <div className="text-right ml-4 shrink-0">
-                          <p className="text-xs text-gray-400 uppercase font-medium">Montant devis</p>
-                          <p className="text-xl font-bold text-gray-800">{quoteTotal > 0 ? fmt(quoteTotal) : '—'}</p>
-                          <button onClick={() => setCreatingForRma(rma)}
+                          <p className="text-xs text-gray-400 uppercase font-medium">Montant</p>
+                          <p className="text-xl font-bold text-gray-800">{item.amount > 0 ? fmt(item.amount) : '—'}</p>
+                          <button onClick={() => setCreatingForRma(item.original)}
                             className="mt-3 px-5 py-2.5 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm flex items-center gap-2">
                             💶 Créer Facture
                           </button>
@@ -27576,42 +27690,6 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
                   </div>
                 );
               })}
-                </>
-              )}
-
-              {/* Rentals */}
-              {rentalsToInvoice.length > 0 && (
-                <>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1 mt-4">📅 Locations ({rentalsToInvoice.length})</h3>
-                  {rentalsToInvoice.map(rental => {
-                    const rCompany = rental.companies || {};
-                    const rentalTotal = parseFloat(rental.total_price) || parseFloat(rental.quoted_price) || 0;
-                    return (
-                      <div key={rental.id} className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-shadow">
-                        <div className="p-5">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
-                                <span className="font-mono font-bold text-[#2D5A7B]">{rental.rental_number || rental.id?.slice(0,8)}</span>
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-green-100 text-green-700">Terminée</span>
-                              </div>
-                              <p className="font-medium text-gray-800">{rCompany.name || 'Client inconnu'}</p>
-                              <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                                <span>📅 {rental.start_date ? new Date(rental.start_date).toLocaleDateString('fr-FR') : '?'} → {rental.end_date ? new Date(rental.end_date).toLocaleDateString('fr-FR') : '?'}</span>
-                                {rental.device_model && <span>📦 {rental.device_model}</span>}
-                              </div>
-                            </div>
-                            <div className="text-right ml-4 shrink-0">
-                              <p className="text-xs text-gray-400 uppercase font-medium">Montant</p>
-                              <p className="text-xl font-bold text-gray-800">{rentalTotal > 0 ? fmt(rentalTotal) : '—'}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
             </div>
           )}
         </div>
