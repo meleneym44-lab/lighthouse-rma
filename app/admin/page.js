@@ -27522,13 +27522,19 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], rentals
   }).forEach(rma => {
     const devices = rma.request_devices || [];
     const quoteData = rma.quote_data || {};
-    const amount = parseFloat(rma.quote_total) || quoteData.devices?.reduce((s, d) => { let dt = 0; (d.services || []).forEach(sv => { dt += parseFloat(sv.price) || 0; }); return s + dt; }, 0) || 0;
+    const quoteAmount = parseFloat(quoteData.grandTotal) || parseFloat(rma.quote_total) || quoteData.devices?.reduce((s, d) => { let dt = 0; (d.services || []).forEach(sv => { dt += parseFloat(sv.price) || 0; }); return s + dt; }, 0) || 0;
+    const supplementAmount = parseFloat(rma.avenant_total) || 0;
+    const amount = quoteAmount + supplementAmount;
+
+    // Skip contract-covered RMAs with no billable amount
+    if (amount <= 0) return;
+
     const shippedDate = devices.reduce((latest, d) => (d.shipped_at && (!latest || d.shipped_at > latest)) ? d.shipped_at : latest, null);
     itemsToInvoice.push({
       type: 'rma', id: rma.id, ref: rma.request_number, company: rma.companies?.name || '—',
       companyObj: rma.companies, amount, date: shippedDate || rma.updated_at || rma.created_at,
       status: rma.status, quoteNumber: rma.quote_number, bcNumber: rma.bc_number,
-      detail: `${devices.length} appareil${devices.length !== 1 ? 's' : ''}`,
+      detail: `${devices.length} appareil${devices.length !== 1 ? 's' : ''}${supplementAmount > 0 ? ' + supplément' : ''}`,
       devices, original: rma
     });
   });
