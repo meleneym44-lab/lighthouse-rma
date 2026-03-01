@@ -2128,9 +2128,35 @@ const generateInvoicePDF = async (invoiceData, businessSettings) => {
 
 
 // Generate Bon de Livraison PDF - PROFESSIONAL FORMAT
-const generateBCPDF = async (poData, businessSettings) => {
+const generateBCPDF = async (poData, businessSettings, pdfLang = 'fr') => {
   const jsPDF = await loadJsPDF();
   const pdf = new jsPDF('p', 'mm', 'a4');
+  const isFr = pdfLang === 'fr';
+  const t = {
+    title: isFr ? 'BON DE COMMANDE' : 'PURCHASE ORDER',
+    no: isFr ? 'N\u00B0 ' : 'No. ',
+    date: 'Date:',
+    quoteRef: isFr ? 'R\u00E9f. devis:' : 'Quote ref:',
+    issuer: isFr ? '\u00C9METTEUR' : 'ISSUER',
+    supplier: isFr ? 'FOURNISSEUR' : 'SUPPLIER',
+    contact: 'Contact:',
+    tel: isFr ? 'T\u00E9l: ' : 'Tel: ',
+    type: 'Type:',
+    typeLabels: {
+      parts: isFr ? 'Pi\u00E8ces / Mat\u00E9riel' : 'Parts / Equipment',
+      service: isFr ? 'Service / Prestation' : 'Service',
+      intercompany: isFr ? 'Inter-soci\u00E9t\u00E9' : 'Intercompany',
+      general: isFr ? 'G\u00E9n\u00E9ral' : 'General'
+    },
+    qty: isFr ? 'QT\u00C9' : 'QTY',
+    designation: isFr ? 'D\u00C9SIGNATION' : 'DESCRIPTION',
+    unitPrice: isFr ? 'P.U. HT' : 'UNIT PRICE',
+    totalHT: isFr ? 'TOTAL HT' : 'TOTAL',
+    totalLabel: isFr ? 'TOTAL HT' : 'TOTAL EXCL. VAT',
+    notes: isFr ? 'NOTES' : 'NOTES',
+    conditionsTitle: isFr ? 'CONDITIONS G\u00C9N\u00C9RALES D\u0027ACHAT' : 'GENERAL TERMS AND CONDITIONS OF PURCHASE',
+    page: 'Page',
+  };
   const biz = businessSettings || {};
   const pageWidth = 210;
   const pageHeight = 297;
@@ -2143,7 +2169,9 @@ const generateBCPDF = async (poData, businessSettings) => {
   const { poNumber, supplier, supplierName, supplierRef, poType, notes, lines, subtotalHT } = poData;
   const sup = supplier || {};
   const frenchMonths = ['janvier','f\u00E9vrier','mars','avril','mai','juin','juillet','ao\u00FBt','septembre','octobre','novembre','d\u00E9cembre'];
-  const fmtD = (ds) => { if (!ds) return ''; const d = new Date(ds); return d.getDate() + ' ' + frenchMonths[d.getMonth()] + ' ' + d.getFullYear(); };
+  const englishMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const months = isFr ? frenchMonths : englishMonths;
+  const fmtD = (ds) => { if (!ds) return ''; const d = new Date(ds); return isFr ? (d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear()) : (months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear()); };
 
   // Pre-load logos
   let capcertLogo = null;
@@ -2169,7 +2197,7 @@ const generateBCPDF = async (poData, businessSettings) => {
     pdf.setFontSize(6.5); pdf.setTextColor(...medGray);
     pdf.text((biz.email || 'France@golighthouse.com') + ' | ' + (biz.website || 'www.golighthouse.fr'), cx, ftY + 24, { align: 'center' });
     pdf.setFontSize(7); pdf.setTextColor(...medGray);
-    pdf.text('Page ' + pgNum + '/' + totalPg, pageWidth - margin, ftY + 24, { align: 'right' });
+    pdf.text(t.page + ' ' + pgNum + '/' + totalPg, pageWidth - margin, ftY + 24, { align: 'right' });
   };
 
   // ---- LOGO ----
@@ -2194,7 +2222,7 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.text(fmtD(new Date().toISOString()), trX, 12, { align: 'right' });
   if (supplierRef) {
     pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-    pdf.text('R\u00E9f. devis:', trX - 45, 17);
+    pdf.text(t.quoteRef, trX - 45, 17);
     pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...darkGray);
     pdf.text(supplierRef, trX, 17, { align: 'right' });
   }
@@ -2205,9 +2233,9 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.setFillColor(...navy);
   pdf.roundedRect(margin, y, contentWidth, 14, 2, 2, 'F');
   pdf.setFontSize(18); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
-  pdf.text('BON DE COMMANDE', margin + 8, y + 10);
+  pdf.text(t.title, margin + 8, y + 10);
   pdf.setFontSize(14);
-  pdf.text('N\u00B0 ' + (poNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
+  pdf.text(t.no + (poNumber || ''), pageWidth - margin - 8, y + 10, { align: 'right' });
   y += 20;
 
   // ---- OUR INFO (left) | SUPPLIER (right) — SAME HEIGHT ----
@@ -2238,14 +2266,14 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
   pdf.roundedRect(margin, blockY, halfW, boxH, 2, 2, 'FD');
   pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
-  pdf.text('\u00C9METTEUR', margin + 4, blockY + 5);
+  pdf.text(t.issuer, margin + 4, blockY + 5);
   pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
   pdf.text(biz.company_name || 'Lighthouse France SAS', margin + 4, blockY + 12);
   pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
   let oy = blockY + 17;
   pdf.text(biz.address || '16 rue Paul S\u00E9journ\u00E9', margin + 4, oy); oy += 3.8;
   pdf.text((biz.postal_code || '94000') + ' ' + (biz.city || 'CR\u00C9TEIL'), margin + 4, oy); oy += 3.8;
-  pdf.text('T\u00E9l: ' + (biz.phone || '+33 (0)1 43 77 28 07'), margin + 4, oy); oy += 3.8;
+  pdf.text(t.tel + (biz.phone || '+33 (0)1 43 77 28 07'), margin + 4, oy); oy += 3.8;
   pdf.text(biz.email || 'France@golighthouse.com', margin + 4, oy); oy += 4;
   pdf.setFontSize(7); pdf.setTextColor(...medGray);
   pdf.text('SIRET: ' + (biz.siret || '50178134800013'), margin + 4, oy); oy += 3;
@@ -2256,17 +2284,17 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
   pdf.roundedRect(supBoxX, blockY, halfW, boxH, 2, 2, 'FD');
   pdf.setFontSize(7); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...medGray);
-  pdf.text('FOURNISSEUR', supBoxX + 4, blockY + 5);
+  pdf.text(t.supplier, supBoxX + 4, blockY + 5);
   pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
   pdf.text(sup.name || supplierName || '', supBoxX + 4, blockY + 12);
   pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
   let sty = blockY + 17;
-  if (sup.contact_name) { pdf.text('Contact: ' + sup.contact_name, supBoxX + 4, sty); sty += 3.8; }
+  if (sup.contact_name) { pdf.text(t.contact + ' ' + sup.contact_name, supBoxX + 4, sty); sty += 3.8; }
   if (sup.address) { pdf.text(sup.address, supBoxX + 4, sty); sty += 3.8; }
   const supCity = [sup.postal_code, sup.city].filter(Boolean).join(' ');
   if (supCity) { pdf.text(supCity, supBoxX + 4, sty); sty += 3.8; }
   if (sup.country && sup.country !== 'France') { pdf.text(sup.country, supBoxX + 4, sty); sty += 3.8; }
-  if (sup.phone) { pdf.text('T\u00E9l: ' + sup.phone, supBoxX + 4, sty); sty += 3.8; }
+  if (sup.phone) { pdf.text(t.tel + sup.phone, supBoxX + 4, sty); sty += 3.8; }
   if (sup.email) { pdf.text(sup.email, supBoxX + 4, sty); sty += 3.8; }
   pdf.setFontSize(7); pdf.setTextColor(...medGray);
   if (sup.siret) { pdf.text('SIRET: ' + sup.siret, supBoxX + 4, sty); sty += 3.3; }
@@ -2275,10 +2303,9 @@ const generateBCPDF = async (poData, businessSettings) => {
   y = blockY + boxH + 5;
 
   // ---- TYPE ROW (no delivery date) ----
-  const typeLabel = { parts: 'Pi\u00E8ces / Mat\u00E9riel', service: 'Service / Prestation', intercompany: 'Inter-soci\u00E9t\u00E9', general: 'G\u00E9n\u00E9ral' };
-  if (poType && typeLabel[poType]) {
+  if (poType && t.typeLabels[poType]) {
     pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...medGray);
-    pdf.text('Type: ' + typeLabel[poType], margin, y);
+    pdf.text(t.type + ' ' + t.typeLabels[poType], margin, y);
     y += 6;
   }
 
@@ -2288,10 +2315,10 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.setFillColor(...navy);
   pdf.roundedRect(margin, y, contentWidth, 9, 1.5, 1.5, 'F');
   pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(255, 255, 255);
-  pdf.text('QT\u00C9', colQty + 2, y + 6);
-  pdf.text('D\u00C9SIGNATION', colDesc, y + 6);
-  pdf.text('P.U. HT', colPU, y + 6, { align: 'right' });
-  pdf.text('TOTAL HT', colTotal, y + 6, { align: 'right' });
+  pdf.text(t.qty, colQty + 2, y + 6);
+  pdf.text(t.designation, colDesc, y + 6);
+  pdf.text(t.unitPrice, colPU, y + 6, { align: 'right' });
+  pdf.text(t.totalHT, colTotal, y + 6, { align: 'right' });
   y += 12;
 
   let rowAlt = false;
@@ -2317,7 +2344,7 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
   pdf.roundedRect(totBoxX, y, totBoxW, 12, 2, 2, 'FD');
   pdf.setFontSize(10); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  pdf.text('TOTAL HT', totBoxX + 8, y + 8);
+  pdf.text(t.totalLabel, totBoxX + 8, y + 8);
   pdf.setFontSize(12);
   pdf.text((subtotalHT || 0).toFixed(2) + ' \u20AC', totBoxX + totBoxW - 8, y + 8, { align: 'right' });
   y += 18;
@@ -2328,7 +2355,7 @@ const generateBCPDF = async (poData, businessSettings) => {
     pdf.setDrawColor(...lightLine); pdf.setLineWidth(0.3);
     pdf.roundedRect(margin, y, contentWidth, 16, 2, 2, 'S');
     pdf.setFontSize(7.5); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-    pdf.text('NOTES', margin + 4, y + 5);
+    pdf.text(t.notes, margin + 4, y + 5);
     pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray); pdf.setFontSize(7.5);
     pdf.splitTextToSize(notes, contentWidth - 8).slice(0, 2).forEach((nl, i) => { pdf.text(nl, margin + 4, y + 10 + i * 3.5); });
     y += 20;
@@ -2340,10 +2367,10 @@ const generateBCPDF = async (poData, businessSettings) => {
   pdf.setFillColor(248, 250, 252);
   pdf.roundedRect(margin, y - 2, contentWidth, 6, 1, 1, 'F');
   pdf.setFontSize(8); pdf.setFont('helvetica', 'bold'); pdf.setTextColor(...navy);
-  pdf.text('CONDITIONS G\u00C9N\u00C9RALES D\u0027ACHAT', margin + 4, y + 2);
+  pdf.text(t.conditionsTitle, margin + 4, y + 2);
   y += 8;
   pdf.setFontSize(7.5); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...darkGray);
-  const legalText = [
+  const legalText = isFr ? [
     '1. Le pr\u00E9sent bon de commande engage la soci\u00E9t\u00E9 \u00E9mettrice aux conditions convenues. Toute modification doit faire l\u0027objet d\u0027un accord \u00E9crit pr\u00E9alable.',
     '2. Toute livraison doit \u00EAtre accompagn\u00E9e d\u0027un bon de livraison mentionnant le n\u00B0 de commande ' + (poNumber || '') + '. Les marchandises ou prestations doivent \u00EAtre conformes aux sp\u00E9cifications convenues.',
     '3. La facturation doit imp\u00E9rativement reprendre le n\u00B0 de commande. Les factures non conformes seront retourn\u00E9es. Tout litige doit \u00EAtre signal\u00E9 dans un d\u00E9lai de 8 jours.',
@@ -2351,6 +2378,14 @@ const generateBCPDF = async (poData, businessSettings) => {
     '5. Conditions de paiement : 30 jours date de facture par virement bancaire, sauf conditions particuli\u00E8res convenues par \u00E9crit.',
     '6. ' + (biz.company_name || 'Lighthouse France SAS') + ' \u2014 SAS au capital de ' + (biz.capital || '10 000') + ' \u20AC \u2014 RCS Cr\u00E9teil \u2014 SIRET: ' + (biz.siret || '50178134800013') + ' \u2014 TVA: ' + (biz.tva_number || biz.tva || 'FR 86501781348'),
     '7. En cas de litige, le Tribunal de Commerce de Cr\u00E9teil sera seul comp\u00E9tent.'
+  ] : [
+    '1. This purchase order binds the issuing company to the agreed terms. Any modification must be subject to prior written agreement.',
+    '2. All deliveries must be accompanied by a delivery note referencing PO number ' + (poNumber || '') + '. Goods or services must conform to the agreed specifications.',
+    '3. Invoices must reference the purchase order number. Non-compliant invoices will be returned. Any dispute must be reported within 8 business days.',
+    '4. Late delivery penalties: 1% of the total excl. VAT per week of delay, capped at 10% of the total amount excl. VAT.',
+    '5. Payment terms: 30 days from invoice date by bank transfer, unless otherwise agreed in writing.',
+    '6. ' + (biz.company_name || 'Lighthouse France SAS') + ' \u2014 SAS with capital of \u20AC' + (biz.capital || '10,000') + ' \u2014 RCS Cr\u00E9teil \u2014 SIRET: ' + (biz.siret || '50178134800013') + ' \u2014 VAT: ' + (biz.tva_number || biz.tva || 'FR 86501781348'),
+    '7. In case of dispute, the Commercial Court of Cr\u00E9teil (Tribunal de Commerce de Cr\u00E9teil) shall have sole jurisdiction. This order is governed by French law.'
   ];
   legalText.forEach(lt => {
     if (y > getUsableHeight() - 8) { pdf.addPage(); y = margin + 10; }
@@ -28663,6 +28698,37 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
 
         const viewPO = poViewId ? purchaseOrders.find(p => p.id === poViewId) : null;
 
+        // Generate English copy of existing BC
+        const [poGenEnLoading, setPoGenEnLoading] = useState(false);
+        const generateEnglishBC = async (po) => {
+          setPoGenEnLoading(true);
+          try {
+            // Get supplier data
+            let supplierData = {};
+            if (po.supplier_id) {
+              const { data: sup } = await supabase.from('suppliers').select('*').eq('id', po.supplier_id).single();
+              if (sup) supplierData = sup;
+            }
+            // Get lines
+            const { data: poLineData } = await supabase.from('supplier_po_lines').select('*').eq('po_id', po.id).order('sort_order');
+            const linesMapped = (poLineData || []).map(l => ({ description: l.description, quantity: l.quantity, unitPrice: l.unit_price_ht, total: l.total_ht }));
+
+            const pdfBlob = await generateBCPDF({
+              poNumber: po.po_number, supplier: supplierData, supplierName: po.supplier_name,
+              supplierRef: po.supplier_ref, poType: po.po_type, notes: po.notes,
+              lines: linesMapped, subtotalHT: parseFloat(po.subtotal_ht) || 0
+            }, businessSettings, 'en');
+
+            const pdfUrl = await uploadPDFToStorage(pdfBlob, 'purchase_orders', `BC_${po.po_number.replace(/[^a-zA-Z0-9-]/g,'_')}_EN_${Date.now()}.pdf`);
+            if (pdfUrl) {
+              const { error } = await supabase.from('supplier_purchase_orders').update({ pdf_url_en: pdfUrl }).eq('id', po.id);
+              if (error) throw error;
+              notify('🇬🇧 English PO saved!');
+              loadPurchaseOrders();
+            }
+          } catch (err) { notify('Error: ' + (err.message || 'Error'), 'error'); console.error(err); }
+          setPoGenEnLoading(false);
+        };
         const statusSteps = ['draft','ordered','delivered','invoiced','paid'];
         const statusLabels = { draft: 'Brouillon', ordered: 'Commandé', delivered: 'Reçu', invoiced: 'Facturé', paid: 'Payé' };
         const statusIcons = { draft: '📝', ordered: '📦', delivered: '✅', invoiced: '🧾', paid: '💰' };
@@ -29013,9 +29079,22 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
                         {viewPO.pdf_url && (
                           <a href={viewPO.pdf_url} target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
-                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🛒</div>
+                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🇫🇷</div>
                             <div><p className="font-medium text-gray-800">Bon de Commande</p><p className="text-sm text-blue-600">N° {viewPO.po_number}</p></div>
                           </a>
+                        )}
+                        {viewPO.pdf_url_en ? (
+                          <a href={viewPO.pdf_url_en} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-4 p-4 border rounded-lg hover:bg-blue-50 transition-colors">
+                            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center text-2xl shrink-0">🇬🇧</div>
+                            <div><p className="font-medium text-gray-800">Purchase Order</p><p className="text-sm text-indigo-600">No. {viewPO.po_number}</p></div>
+                          </a>
+                        ) : (
+                          <button onClick={() => generateEnglishBC(viewPO)} disabled={poGenEnLoading}
+                            className="flex items-center gap-4 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:bg-gray-50 hover:border-indigo-300 transition-colors text-left disabled:opacity-50">
+                            <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl shrink-0">{poGenEnLoading ? '⏳' : '🇬🇧'}</div>
+                            <div><p className="font-medium text-gray-600">{poGenEnLoading ? 'Generating...' : 'Generate English Version'}</p><p className="text-sm text-gray-400">Same BC, translated to English</p></div>
+                          </button>
                         )}
                       </div>
 
