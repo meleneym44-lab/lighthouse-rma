@@ -27923,6 +27923,9 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const [poAttachments, setPoAttachments] = useState([]);
   const [poPaymentReceipt, setPoPaymentReceipt] = useState(null);
   const [poGenEnLoading, setPoGenEnLoading] = useState(false);
+
+  // À facturer — RMA invoice creation from accounting
+  const [creatingForRma, setCreatingForRma] = useState(null);
   const [poShowPaymentForm, setPoShowPaymentForm] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [bankTransactions, setBankTransactions] = useState([]);
@@ -28072,6 +28075,17 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   const syncedCount = activeInvoices.filter(i => i.b2brouter_invoice_id).length;
 
   // ===== FILTER HELPERS =====
+  // ===== À FACTURER — RMAs ready for invoicing =====
+  const invoicedRequestIds = new Set(invoices.map(inv => inv.request_id).filter(Boolean));
+  const rmasToInvoice = (requests || []).filter(r => {
+    if (!r.request_number || r.request_type === 'parts') return false;
+    if (invoicedRequestIds.has(r.id)) return false;
+    const devices = r.request_devices || [];
+    if (devices.length === 0) return false;
+    const allShipped = devices.every(d => ['shipped', 'completed', 'delivered'].includes(d.status));
+    return allShipped || ['shipped', 'completed'].includes(r.status);
+  });
+
   const filterBySearch = (items, fields) => {
     if (!searchTerm) return items;
     const s = searchTerm.toLowerCase();
@@ -28159,6 +28173,7 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
   // ===== TABS =====
   const tabs = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
+    { id: 'to_invoice', icon: '🔔', label: 'À facturer', badge: rmasToInvoice.length || null },
     { id: 'outgoing', icon: '📤', label: lang === 'en' ? 'Outgoing' : 'Émises', badge: unpaidInvoices.length || null },
     { id: 'incoming', icon: '📥', label: lang === 'en' ? 'Incoming' : 'Reçues' },
     { id: 'credit_notes', icon: '↩️', label: lang === 'en' ? 'Credit Notes' : 'Avoirs' },
@@ -28276,6 +28291,87 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
             })}
             {activeInvoices.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Aucune facture</p>}
           </div>
+        </div>
+      )}
+
+      {/* ================================================================
+           À FACTURER TAB
+         ================================================================ */}
+      {activeTab === 'to_invoice' && (
+        <div className="space-y-4">
+          <SectionHeader title="À Facturer" icon="🔔" actions={
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">{rmasToInvoice.length} RMA{rmasToInvoice.length !== 1 ? 's' : ''} en attente</span>
+            </div>
+          } />
+
+          {rmasToInvoice.length === 0 ? (
+            <div className="bg-white rounded-xl border shadow-sm p-8">
+              <EmptyState icon="✅" title="Tout est facturé" subtitle="Aucune RMA en attente de facturation" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {rmasToInvoice.map(rma => {
+                const company = rma.companies || {};
+                const devices = rma.request_devices || [];
+                const quoteData = rma.quote_data || {};
+                const quoteTotal = parseFloat(rma.quote_total) || quoteData.devices?.reduce((s, d) => {
+                  let dt = 0;
+                  (d.services || []).forEach(sv => { dt += parseFloat(sv.price) || 0; });
+                  return s + dt;
+                }, 0) || 0;
+                const shippedDate = devices.reduce((latest, d) => {
+                  if (d.shipped_at && (!latest || d.shipped_at > latest)) return d.shipped_at;
+                  return latest;
+                }, null);
+                const daysSinceShip = shippedDate ? Math.floor((now - new Date(shippedDate)) / 86400000) : null;
+
+                return (
+                  <div key={rma.id} className="bg-white rounded-xl border shadow-sm hover:shadow-md transition-shadow">
+                    <div className="p-5">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-mono font-bold text-[#2D5A7B]">{rma.request_number}</span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              rma.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                            }`}>{rma.status}</span>
+                            {rma.quote_number && <span className="text-xs text-gray-400">Devis {rma.quote_number}</span>}
+                            {rma.bc_number && <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded">BC: {rma.bc_number}</span>}
+                          </div>
+                          <p className="font-medium text-gray-800">{company.name || 'Client inconnu'}</p>
+                          <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                            <span>📦 {devices.length} appareil{devices.length !== 1 ? 's' : ''}</span>
+                            {shippedDate && <span>🚚 Expédié {new Date(shippedDate).toLocaleDateString('fr-FR')}</span>}
+                            {daysSinceShip !== null && daysSinceShip > 14 && (
+                              <span className="text-amber-600 font-medium">⚠️ {daysSinceShip}j depuis expédition</span>
+                            )}
+                          </div>
+                          {/* Device list */}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {devices.slice(0, 4).map(d => (
+                              <span key={d.id} className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                                {d.model_name || d.model || '?'} — {d.serial_number}
+                              </span>
+                            ))}
+                            {devices.length > 4 && <span className="text-[10px] text-gray-400">+{devices.length - 4} autres</span>}
+                          </div>
+                        </div>
+                        <div className="text-right ml-4 shrink-0">
+                          <p className="text-xs text-gray-400 uppercase font-medium">Montant devis</p>
+                          <p className="text-xl font-bold text-gray-800">{quoteTotal > 0 ? fmt(quoteTotal) : '—'}</p>
+                          <button onClick={() => setCreatingForRma(rma)}
+                            className="mt-3 px-5 py-2.5 bg-[#00A651] hover:bg-[#008a43] text-white rounded-lg font-medium text-sm flex items-center gap-2">
+                            💶 Créer Facture
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -31036,6 +31132,12 @@ function AccountingSheet({ notify, profile, clients = [], requests = [], busines
           </div>
         );
       })()}
+
+      {/* Invoice Creation Modal (from À facturer) */}
+      {creatingForRma && (
+        <InvoiceCreationModal lang={lang} rma={creatingForRma} onClose={() => setCreatingForRma(null)} notify={notify}
+          reload={() => { loadInvoices(); }} profile={profile} businessSettings={businessSettings} />
+      )}
     </div>
   );
 }
